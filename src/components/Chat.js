@@ -14,7 +14,12 @@ export default function Chat({ userProfile }) {
       .channel('chat_realtime')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'mensagens_chat' }, 
         (payload) => {
-          setMensagens((prev) => [...prev, payload.new])
+          // AJUSTE: Só adiciona se a mensagem já não estiver na lista (evita duplicidade do update otimista)
+          setMensagens((prev) => {
+            const jaExiste = prev.find(m => m.id === payload.new.id)
+            if (jaExiste) return prev
+            return [...prev, payload.new]
+          })
         }
       )
       .subscribe()
@@ -34,14 +39,39 @@ export default function Chat({ userProfile }) {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
   }, [mensagens, isOpen])
 
+  // LÓGICA DE ENVIO OTIMISTA INTEGRADA
   const enviarMensagem = async (e) => {
     e.preventDefault()
     if (!novaMsg.trim()) return
+
+    // Cria um objeto temporário para a tela
+    const msgTemporaria = { 
+      texto: novaMsg, 
+      usuario_nome: userProfile.nome, 
+      usuario_id: userProfile.id,
+      id: Math.random() // id provisório para o map do React
+    }
+
+    // Adiciona na tela na hora (Update Otimista)
+    setMensagens(prev => [...prev, msgTemporaria])
     
-    await supabase.from('mensagens_chat').insert([
-      { texto: novaMsg, usuario_nome: userProfile.nome, usuario_id: userProfile.id }
-    ])
+    // Guarda o texto e limpa o campo imediatamente
+    const textoParaEnviar = novaMsg
     setNovaMsg('')
+
+    // Envia para o banco no fundo
+    const { error } = await supabase.from('mensagens_chat').insert([{ 
+      texto: textoParaEnviar, 
+      usuario_nome: userProfile.nome, 
+      usuario_id: userProfile.id 
+    }])
+
+    // Se der erro, você pode remover a mensagem temporária ou avisar o usuário
+    if (error) {
+        console.error("Erro ao enviar:", error)
+        setMensagens(prev => prev.filter(m => m.id !== msgTemporaria.id))
+        alert("Erro ao enviar mensagem. Tente novamente.")
+    }
   }
 
   const glassStyle = {
@@ -85,7 +115,12 @@ export default function Chat({ userProfile }) {
 
           {/* INPUT */}
           <form onSubmit={enviarMensagem} style={{ padding: '15px', display: 'flex', gap: '10px' }}>
-            <input value={novaMsg} onChange={(e) => setNovaMsg(e.target.value)} placeholder="Digite sua dúvida..." style={{ flex: 1, padding: '10px', borderRadius: '10px', border: '1px solid #ddd', outline: 'none', fontSize: '12px' }} />
+            <input 
+                value={novaMsg} 
+                onChange={(e) => setNovaMsg(e.target.value)} 
+                placeholder="Digite sua dúvida..." 
+                style={{ flex: 1, padding: '10px', borderRadius: '10px', border: '1px solid #ddd', outline: 'none', fontSize: '12px' }} 
+            />
             <button style={{ background: '#14532d', color: 'white', border: 'none', padding: '10px', borderRadius: '10px', cursor: 'pointer' }}>➔</button>
           </form>
         </div>
