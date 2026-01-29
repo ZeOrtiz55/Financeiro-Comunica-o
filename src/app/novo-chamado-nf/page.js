@@ -13,12 +13,13 @@ export default function NovoChamadoNF() {
 
   const [formData, setFormData] = useState({
     nom_cliente: '', valor_servico: '', num_nf_servico: '', num_nf_peca: '',
-    forma_pagamento: '', tarefa: '', tarefa_destinatario: '', obs: ''
+    forma_pagamento: '', tarefa: '', tarefa_destinatario: '', obs: '',
+    qtd_parcelas: 1, data_primeira_parcela: ''
   })
   
-  const [datasParcelas, setDatasParcelas] = useState(['']) 
   const [fileServico, setFileServico] = useState(null)
   const [filePeca, setFilePeca] = useState(null)
+  const [filePix, setFilePix] = useState(null)
 
   useEffect(() => {
     async function load() {
@@ -34,14 +35,12 @@ export default function NovoChamadoNF() {
 
   const uploadFile = async (file, path) => {
     if (!file) return null
-    try {
-      const fileExt = file.name.split('.').pop()
-      const filePath = `${path}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
-      const { error } = await supabase.storage.from('anexos').upload(filePath, file)
-      if (error) throw error
-      const { data: { publicUrl } } = supabase.storage.from('anexos').getPublicUrl(filePath)
-      return publicUrl
-    } catch (err) { return null }
+    const fileExt = file.name.split('.').pop()
+    const filePath = `${path}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
+    const { error } = await supabase.storage.from('anexos').upload(filePath, file)
+    if (error) throw error
+    const { data: { publicUrl } } = supabase.storage.from('anexos').getPublicUrl(filePath)
+    return publicUrl
   }
 
   const handleSubmit = async (e) => {
@@ -51,50 +50,40 @@ export default function NovoChamadoNF() {
     try {
       const urlS = (tipoNF === 'servico' || tipoNF === 'ambas') ? await uploadFile(fileServico, 'servicos') : null
       const urlP = (tipoNF === 'pecas' || tipoNF === 'ambas') ? await uploadFile(filePeca, 'pecas') : null
+      const urlPix = (formData.forma_pagamento === 'Pix') ? await uploadFile(filePix, 'comprovantes') : null
 
-      // CORREÇÃO DA DATA: Se a string estiver vazia, enviamos null
-      const dataVencimento = datasParcelas[0] && datasParcelas[0] !== "" ? datasParcelas[0] : null
+      // Lógica de PIX: Pula para validar_pix, senão vai para gerar_boleto
+      const isPix = formData.forma_pagamento === 'Pix';
+      const statusInicial = isPix ? 'validar_pix' : 'gerar_boleto';
+      const tarefaInicial = isPix ? 'Validar Recebimento Pix' : 'Gerar Boleto';
 
       const { error } = await supabase.from('Chamado_NF').insert([{
-        nom_cliente: formData.nom_cliente,
-        valor_servico: formData.valor_servico,
-        num_nf_servico: formData.num_nf_servico,
-        num_nf_peca: formData.num_nf_peca,
-        forma_pagamento: formData.forma_pagamento,
-        tarefa: formData.tarefa,
-        tarefa_destinatario: formData.tarefa_destinatario,
+        ...formData,
         setor: setor,
-        // Inicia na fase do Kanban que você pediu
-        status: 'gerar_boleto', 
+        status: statusInicial,
+        tarefa: tarefaInicial,
         anexo_nf_servico: urlS,
         anexo_nf_peca: urlP,
-        vencimento_boleto: dataVencimento, 
-        obs: datasParcelas.length > 1 ? `Vencimentos: ${datasParcelas.filter(d => d !== "").join(' | ')} - ${formData.obs}` : formData.obs
+        comprovante_pagamento: urlPix,
+        vencimento_boleto: formData.data_primeira_parcela // Salva a 1ª data no campo de vencimento padrão
       }])
 
       if (!error) {
-        alert("Chamado gerado no Fluxo NF!")
+        alert("Chamado gerado com sucesso!")
         router.push('/')
-      } else {
-        alert("Erro no banco: " + error.message)
-      }
+      } else throw error
     } catch (err) {
-      alert("Erro ao processar: " + err.message)
-    } finally {
-      setLoading(false)
-    }
+      alert("Erro: " + err.message)
+    } finally { setLoading(false) }
   }
 
-  const glassInput = {
-    padding: '14px', borderRadius: '15px', border: '1px solid rgba(255,255,255,0.5)',
-    background: 'rgba(255,255,255,0.4)', outline: 'none', fontSize: '13px', width: '100%', boxSizing: 'border-box'
-  }
+  const glassInput = { padding: '14px', borderRadius: '15px', border: '1px solid rgba(255,255,255,0.5)', background: 'rgba(255,255,255,0.4)', width: '100%', boxSizing: 'border-box' }
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 20px' }}>
-      <div style={{ background: 'rgba(255, 255, 255, 0.45)', backdropFilter: 'blur(15px)', padding: '40px', borderRadius: '45px', width: '100%', maxWidth: '550px', border: '1px solid rgba(255,255,255,0.3)', boxShadow: '0 20px 40px rgba(0,0,0,0.05)' }}>
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 20px', fontFamily:'sans-serif' }}>
+      <div style={{ background: 'rgba(255, 255, 255, 0.45)', backdropFilter: 'blur(15px)', padding: '40px', borderRadius: '45px', width: '100%', maxWidth: '550px', border: '1px solid rgba(255,255,255,0.3)' }}>
         
-        <h2 style={{ color: '#14532d', fontWeight: '900', textAlign: 'center', marginBottom: '30px', fontSize: '24px' }}>NOVO CHAMADO NF</h2>
+        <h2 style={{ color: '#14532d', fontWeight: '900', textAlign: 'center', marginBottom: '30px' }}>NOVO FATURAMENTO</h2>
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
           
@@ -124,15 +113,8 @@ export default function NovoChamadoNF() {
             </div>
           )}
 
-          <input type="text" placeholder="Cliente" required style={glassInput} onChange={(e) => setFormData({...formData, nom_cliente: e.target.value})} />
-          <input type="text" placeholder="Valor Total R$" required style={glassInput} onChange={(e) => setFormData({...formData, valor_servico: e.target.value})} />
-
-          <select required style={{...glassInput, fontWeight:'bold', border:'2px solid #22c55e'}} onChange={(e) => setFormData({...formData, tarefa: e.target.value})}>
-            <option value="">AÇÃO NECESSÁRIA</option>
-            <option value="Gerar Boleto">Gerar Boleto</option>
-            <option value="Enviar Boleto">Enviar Boleto</option>
-            <option value="Cobrar Novamente Cliente">Cobrar Novamente Cliente</option>
-          </select>
+          <input type="text" placeholder="Nome do Cliente" required style={glassInput} onChange={(e) => setFormData({...formData, nom_cliente: e.target.value})} />
+          <input type="number" placeholder="Valor Total R$" required style={glassInput} onChange={(e) => setFormData({...formData, valor_servico: e.target.value})} />
 
           <select required style={glassInput} onChange={(e) => setFormData({...formData, forma_pagamento: e.target.value})}>
             <option value="">FORMA DE PAGAMENTO</option>
@@ -141,36 +123,36 @@ export default function NovoChamadoNF() {
             <option value="Boleto Parcelado">Boleto Parcelado</option>
           </select>
 
-          {(formData.forma_pagamento.includes('Boleto')) && (
-            <div style={{ background: 'rgba(34, 197, 94, 0.1)', padding: '15px', borderRadius: '20px' }}>
-              <label style={{fontSize:'10px', fontWeight:'bold'}}>VENCIMENTO(S)</label>
-              {formData.forma_pagamento === 'Boleto Parcelado' && (
-                <select style={{...glassInput, marginBottom:'10px'}} onChange={(e) => setDatasParcelas(new Array(parseInt(e.target.value)).fill(''))}>
-                  {[1,2,3,4,5].map(v => <option key={v} value={v}>{v}x</option>)}
-                </select>
-              )}
-              {datasParcelas.map((_, i) => (
-                <input key={i} type="date" required style={{...glassInput, marginBottom:'5px'}} onChange={(e) => {
-                  const n = [...datasParcelas]; n[i] = e.target.value; setDatasParcelas(n)
-                }} />
-              ))}
+          {formData.forma_pagamento === 'Pix' && (
+            <div style={{ background: '#eff6ff', padding: '20px', borderRadius: '20px', border:'1px solid #3b82f6' }}>
+               <label style={{fontSize:'11px', fontWeight:'bold', color:'#1d4ed8'}}>ANEXAR COMPROVANTE PIX:</label>
+               <input type="file" required style={{marginTop:'10px'}} onChange={(e) => setFilePix(e.target.files[0])} />
             </div>
           )}
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-            <select required style={glassInput} onChange={(e) => setSetor(e.target.value)}>
-              <option value="">Setor Destino</option>
-              <option value="Financeiro">Financeiro</option>
-              <option value="Pós-Vendas">Pós-Vendas</option>
-            </select>
-            <select required disabled={!setor} style={glassInput} onChange={(e) => setFormData({...formData, tarefa_destinatario: e.target.value})}>
-              <option value="">Pessoa</option>
-              {usuariosFiltrados.map(u => <option key={u.id} value={u.id}>{u.nome}</option>)}
-            </select>
-          </div>
+          {formData.forma_pagamento === 'Boleto Parcelado' && (
+            <div style={{ display:'flex', gap:'10px' }}>
+               <input type="number" placeholder="Qtd Parcelas" style={glassInput} onChange={(e) => setFormData({...formData, qtd_parcelas: e.target.value})} />
+            </div>
+          )}
+
+          {formData.forma_pagamento.includes('Boleto') && (
+            <div style={{ background: 'rgba(255,255,255,0.2)', padding: '15px', borderRadius: '20px' }}>
+              <label style={{fontSize:'10px', fontWeight:'bold'}}>DATA DA 1ª PARCELA / VENCIMENTO</label>
+              <input type="date" required style={glassInput} onChange={(e) => setFormData({...formData, data_primeira_parcela: e.target.value})} />
+            </div>
+          )}
+
+          <textarea placeholder="Observações..." style={{...glassInput, height:'80px'}} onChange={(e) => setFormData({...formData, obs: e.target.value})} />
+
+          <select required style={glassInput} onChange={(e) => setSetor(e.target.value)}>
+            <option value="">Setor Destino</option>
+            <option value="Financeiro">Financeiro</option>
+            <option value="Pós-Vendas">Pós-Vendas</option>
+          </select>
 
           <button disabled={loading} style={{ backgroundColor: '#22c55e', color: 'white', padding: '18px', borderRadius: '20px', border: 'none', fontWeight: '900', cursor: 'pointer' }}>
-            {loading ? 'PROCESSANDO...' : 'CRIAR CHAMADO NO FLUXO'}
+            {loading ? 'GERANDO...' : 'CRIAR CHAMADO NO FLUXO'}
           </button>
         </form>
       </div>
