@@ -135,7 +135,7 @@ export default function Home() {
       const channel = supabase.channel('master_notif').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'mensagens_chat' }, 
         async payload => {
           if (String(payload.new.usuario_id) === String(session.user.id)) return 
-          new Audio('/notificacao.mp3').play().catch(() => {})
+          new Audio('/notificacao.mp3.mp3').play().catch(() => {})
 
           if (payload.new.chamado_id) {
             const { data: cardInfo } = await supabase.from('Chamado_NF').select('nom_cliente').eq('id', payload.new.chamado_id).single()
