@@ -3,7 +3,7 @@ import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 
-// --- CHAT INTEGRADO (IGUAL AO DA HOME) ---
+// --- CHAT DO CARD (IGUAL AO DA HOME) ---
 function ChatChamado({ chamadoId, userProfile }) {
   const [mensagens, setMensagens] = useState([])
   const [novaMsg, setNovaMsg] = useState('')
@@ -66,15 +66,15 @@ export default function KanbanPage() {
   if (loading) return <div style={{padding:'100px', textAlign:'center'}}>Carregando...</div>
 
   return (
-    <div style={{ padding: '20px', minHeight: '100vh', fontFamily: 'sans-serif' }}>
-      <button onClick={() => router.push('/')} style={{ marginBottom: '20px', padding: '10px 20px', borderRadius: '12px', border: '1px solid #ddd', cursor: 'pointer', background: 'white', fontWeight:'bold' }}>⬅ VOLTAR</button>
-      <div style={{ display: 'flex', gap: '15px', overflowX: 'auto' }}>
+    <div style={{ padding: '20px', minHeight: '100vh', fontFamily: 'sans-serif', background: '#f9f9f9' }}>
+      <button onClick={() => router.push('/')} style={{ marginBottom: '20px', padding: '10px 20px', borderRadius: '12px', border: '1px solid #ddd', cursor: 'pointer', background: 'white', fontWeight:'bold' }}>⬅ VOLTAR PARA TAREFAS</button>
+      <div style={{ display: 'flex', gap: '15px', overflowX: 'auto', alignItems: 'flex-start' }}>
         {colunas.map(col => (
-          <div key={col.id} style={{ minWidth: '270px', flex: 1 }}>
-            <div style={{ background: col.cor, padding: '12px', borderRadius: '15px', marginBottom: '15px', textAlign: 'center', fontWeight: 'bold', fontSize: '11px' }}>{col.titulo}</div>
+          <div key={col.id} style={{ minWidth: '280px', flex: 1 }}>
+            <div style={{ background: col.cor, padding: '15px', borderRadius: '15px', marginBottom: '15px', textAlign: 'center', fontWeight: 'bold', fontSize: '12px' }}>{col.titulo}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {chamados.filter(c => c.status === col.id).map(t => (
-                <div key={t.id} onClick={() => setTarefaSelecionada(t)} style={{ background: 'white', padding: '20px', borderRadius: '25px', cursor: 'pointer', border: '1px solid #eee' }}>
+                <div key={t.id} onClick={() => setTarefaSelecionada(t)} style={{ background: 'white', padding: '20px', borderRadius: '25px', cursor: 'pointer', border: '1px solid #eee', boxShadow: '0 4px 10px rgba(0,0,0,0.02)' }}>
                   <h4 style={{ margin: 0, fontSize: '14px' }}>{t.nom_cliente}</h4>
                   <p style={{ margin: '8px 0 0 0', fontWeight: 'bold', color: '#166534', fontSize: '13px' }}>R$ {t.valor_servico}</p>
                 </div>
@@ -90,7 +90,7 @@ export default function KanbanPage() {
             <div style={{ padding: '40px', overflowY: 'auto', maxHeight: '85vh' }}>
               <h2 style={{ color: '#14532d' }}>{tarefaSelecionada.nom_cliente}</h2>
               <p style={{marginTop:'20px'}}><b>Valor:</b> R$ {tarefaSelecionada.valor_servico}</p>
-              <p><b>Status:</b> {tarefaSelecionada.status.toUpperCase()}</p>
+              <p><b>Fase:</b> {(tarefaSelecionada.status || '').toUpperCase()}</p>
               <button onClick={() => setTarefaSelecionada(null)} style={{ background: '#000', color: '#fff', border: 'none', padding: '15px', borderRadius: '15px', fontWeight: 'bold', width: '100%', marginTop: '30px', cursor: 'pointer' }}>FECHAR</button>
             </div>
             <div style={{ padding: '30px', background: '#f8fafc' }}>
