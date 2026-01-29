@@ -3,7 +3,7 @@ import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 
-// --- COMPONENTE DE CHAT (COM SOM, NOTIFICAÇÃO E FIX DE DUPLICIDADE) ---
+// --- COMPONENTE DE CHAT ---
 function ChatFlutuante({ userProfile }) {
   const [isOpen, setIsOpen] = useState(false)
   const [mensagens, setMensagens] = useState([])
@@ -30,15 +30,12 @@ function ChatFlutuante({ userProfile }) {
         payload => {
           const msgNova = payload.new
           const souEu = String(msgNova.usuario_id) === String(userProfile?.id)
-
           setMensagens(prev => {
             if (souEu) {
-              // Remove a msg temporária e coloca a oficial do banco
               const semTemps = prev.filter(m => !String(m.id).startsWith('temp-'))
               return [...semTemps, msgNova]
             }
             if (prev.find(m => m.id === msgNova.id)) return prev
-            
             playSound()
             if (!isOpenRef.current) setUnreadCount(c => c + 1)
             return [...prev, msgNova]
@@ -61,19 +58,15 @@ function ChatFlutuante({ userProfile }) {
     if (!novaMsg.trim()) return
     const textoTemp = novaMsg
     setNovaMsg('')
-
     const msgTemp = { id: `temp-${Date.now()}`, texto: textoTemp, usuario_nome: userProfile.nome, usuario_id: userProfile.id }
     setMensagens(prev => [...prev, msgTemp])
-
     await supabase.from('mensagens_chat').insert([{ texto: textoTemp, usuario_nome: userProfile.nome, usuario_id: userProfile.id }])
   }
 
   return (
     <div style={{ position: 'fixed', bottom: '30px', right: '30px', zIndex: 1000 }}>
       <div style={{ position: 'relative' }}>
-        <button onClick={() => setIsOpen(!isOpen)} style={{ width: '60px', height: '60px', borderRadius: '50%', background: '#22c55e', color: 'white', border: 'none', fontSize: '24px', cursor: 'pointer', boxShadow: '0 10px 20px rgba(0,0,0,0.1)' }}>
-          {isOpen ? '✕' : '💬'}
-        </button>
+        <button onClick={() => setIsOpen(!isOpen)} style={{ width: '60px', height: '60px', borderRadius: '50%', background: '#22c55e', color: 'white', border: 'none', fontSize: '24px', cursor: 'pointer', boxShadow: '0 10px 20px rgba(0,0,0,0.1)' }}>{isOpen ? '✕' : '💬'}</button>
         {!isOpen && unreadCount > 0 && (
           <div style={{ position: 'absolute', top: '-5px', right: '-5px', background: 'red', color: 'white', borderRadius: '50%', width: '22px', height: '22px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 'bold', border: '2px solid white' }}>{unreadCount}</div>
         )}
@@ -105,9 +98,16 @@ export default function Home() {
   const [loading, setLoading] = useState(true)
   const [isSalvando, setIsSalvando] = useState(false)
   const [tarefaSelecionada, setTarefaSelecionada] = useState(null)
-  const [isSelecaoOpen, setIsSelecaoOpen] = useState(false) // MODAL NOVO CHAMADO
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   
+  // Estados para o novo fluxo de abertura
+  const [isSelecaoOpen, setIsSelecaoOpen] = useState(false) 
+  const [showFormNf, setShowFormNf] = useState(false)
+  const [novoChamado, setNovoChamado] = useState({
+    nom_cliente: '', valor_servico: '', forma_pagamento: 'Boleto 30 dias', 
+    setor: 'Financeiro', num_nf_peca: '', num_nf_servico: '', obs: ''
+  })
+
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [fileBoleto, setFileBoleto] = useState(null)
   const [fileComprovante, setFileComprovante] = useState(null)
   const [foiBaixado, setFoiBaixado] = useState(false)
@@ -119,7 +119,7 @@ export default function Home() {
     if (!session) return router.push('/login')
     const { data: prof } = await supabase.from('financeiro_usu').select('*').eq('id', session.user.id).single()
     setUserProfile(prof)
-    const { data: chamados } = await supabase.from('Chamado_NF').select('*').neq('status', 'concluido')
+    const { data: chamados } = await supabase.from('Chamado_NF').select('*').neq('status', 'concluido').order('id', {ascending: false})
     const filtradas = (chamados || []).filter(t => {
       if (prof?.funcao === 'Financeiro') return t.status === 'gerar_boleto'
       if (prof?.funcao === 'Pós-Vendas') return t.status === 'enviar_cliente' || t.status === 'vencido'
@@ -164,6 +164,25 @@ export default function Home() {
     finally { setIsSalvando(false) }
   }
 
+  // FUNÇÃO PARA CRIAR O CHAMADO NO BANCO
+  const salvarNovoChamado = async () => {
+    if (!novoChamado.nom_cliente || !novoChamado.valor_servico) return alert("Preencha o cliente e o valor!")
+    setIsSalvando(true)
+    try {
+      const { error } = await supabase.from('Chamado_NF').insert([{
+        ...novoChamado,
+        status: 'gerar_boleto',
+        tarefa: 'Gerar Boleto'
+      }])
+      if (error) throw error
+      alert("Chamado de Nota Fiscal aberto com sucesso!")
+      setIsSelecaoOpen(false)
+      setShowFormNf(false)
+      carregarDados() // Recarrega a lista
+    } catch (e) { alert(e.message) }
+    finally { setIsSalvando(false) }
+  }
+
   const glassStyle = { background: 'rgba(255, 255, 255, 0.45)', backdropFilter: 'blur(15px)', border: '1px solid rgba(255, 255, 255, 0.3)', borderRadius: '35px' }
 
   if (loading) return <div style={{padding:'100px', textAlign:'center', fontWeight:'bold'}}>Carregando...</div>
@@ -171,7 +190,6 @@ export default function Home() {
   return (
     <div style={{ padding: '30px 20px', maxWidth: '850px', margin: '0 auto', fontFamily: 'sans-serif' }}>
       
-      {/* HEADER RESTAURADO */}
       <header style={{ ...glassStyle, padding: '20px 30px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
           <div style={{ width: '45px', height: '45px', background: '#22c55e', borderRadius: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold' }}>{userProfile?.nome?.charAt(0)}</div>
@@ -188,7 +206,6 @@ export default function Home() {
         </div>
       </header>
 
-      {/* FILA DE TAREFAS */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
         <h2 style={{ fontSize: '22px', fontWeight: '900', color: '#14532d' }}>Fila: {userProfile?.funcao}</h2>
         {tarefas.map(t => (
@@ -203,32 +220,73 @@ export default function Home() {
         {tarefas.length === 0 && <p style={{textAlign:'center', color:'#999'}}>Nenhuma tarefa pendente. ✨</p>}
       </div>
 
-      {/* MODAL DETALHE DA TAREFA */}
-      {tarefaSelecionada && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(12px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '20px' }}>
-          <div style={{ background: 'white', padding: '40px', borderRadius: '45px', width: '100%', maxWidth: '450px' }}>
-            <h3 style={{ fontWeight: '900' }}>{tarefaSelecionada.nom_cliente}</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginTop: '20px' }}>
-              {tarefaSelecionada.status === 'gerar_boleto' && <input type="file" onChange={e => setFileBoleto(e.target.files[0])} />}
-              {tarefaSelecionada.status === 'enviar_cliente' && (
-                <button onClick={() => { window.open(tarefaSelecionada.anexo_boleto); setFoiBaixado(true); }} style={{ background: '#eff6ff', border: '1px solid #3b82f6', padding: '15px', borderRadius: '12px', color: '#1d4ed8', fontWeight: 'bold' }}>⬇ BAIXAR BOLETO</button>
-              )}
-              {tarefaSelecionada.status === 'vencido' && <input type="file" onChange={e => setFileComprovante(e.target.files[0])} />}
-              <button onClick={handleAvanco} disabled={isSalvando} style={{ background: 'black', color: 'white', padding: '18px', borderRadius: '15px', fontWeight: 'bold' }}>{isSalvando ? 'PROCESSANDO...' : 'CONFIRMAR ⮕'}</button>
-              <button onClick={() => setTarefaSelecionada(null)} style={{ background: 'none', border: 'none', color: '#999' }}>CANCELAR</button>
-            </div>
+      {/* MODAL DE ESCOLHA INICIAL (+ NOVO) */}
+      {isSelecaoOpen && !showFormNf && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(12px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+          <div style={{ background: 'white', padding: '40px', borderRadius: '45px', width: '90%', maxWidth: '400px', textAlign: 'center' }}>
+            <h3 style={{fontWeight:'900', marginBottom:'30px'}}>O que deseja abrir?</h3>
+            <button onClick={() => setShowFormNf(true)} style={{ width:'100%', background:'#22c55e', color:'white', padding:'20px', borderRadius:'15px', border:'none', fontWeight:'bold', cursor:'pointer', marginBottom:'15px', fontSize: '16px' }}>📑 NOTA FISCAL / FATURAMENTO</button>
+            <button onClick={() => alert("Função 'Outros Assuntos' em breve!")} style={{ width:'100%', background:'#f1f5f9', color:'#666', padding:'20px', borderRadius:'15px', border:'none', fontWeight:'bold', cursor:'pointer', marginBottom:'20px', fontSize: '16px' }}>💬 OUTRO ASSUNTO</button>
+            <button onClick={() => setIsSelecaoOpen(false)} style={{ background:'none', color:'#999', border:'none', cursor:'pointer' }}>CANCELAR</button>
           </div>
         </div>
       )}
 
-      {/* MODAL NOVO CHAMADO (RESTAURADO) */}
-      {isSelecaoOpen && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(12px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
-          <div style={{ background: 'white', padding: '40px', borderRadius: '45px', width: '90%', maxWidth: '400px' }}>
-            <h3 style={{fontWeight:'900', marginBottom:'20px'}}>Novo Chamado</h3>
-            <p style={{fontSize:'13px', color:'#666', marginBottom:'20px'}}>Deseja iniciar um novo fluxo de faturamento?</p>
-            <button onClick={() => router.push('/abrir-chamado')} style={{ width:'100%', background:'#22c55e', color:'white', padding:'15px', borderRadius:'15px', border:'none', fontWeight:'bold', cursor:'pointer', marginBottom:'10px' }}>INICIAR FLUXO</button>
-            <button onClick={() => setIsSelecaoOpen(false)} style={{ width:'100%', background:'none', color:'#999', padding:'10px', border:'none', cursor:'pointer' }}>CANCELAR</button>
+      {/* MODAL DO FORMULÁRIO DE NOTA FISCAL */}
+      {showFormNf && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(12px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 101, padding: '20px' }}>
+          <div style={{ background: 'white', padding: '30px', borderRadius: '35px', width: '100%', maxWidth: '500px', maxHeight: '90vh', overflowY: 'auto' }}>
+            <h3 style={{fontWeight:'900', marginBottom:'20px', color: '#14532d'}}>Novo Faturamento NF</h3>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <label style={{fontSize: '11px', fontWeight: 'bold'}}>CLIENTE:</label>
+              <input style={{padding: '12px', borderRadius: '10px', border: '1px solid #ddd'}} placeholder="Nome do Cliente" value={novoChamado.nom_cliente} onChange={e => setNovoChamado({...novoChamado, nom_cliente: e.target.value})} />
+              
+              <div style={{display: 'flex', gap: '10px'}}>
+                <div style={{flex: 1}}>
+                  <label style={{fontSize: '11px', fontWeight: 'bold'}}>VALOR R$:</label>
+                  <input type="number" style={{padding: '12px', borderRadius: '10px', border: '1px solid #ddd', width: '100%'}} placeholder="0,00" value={novoChamado.valor_servico} onChange={e => setNovoChamado({...novoChamado, valor_servico: e.target.value})} />
+                </div>
+                <div style={{flex: 1}}>
+                  <label style={{fontSize: '11px', fontWeight: 'bold'}}>FORMA PGTO:</label>
+                  <select style={{padding: '12px', borderRadius: '10px', border: '1px solid #ddd', width: '100%'}} value={novoChamado.forma_pagamento} onChange={e => setNovoChamado({...novoChamado, forma_pagamento: e.target.value})}>
+                    <option>Boleto 30 dias</option>
+                    <option>Boleto 30/60 dias</option>
+                    <option>Pix</option>
+                    <option>À Vista</option>
+                    <option>Cartão</option>
+                  </select>
+                </div>
+              </div>
+
+              <label style={{fontSize: '11px', fontWeight: 'bold'}}>SETOR DESTINO:</label>
+              <select style={{padding: '12px', borderRadius: '10px', border: '1px solid #ddd'}} value={novoChamado.setor} onChange={e => setNovoChamado({...novoChamado, setor: e.target.value})}>
+                <option>Financeiro</option>
+                <option>Peças</option>
+                <option>Oficina</option>
+                <option>Pós-Vendas</option>
+                <option>Vendas</option>
+              </select>
+
+              <div style={{display: 'flex', gap: '10px'}}>
+                <div style={{flex: 1}}>
+                  <label style={{fontSize: '11px', fontWeight: 'bold'}}>NF PEÇA:</label>
+                  <input style={{padding: '12px', borderRadius: '10px', border: '1px solid #ddd', width: '100%'}} placeholder="Nº NF" value={novoChamado.num_nf_peca} onChange={e => setNovoChamado({...novoChamado, num_nf_peca: e.target.value})} />
+                </div>
+                <div style={{flex: 1}}>
+                  <label style={{fontSize: '11px', fontWeight: 'bold'}}>NF SERVIÇO:</label>
+                  <input style={{padding: '12px', borderRadius: '10px', border: '1px solid #ddd', width: '100%'}} placeholder="Nº NF" value={novoChamado.num_nf_servico} onChange={e => setNovoChamado({...novoChamado, num_nf_servico: e.target.value})} />
+                </div>
+              </div>
+
+              <label style={{fontSize: '11px', fontWeight: 'bold'}}>OBSERVAÇÕES:</label>
+              <textarea style={{padding: '12px', borderRadius: '10px', border: '1px solid #ddd', minHeight: '60px'}} placeholder="Instruções adicionais..." value={novoChamado.obs} onChange={e => setNovoChamado({...novoChamado, obs: e.target.value})} />
+
+              <button onClick={salvarNovoChamado} disabled={isSalvando} style={{ background: '#22c55e', color: 'white', padding: '18px', borderRadius: '15px', fontWeight: 'bold', border: 'none', marginTop: '10px', cursor: 'pointer' }}>
+                {isSalvando ? 'SALVANDO...' : 'CRIAR CHAMADO ⮕'}
+              </button>
+              <button onClick={() => setShowFormNf(false)} style={{ background: 'none', color: '#999', border: 'none', cursor: 'pointer' }}>VOLTAR</button>
+            </div>
           </div>
         </div>
       )}
