@@ -13,14 +13,17 @@ export default function Chat({ userProfile }) {
 
   useEffect(() => {
     isOpenRef.current = isOpen
-    if (isOpen) setUnreadCount(0)
+    if (isOpen) {
+      setUnreadCount(0) // Zera as notificações ao abrir
+    }
   }, [isOpen])
 
   const playNotificationSound = () => {
     try {
-      const audio = new Audio('/notificacao.mp3')
+      // Se você colocou o som na pasta 'public', use: '/notificacao.mp3'
+      const audio = new Audio('https://www.soundjay.com/buttons/beep-07a.mp3') 
       audio.volume = 0.5
-      audio.play().catch(e => console.log("Áudio bloqueado: interaja com a página."))
+      audio.play()
     } catch (err) {
       console.log("Erro ao tocar som:", err)
     }
@@ -31,27 +34,15 @@ export default function Chat({ userProfile }) {
       .channel('chat_realtime')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'mensagens_chat' }, 
         (payload) => {
-          const msgRecebida = payload.new
-          const meuId = String(userProfile?.id)
-          const idRemetente = String(msgRecebida.usuario_id)
-
-          // --- 1. RESOLVENDO A DUPLICAÇÃO ---
+          // 1. Adiciona a mensagem
           setMensagens((prev) => {
-            // Se a mensagem que chegou for MINHA, eu ignoro ela no Realtime
-            // porque eu já adicionei ela na tela no momento que cliquei em "Enviar"
-            if (idRemetente === meuId) {
-              return prev
-            }
-            
-            // Se for de OUTRA pessoa, verifica se já não existe (prevenção extra)
-            const jaExiste = prev.find(m => m.id === msgRecebida.id)
+            const jaExiste = prev.find(m => m.id === payload.new.id)
             if (jaExiste) return prev
-            
-            return [...prev, msgRecebida]
+            return [...prev, payload.new]
           })
 
-          // --- 2. RESOLVENDO SOM E BOLINHA ---
-          if (idRemetente !== meuId) {
+          // 2. Lógica de Notificação (SÓ SE NÃO FOR EU)
+          if (String(payload.new.usuario_id) !== String(userProfile?.id)) {
             playNotificationSound()
 
             if (!isOpenRef.current) {
@@ -79,21 +70,18 @@ export default function Chat({ userProfile }) {
     e.preventDefault()
     if (!novaMsg.trim()) return
 
-    const textoTemp = novaMsg
-    setNovaMsg('')
-
-    // 1. Adiciono na MINHA tela imediatamente (Update Otimista)
-    const msgOtimista = { 
-      texto: textoTemp, 
+    const msgTemporaria = { 
+      texto: novaMsg, 
       usuario_nome: userProfile.nome, 
       usuario_id: userProfile.id,
-      id: Date.now() // ID temporário
+      id: Math.random() 
     }
-    setMensagens(prev => [...prev, msgOtimista])
 
-    // 2. Mando para o banco de dados
+    setMensagens(prev => [...prev, msgTemporaria])
+    setNovaMsg('')
+
     await supabase.from('mensagens_chat').insert([{ 
-      texto: textoTemp, 
+      texto: msgTemporaria.texto, 
       usuario_nome: userProfile.nome, 
       usuario_id: userProfile.id 
     }])
@@ -102,6 +90,7 @@ export default function Chat({ userProfile }) {
   return (
     <div style={{ position: 'fixed', bottom: '30px', right: '30px', zIndex: 9999 }}>
       
+      {/* BOTÃO COM A NOTIFICAÇÃO */}
       <div style={{ position: 'relative' }}>
         <button 
           onClick={() => setIsOpen(!isOpen)} 
@@ -119,18 +108,29 @@ export default function Chat({ userProfile }) {
         {/* BOLINHA VERMELHA (BADGE) */}
         {!isOpen && unreadCount > 0 && (
           <div style={{
-            position: 'absolute', top: '-5px', right: '-5px',
-            background: '#ff0000', color: 'white', fontSize: '12px',
-            fontWeight: 'bold', width: '24px', height: '24px',
-            borderRadius: '50%', display: 'flex', alignItems: 'center',
-            justifyContent: 'center', border: '2px solid white',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.4)', zIndex: 10000
+            position: 'absolute',
+            top: '-2px',
+            right: '-2px',
+            background: '#ff0000', // Vermelho vivo
+            color: 'white',
+            fontSize: '12px',
+            fontWeight: 'bold',
+            minWidth: '22px',
+            height: '22px',
+            borderRadius: '11px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            border: '2px solid white',
+            boxShadow: '0 2px 5px rgba(0,0,0,0.3)',
+            zIndex: 10001 // Garantir que fique por cima de tudo
           }}>
             {unreadCount}
           </div>
         )}
       </div>
 
+      {/* JANELA DO CHAT */}
       {isOpen && (
         <div style={{ 
           position: 'absolute', bottom: '85px', right: 0, 
@@ -139,12 +139,14 @@ export default function Chat({ userProfile }) {
           boxShadow: '0 15px 40px rgba(0,0,0,0.2)', border: '1px solid #eee',
           overflow: 'hidden'
         }}>
+          {/* TOPO */}
           <div style={{ padding: '15px 20px', background: '#22c55e', color: 'white' }}>
-            <h4 style={{ margin: 0, fontSize: '14px' }}>Chat Nova Tratores</h4>
-            <span style={{ fontSize: '10px' }}>Suporte online</span>
+            <h4 style={{ margin: 0, fontSize: '14px' }}>Atendimento</h4>
+            <span style={{ fontSize: '10px' }}>Respondemos na hora</span>
           </div>
 
-          <div ref={scrollRef} style={{ flex: 1, padding: '15px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px', background: '#f8f9fa' }}>
+          {/* MENSAGENS */}
+          <div ref={scrollRef} style={{ flex: 1, padding: '15px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px', background: '#f9f9f9' }}>
             {mensagens.map((m) => (
               <div key={m.id} style={{ 
                 alignSelf: String(m.usuario_id) === String(userProfile.id) ? 'flex-end' : 'flex-start',
@@ -159,11 +161,12 @@ export default function Chat({ userProfile }) {
             ))}
           </div>
 
+          {/* INPUT */}
           <form onSubmit={enviarMensagem} style={{ padding: '15px', display: 'flex', gap: '8px', background: 'white', borderTop: '1px solid #eee' }}>
             <input 
               value={novaMsg} 
               onChange={(e) => setNovaMsg(e.target.value)} 
-              placeholder="Digite..." 
+              placeholder="Sua mensagem..." 
               style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #ddd', outline: 'none' }} 
             />
             <button style={{ background: '#22c55e', color: 'white', border: 'none', padding: '10px 15px', borderRadius: '8px', cursor: 'pointer' }}>➔</button>
