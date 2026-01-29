@@ -6,21 +6,27 @@ export default function Chat({ userProfile }) {
   const [isOpen, setIsOpen] = useState(false)
   const [mensagens, setMensagens] = useState([])
   const [novaMsg, setNovaMsg] = useState('')
-  const [unreadCount, setUnreadCount] = useState(0) // Contador de novas
+  const [unreadCount, setUnreadCount] = useState(0)
   const scrollRef = useRef()
   
-  // Ref para rastrear se o chat está aberto sem causar re-render no useEffect do Supabase
+  // Ref para rastrear se o chat está aberto dentro dos callbacks do Supabase
   const isOpenRef = useRef(isOpen)
 
   useEffect(() => {
     isOpenRef.current = isOpen
-    if (isOpen) setUnreadCount(0) // Zera ao abrir
+    if (isOpen) setUnreadCount(0) // Zera as notificações ao abrir
   }, [isOpen])
 
-  // Função para tocar o som
+  // Função robusta para o som
   const playNotificationSound = () => {
-    const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3') // Som de "ping"
-    audio.play().catch(e => console.log("Som bloqueado pelo navegador até interação do usuário."))
+    try {
+      // Som de "beep" curto e limpo
+      const audio = new Audio('https://www.soundjay.com/buttons/beep-07a.mp3')
+      audio.volume = 0.4
+      audio.play().catch(e => console.log("Navegador bloqueou áudio: interaja com a página primeiro."))
+    } catch (err) {
+      console.error("Erro ao carregar áudio:", err)
+    }
   }
 
   useEffect(() => {
@@ -28,18 +34,22 @@ export default function Chat({ userProfile }) {
       .channel('chat_realtime')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'mensagens_chat' }, 
         (payload) => {
-          // 1. Só adiciona se não for duplicada
+          // 1. Evita duplicados (checa se o ID já existe na lista)
           setMensagens((prev) => {
             const jaExiste = prev.find(m => m.id === payload.new.id)
             if (jaExiste) return prev
             return [...prev, payload.new]
           })
 
-          // 2. Se a mensagem for de OUTRO usuário...
-          if (payload.new.usuario_id !== userProfile.id) {
-            playNotificationSound() // Toca o som
+          // 2. Lógica de Notificação e Som
+          // Usamos String() para garantir que a comparação funcione mesmo se um ID for número e outro string
+          const idRemetente = String(payload.new.usuario_id)
+          const meuId = String(userProfile?.id)
 
-            // 3. Se o chat estiver fechado, aumenta o contador
+          if (idRemetente !== meuId) {
+            playNotificationSound()
+
+            // Aumenta contador se o chat estiver fechado
             if (!isOpenRef.current) {
               setUnreadCount(prev => prev + 1)
             }
@@ -49,35 +59,43 @@ export default function Chat({ userProfile }) {
       .subscribe()
 
     const carregarHistorico = async () => {
-      const { data } = await supabase.from('mensagens_chat').select('*').order('created_at', { ascending: true }).limit(50)
+      const { data } = await supabase
+        .from('mensagens_chat')
+        .select('*')
+        .order('created_at', { ascending: true })
+        .limit(50)
       if (data) setMensagens(data)
     }
     carregarHistorico()
 
     return () => { supabase.removeChannel(channel) }
-  }, [userProfile.id])
+  }, [userProfile?.id])
 
+  // Auto-scroll para o final
   useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    }
   }, [mensagens, isOpen])
 
   const enviarMensagem = async (e) => {
     e.preventDefault()
     if (!novaMsg.trim()) return
 
-    const msgTemporaria = { 
-      texto: novaMsg, 
-      usuario_nome: userProfile.nome, 
-      usuario_id: userProfile.id,
-      id: Math.random() 
-    }
-
-    setMensagens(prev => [...prev, msgTemporaria])
-    const textoParaEnviar = novaMsg
+    const textoTemp = novaMsg
     setNovaMsg('')
 
+    // Update otimista (mostra na hora para quem envia)
+    const msgTemporaria = { 
+      texto: textoTemp, 
+      usuario_nome: userProfile.nome, 
+      usuario_id: userProfile.id,
+      id: Math.random() // ID temporário
+    }
+    setMensagens(prev => [...prev, msgTemporaria])
+
     await supabase.from('mensagens_chat').insert([{ 
-      texto: textoParaEnviar, 
+      texto: textoTemp, 
       usuario_nome: userProfile.nome, 
       usuario_id: userProfile.id 
     }])
@@ -93,7 +111,7 @@ export default function Chat({ userProfile }) {
 
   return (
     <div style={{ position: 'fixed', bottom: '30px', right: '30px', zIndex: 1000 }}>
-      {/* BOTÃO FLUTUANTE COM NOTIFICAÇÃO */}
+      {/* BOTÃO FLUTUANTE */}
       <button 
         onClick={() => setIsOpen(!isOpen)} 
         style={{ 
@@ -105,11 +123,11 @@ export default function Chat({ userProfile }) {
       >
         {isOpen ? '✕' : '💬'}
 
-        {/* BOLINHA DE NOTIFICAÇÃO (BADGE) */}
+        {/* CONTADOR DE NOTIFICAÇÃO (BADGE) */}
         {!isOpen && unreadCount > 0 && (
           <div style={{
             position: 'absolute', top: '-5px', right: '-5px',
-            background: '#ef4444', color: 'white', fontSize: '12px',
+            background: '#ef4444', color: 'white', fontSize: '11px',
             fontWeight: 'bold', width: '22px', height: '22px',
             borderRadius: '50%', display: 'flex', alignItems: 'center',
             justifyContent: 'center', border: '2px solid white'
@@ -127,13 +145,14 @@ export default function Chat({ userProfile }) {
             <span style={{ fontSize: '10px', color: '#22c55e' }}>● Online agora</span>
           </div>
 
+          {/* LISTA DE MENSAGENS */}
           <div ref={scrollRef} style={{ flex: 1, padding: '15px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {mensagens.map((m) => (
               <div key={m.id} style={{ 
-                alignSelf: m.usuario_id === userProfile.id ? 'flex-end' : 'flex-start',
+                alignSelf: String(m.usuario_id) === String(userProfile.id) ? 'flex-end' : 'flex-start',
                 maxWidth: '80%', padding: '10px 15px', borderRadius: '15px',
-                background: m.usuario_id === userProfile.id ? '#22c55e' : 'white',
-                color: m.usuario_id === userProfile.id ? 'white' : 'black',
+                background: String(m.usuario_id) === String(userProfile.id) ? '#22c55e' : 'white',
+                color: String(m.usuario_id) === String(userProfile.id) ? 'white' : 'black',
                 fontSize: '12px', boxShadow: '0 2px 5px rgba(0,0,0,0.05)'
               }}>
                 <p style={{ margin: 0, fontSize: '9px', opacity: 0.7, fontWeight: 'bold' }}>{m.usuario_nome}</p>
@@ -143,7 +162,12 @@ export default function Chat({ userProfile }) {
           </div>
 
           <form onSubmit={enviarMensagem} style={{ padding: '15px', display: 'flex', gap: '10px' }}>
-            <input value={novaMsg} onChange={(e) => setNovaMsg(e.target.value)} placeholder="Digite sua dúvida..." style={{ flex: 1, padding: '10px', borderRadius: '10px', border: '1px solid #ddd', outline: 'none', fontSize: '12px' }} />
+            <input 
+              value={novaMsg} 
+              onChange={(e) => setNovaMsg(e.target.value)} 
+              placeholder="Digite sua dúvida..." 
+              style={{ flex: 1, padding: '10px', borderRadius: '10px', border: '1px solid #ddd', outline: 'none', fontSize: '12px' }} 
+            />
             <button style={{ background: '#14532d', color: 'white', border: 'none', padding: '10px', borderRadius: '10px', cursor: 'pointer' }}>➔</button>
           </form>
         </div>
