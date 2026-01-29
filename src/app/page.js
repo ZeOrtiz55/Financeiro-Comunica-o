@@ -3,7 +3,7 @@ import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 
-// --- 1. CHAT ESPECÍFICO DO CARD ---
+// --- 1. CHAT ESPECÍFICO DO CARD (LADO DIREITO DO MODAL) ---
 function ChatChamado({ chamadoId, userProfile }) {
   const [mensagens, setMensagens] = useState([])
   const [novaMsg, setNovaMsg] = useState('')
@@ -34,7 +34,7 @@ function ChatChamado({ chamadoId, userProfile }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', borderLeft: '1px solid #eee', paddingLeft: '20px' }}>
-      <h4 style={{ fontSize: '11px', color: '#22c55e', marginBottom: '10px', fontWeight:'900' }}>CONVERSA DO CHAMADO</h4>
+      <h4 style={{ fontSize: '11px', color: '#22c55e', marginBottom: '10px', fontWeight:'900' }}>CONVERSA DO CHAMADO #{chamadoId}</h4>
       <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', padding: '10px', background: '#f8fafc', borderRadius: '15px' }}>
         {mensagens.map(m => {
           const souEu = String(m.usuario_id) === String(userProfile?.id)
@@ -46,7 +46,7 @@ function ChatChamado({ chamadoId, userProfile }) {
         })}
       </div>
       <form onSubmit={enviar} style={{ display: 'flex', gap: '5px', paddingTop: '15px' }}>
-        <input value={novaMsg} onChange={e => setNovaMsg(e.target.value)} placeholder="Tirar dúvida..." style={{ flex: 1, padding: '10px', borderRadius: '10px', border: '1px solid #ddd', fontSize: '12px', outline: 'none' }} />
+        <input value={novaMsg} onChange={e => setNovaMsg(e.target.value)} placeholder="Mensagem..." style={{ flex: 1, padding: '10px', borderRadius: '10px', border: '1px solid #ddd', fontSize: '12px', outline: 'none' }} />
         <button style={{ background: '#22c55e', color: 'white', border: 'none', borderRadius: '10px', padding: '10px', cursor:'pointer' }}>➔</button>
       </form>
     </div>
@@ -63,17 +63,14 @@ function ChatFlutuante({ userProfile, unreadGeral, setUnreadGeral }) {
   useEffect(() => {
     if (!userProfile?.id) return
     supabase.from('mensagens_chat').select('*').is('chamado_id', null).order('created_at', { ascending: true }).limit(50).then(({ data }) => data && setMensagens(data))
-    
-    // O listener de mensagens gerais agora está na Home para tocar o som globalmente
   }, [userProfile?.id])
 
-  // Listener local apenas para atualizar a lista de msgs quando o chat estiver aberto
   useEffect(() => {
     const channel = supabase.channel('chat_geral_refresh').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'mensagens_chat' }, 
       p => { if (!p.new.chamado_id && String(p.new.usuario_id) !== String(userProfile.id)) setMensagens(prev => [...prev, p.new]) }
     ).subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [userProfile.id])
+  }, [userProfile?.id])
 
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight }, [mensagens, isOpen])
 
@@ -86,31 +83,29 @@ function ChatFlutuante({ userProfile, unreadGeral, setUnreadGeral }) {
 
   return (
     <div style={{ position: 'fixed', bottom: '30px', right: '30px', zIndex: 3000, display:'flex', alignItems:'center', gap:'10px' }}>
-      {!isOpen && <span style={{ background:'rgba(0,0,0,0.7)', color:'white', padding:'5px 12px', borderRadius:'10px', fontSize:'10px', fontWeight:'bold' }}>CHAT GERAL</span>}
-      
+      {!isOpen && <span style={{ background:'rgba(0,0,0,0.7)', color:'white', padding:'6px 15px', borderRadius:'20px', fontSize:'11px', fontWeight:'bold', backdropFilter:'blur(5px)' }}>CHAT GERAL</span>}
       <div style={{ position: 'relative' }}>
         <button onClick={() => {setIsOpen(!isOpen); setUnreadGeral(0)}} style={{ width: '60px', height: '60px', borderRadius: '50%', background: '#166534', color: '#fff', border: 'none', fontSize: '24px', cursor: 'pointer', boxShadow: '0 5px 15px rgba(0,0,0,0.2)' }}>
           {isOpen ? '✕' : '💬'}
         </button>
         {!isOpen && unreadGeral > 0 && (
-          <div style={{ position:'absolute', top:0, right:0, background:'red', width:'20px', height:'20px', borderRadius:'50%', fontSize:'10px', display:'flex', alignItems:'center', justifyContent:'center', color:'white', border:'2px solid white', fontWeight:'bold' }}>{unreadGeral}</div>
+          <div style={{ position:'absolute', top:0, right:0, background:'red', width:'22px', height:'22px', borderRadius:'50%', fontSize:'11px', display:'flex', alignItems:'center', justifyContent:'center', color:'white', border:'2px solid white', fontWeight:'bold' }}>{unreadGeral}</div>
         )}
       </div>
-
       {isOpen && (
-        <div style={{ position: 'absolute', bottom: '75px', right: 0, width: '300px', height: '400px', background: '#fff', borderRadius: '20px', display: 'flex', flexDirection: 'column', boxShadow: '0 10px 30px rgba(0,0,0,0.1)', overflow: 'hidden', border:'1px solid #eee' }}>
-           <div style={{ padding: '15px', background: '#166534', color: '#fff', fontWeight: 'bold' }}>Chat Geral</div>
-           <div ref={scrollRef} style={{ flex: 1, padding: '10px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {mensagens.map(m => ( <div key={m.id} style={{ alignSelf: String(m.usuario_id) === String(userProfile.id) ? 'flex-end' : 'flex-start', background: String(m.usuario_id) === String(userProfile.id) ? '#22c55e' : '#eee', color: String(m.usuario_id) === String(userProfile.id) ? '#fff' : '#000', padding: '8px', borderRadius: '10px', fontSize: '11px' }}><b style={{fontSize:'8px', display:'block'}}>{m.usuario_nome}</b>{m.texto}</div> ))}
+        <div style={{ position: 'absolute', bottom: '80px', right: 0, width: '320px', height: '450px', background: '#fff', borderRadius: '25px', display: 'flex', flexDirection: 'column', boxShadow: '0 10px 40px rgba(0,0,0,0.2)', overflow: 'hidden', border:'1px solid #eee' }}>
+           <div style={{ padding: '15px', background: '#166534', color: '#fff', fontWeight: 'bold' }}>Chat Geral Nova Tratores</div>
+           <div ref={scrollRef} style={{ flex: 1, padding: '15px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {mensagens.map(m => ( <div key={m.id} style={{ alignSelf: String(m.usuario_id) === String(userProfile.id) ? 'flex-end' : 'flex-start', background: String(m.usuario_id) === String(userProfile.id) ? '#22c55e' : '#eee', color: String(m.usuario_id) === String(userProfile.id) ? '#fff' : '#000', padding: '10px', borderRadius: '15px', fontSize: '12px' }}><b style={{fontSize:'8px', display:'block'}}>{m.usuario_nome}</b>{m.texto}</div> ))}
            </div>
-           <form onSubmit={enviar} style={{ padding: '10px', display: 'flex', gap: '5px', borderTop:'1px solid #eee' }}><input value={novaMsg} onChange={e => setNovaMsg(e.target.value)} placeholder="..." style={{flex:1, padding:'8px', borderRadius:'8px', border:'1px solid #ddd', fontSize:'12px'}} /><button style={{background:'#166534', color:'#fff', border:'none', borderRadius:'8px', padding:'0 10px'}}>➔</button></form>
+           <form onSubmit={enviar} style={{ padding: '10px', display: 'flex', gap: '5px', borderTop:'1px solid #eee' }}><input value={novaMsg} onChange={e => setNovaMsg(e.target.value)} placeholder="Dúvida geral..." style={{flex:1, padding:'10px', borderRadius:'10px', border:'1px solid #ddd', fontSize:'12px', outline:'none'}} /><button style={{background:'#166534', color:'#fff', border:'none', borderRadius:'10px', padding:'0 15px'}}>➔</button></form>
         </div>
       )}
     </div>
   )
 }
 
-// --- 3. PÁGINA HOME ---
+// --- 3. PÁGINA PRINCIPAL ---
 export default function Home() {
   const [tarefas, setTarefas] = useState([])
   const [userProfile, setUserProfile] = useState(null)
@@ -120,7 +115,8 @@ export default function Home() {
   
   // Notificações
   const [unreadGeral, setUnreadGeral] = useState(0)
-  const [notificacoesCards, setNotificacoesCards] = useState([]) // Armazena objetos {id, remetente, cardNome}
+  const [notificacoesCards, setNotificacoesCards] = useState([]) 
+  const [showNotiPanel, setShowNotiPanel] = useState(false)
 
   const router = useRouter()
 
@@ -140,27 +136,21 @@ export default function Home() {
       setTarefas(filtradas)
       setLoading(false)
 
-      // --- LISTENER GLOBAL DE MENSAGENS (SINO + CHAT GERAL) ---
       const channel = supabase.channel('notificacoes_master').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'mensagens_chat' }, 
         payload => {
-          if (String(payload.new.usuario_id) === String(session.user.id)) return // Ignora minhas msgs
+          if (String(payload.new.usuario_id) === String(session.user.id)) return 
 
-          const audio = new Audio('/notificacao.mp3')
-          audio.play().catch(() => {})
+          new Audio('/notificacao.mp3.mp3').play().catch(() => {})
 
           if (payload.new.chamado_id) {
-            // MENSAGEM NO CARD: Vai para o Sino
-            // Tenta achar o nome do cliente na lista de tarefas locais
             const card = chs?.find(c => String(c.id) === String(payload.new.chamado_id))
-            const nomeCliente = card ? card.nom_cliente : "Chamado #" + payload.new.chamado_id
-            
-            setNotificacoesCards(prev => [...prev, { 
+            setNotificacoesCards(prev => [{ 
               id: payload.new.id, 
               remetente: payload.new.usuario_nome, 
-              cliente: nomeCliente 
-            }])
+              chamadoId: payload.new.chamado_id,
+              cliente: card ? card.nom_cliente : "Chamado"
+            }, ...prev])
           } else {
-            // MENSAGEM GERAL: Vai para o Chat Flutuante
             setUnreadGeral(prev => prev + 1)
           }
         }
@@ -171,62 +161,91 @@ export default function Home() {
     carregar()
   }, [router])
 
-  const mostrarAlertNotificacoes = () => {
-    if (notificacoesCards.length === 0) return
-    
-    // Cria uma mensagem legível com todas as notificações
-    const lista = notificacoesCards.map(n => `• ${n.remetente} enviou mensagem em: ${n.cliente}`).join('\n')
-    alert(`NOTIFICAÇÕES DE PROCESSOS:\n\n${lista}`)
-    setNotificacoesCards([]) // Limpa após ler
-  }
+  const glassStyle = { background: 'rgba(255, 255, 255, 0.5)', backdropFilter: 'blur(15px)', border: '1px solid rgba(255, 255, 255, 0.3)', borderRadius: '30px' }
 
-  if (loading) return <div style={{padding:'100px', textAlign:'center', fontWeight:'bold'}}>Iniciando...</div>
+  if (loading) return <div style={{padding:'100px', textAlign:'center', fontWeight:'bold'}}>Iniciando sistema...</div>
 
   return (
-    <div style={{ padding: '30px 20px', maxWidth: '1000px', margin: '0 auto', fontFamily: 'sans-serif' }}>
+    <div style={{ padding: '30px 20px', maxWidth: '900px', margin: '0 auto', fontFamily: 'sans-serif' }}>
       
       <style>{`
-        @keyframes shake {
-          0% { transform: rotate(0); }
-          20% { transform: rotate(15deg); }
-          40% { transform: rotate(-15deg); }
-          60% { transform: rotate(10deg); }
-          100% { transform: rotate(0); }
-        }
+        @keyframes shake { 0% { transform: rotate(0); } 20% { transform: rotate(15deg); } 40% { transform: rotate(-15deg); } 60% { transform: rotate(10deg); } 100% { transform: rotate(0); } }
         .bell-shake { animation: shake 0.5s ease-in-out infinite; }
       `}</style>
 
-      <header style={{ background: 'white', padding: '20px', borderRadius: '30px', display: 'flex', justifyContent: 'space-between', marginBottom: '40px', alignItems:'center', boxShadow:'0 10px 30px rgba(0,0,0,0.05)' }}>
-        <div><b>{userProfile?.nome}</b><p style={{margin:0, fontSize:'10px'}}>{userProfile?.funcao}</p></div>
+      <header style={{ ...glassStyle, padding: '15px 25px', display: 'flex', justifyContent: 'space-between', marginBottom: '40px', alignItems:'center', boxShadow:'0 8px 32px rgba(0,0,0,0.05)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+           <div style={{ width:'40px', height:'40px', background:'#22c55e', borderRadius:'12px', display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontWeight:'bold' }}>{userProfile?.nome?.charAt(0)}</div>
+           <div><b style={{fontSize:'14px'}}>{userProfile?.nome}</b><p style={{margin:0, fontSize:'10px', color:'#166534', fontWeight:'bold'}}>{userProfile?.funcao?.toUpperCase()}</p></div>
+        </div>
         
-        <div style={{ display: 'flex', gap: '15px', alignItems:'center' }}>
+        <div style={{ display: 'flex', gap: '15px', alignItems:'center', position: 'relative' }}>
           
-          {/* SINO (SÓ PARA CARDS) */}
-          <div onClick={mostrarAlertNotificacoes} style={{ position: 'relative', fontSize: '24px', cursor: 'pointer' }} className={notificacoesCards.length > 0 ? 'bell-shake' : ''}>
-            🔔{notificacoesCards.length > 0 && <span style={{ position: 'absolute', top: '-5px', right: '-5px', background: 'red', color: 'white', fontSize: '9px', borderRadius: '50%', padding: '2px 5px', fontWeight:'bold' }}>{notificacoesCards.length}</span>}
+          {/* BOTÃO DO SINO (CUSTOMIZADO) */}
+          <div onClick={() => setShowNotiPanel(!showNotiPanel)} style={{ position: 'relative', fontSize: '22px', cursor: 'pointer', background: '#f8fafc', padding: '8px', borderRadius: '12px' }} className={notificacoesCards.length > 0 ? 'bell-shake' : ''}>
+            🔔
+            {notificacoesCards.length > 0 && <span style={{ position: 'absolute', top: '-5px', right: '-5px', background: 'red', color: 'white', fontSize: '10px', borderRadius: '50%', width: '18px', height: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid white', fontWeight:'bold' }}>{notificacoesCards.length}</span>}
           </div>
 
-          <button onClick={() => router.push('/kanban')} style={{ background: '#f0fdf4', color: '#166534', border: 'none', padding: '10px 18px', borderRadius: '12px', fontWeight: '900', fontSize: '10px', cursor: 'pointer' }}>📊 KANBAN</button>
-          <button onClick={() => setIsSelecaoOpen(true)} style={{ background: '#22c55e', color: 'white', border: 'none', padding: '10px 25px', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer' }}>+ NOVO</button>
+          {/* PAINEL DE NOTIFICAÇÕES BONITO */}
+          {showNotiPanel && (
+            <div style={{ position: 'absolute', top: '55px', right: 0, width: '300px', background: 'white', borderRadius: '20px', boxShadow: '0 15px 40px rgba(0,0,0,0.15)', zIndex: 4000, border: '1px solid #eee', overflow: 'hidden' }}>
+              <div style={{ padding: '15px', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <b style={{ fontSize: '13px' }}>Notificações</b>
+                <button onClick={() => {setNotificacoesCards([]); setShowNotiPanel(false)}} style={{ background:'none', border:'none', color:'#22c55e', fontSize:'11px', fontWeight:'bold', cursor:'pointer' }}>Limpar</button>
+              </div>
+              <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                {notificacoesCards.length > 0 ? notificacoesCards.map(n => (
+                  <div key={n.id} style={{ padding: '12px 15px', borderBottom: '1px solid #f9f9f9', cursor:'pointer' }} onClick={() => setShowNotiPanel(false)}>
+                    <p style={{ margin: 0, fontSize: '11px' }}>
+                      <b>{n.remetente}</b> enviou uma mensagem no card <b style={{color:'#166534'}}>#{n.chamadoId} - {n.cliente}</b>
+                    </p>
+                  </div>
+                )) : <p style={{ padding: '20px', textAlign: 'center', fontSize: '12px', color: '#999' }}>Nenhuma mensagem nova.</p>}
+              </div>
+            </div>
+          )}
+
+          <button onClick={() => router.push('/kanban')} style={{ background: '#000', color: '#fff', border: 'none', padding: '10px 18px', borderRadius: '12px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}>KANBAN</button>
+          <button onClick={() => setIsSelecaoOpen(true)} style={{ background: '#22c55e', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer' }}>+ NOVO</button>
         </div>
       </header>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-        <h2 style={{ fontSize: '20px', fontWeight: '900', color: '#14532d' }}>Suas Tarefas</h2>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <h2 style={{ fontSize: '22px', fontWeight: '900', color: '#14532d', marginBottom: '10px' }}>Sua Fila de Trabalho</h2>
         {tarefas.map(t => (
-          <div key={t.id} onClick={() => setTarefaSelecionada(t)} style={{ background: 'white', padding: '25px', borderRadius: '25px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow:'0 5px 15px rgba(0,0,0,0.03)' }}>
-            <div><span style={{ fontSize: '8px', fontWeight: '900', color: '#166534', background: 'rgba(34,197,94,0.1)', padding: '4px 8px', borderRadius: '6px' }}>{(t.tarefa || 'Processando').toUpperCase()}</span><h3 style={{margin:'5px 0 0 0'}}>{t.nom_cliente}</h3></div>
+          <div key={t.id} onClick={() => setTarefaSelecionada(t)} style={{ ...glassStyle, padding: '20px 25px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', transition: '0.2s', border: '1px solid transparent' }} onMouseEnter={e => e.currentTarget.style.borderColor = '#22c55e'} onMouseLeave={e => e.currentTarget.style.borderColor = 'transparent'}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '11px', fontWeight: '900', color: '#166534' }}>#{t.id}</span>
+                <span style={{ fontSize: '8px', fontWeight: '900', color: '#166534', background: 'rgba(34,197,94,0.1)', padding: '3px 7px', borderRadius: '5px' }}>{t.tarefa?.toUpperCase()}</span>
+              </div>
+              <h3 style={{ margin: '8px 0 0 0', fontWeight: '800', fontSize: '16px' }}>{t.nom_cliente}</h3>
+            </div>
             <b style={{ color: '#166534', fontSize:'18px' }}>R$ {t.valor_servico}</b>
           </div>
         ))}
+        {tarefas.length === 0 && <div style={{textAlign:'center', padding:'40px', color:'#999'}}>Tudo em dia por aqui! ✨</div>}
       </div>
 
+      {/* MODAL DETALHE + CHAT */}
       {tarefaSelecionada && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(10px)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
           <div style={{ background: 'white', width: '100%', maxWidth: '950px', borderRadius: '40px', display: 'grid', gridTemplateColumns: '1fr 380px', overflow: 'hidden', boxShadow: '0 25px 60px rgba(0,0,0,0.2)' }}>
             <div style={{ padding: '40px', overflowY: 'auto', maxHeight: '85vh' }}>
-              <h2 style={{ color: '#14532d', margin: 0 }}>{tarefaSelecionada.nom_cliente}</h2>
-              <button onClick={() => setTarefaSelecionada(null)} style={{ background: '#000', color: '#fff', border: 'none', padding: '18px', borderRadius: '15px', fontWeight: 'bold', cursor:'pointer', marginTop:'20px', width:'100%' }}>FECHAR DETALHES</button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '5px' }}>
+                 <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#166534', background: '#f0fdf4', padding: '4px 10px', borderRadius: '8px' }}>#{tarefaSelecionada.id}</span>
+                 <h2 style={{ color: '#14532d', margin: 0 }}>{tarefaSelecionada.nom_cliente}</h2>
+              </div>
+              <p style={{fontSize:'12px', color:'#666'}}>{tarefaSelecionada.tarefa}</p>
+              
+              <div style={{ marginTop: '30px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                 <p><b>Valor Total:</b> R$ {tarefaSelecionada.valor_servico}</p>
+                 <p><b>NF Serviço:</b> {tarefaSelecionada.num_nf_servico || '---'}</p>
+                 <p><b>Pagamento:</b> {tarefaSelecionada.forma_pagamento}</p>
+                 
+                 <button onClick={() => setTarefaSelecionada(null)} style={{ background: '#000', color: '#fff', border: 'none', padding: '18px', borderRadius: '15px', fontWeight: 'bold', cursor:'pointer', marginTop: '20px' }}>FECHAR DETALHES</button>
+              </div>
             </div>
             <div style={{ padding: '30px', background: '#f8fafc' }}>
               {userProfile && <ChatChamado chamadoId={tarefaSelecionada.id} userProfile={userProfile} />}
@@ -235,17 +254,17 @@ export default function Home() {
         </div>
       )}
 
+      {/* MODAL NOVO CHAMADO */}
       {isSelecaoOpen && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ background: 'white', padding: '40px', borderRadius: '45px', width: '90%', maxWidth: '400px', textAlign:'center' }}>
-            <h3 style={{fontWeight:'900', marginBottom:'20px'}}>Novo Chamado</h3>
-            <button onClick={() => router.push('/novo-chamado-nf')} style={{ width: '100%', background: '#22c55e', color: 'white', padding: '20px', borderRadius: '15px', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}>📑 NOTA FISCAL / FATURAMENTO</button>
+            <h3 style={{fontWeight:'900', marginBottom:'20px'}}>Novo Faturamento</h3>
+            <button onClick={() => router.push('/novo-chamado-nf')} style={{ width: '100%', background: '#22c55e', color: 'white', padding: '20px', borderRadius: '15px', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}>📑 NOTA FISCAL / SERVIÇO</button>
             <button onClick={() => setIsSelecaoOpen(false)} style={{ background: 'none', border: 'none', color: '#999', marginTop:'15px', cursor: 'pointer' }}>CANCELAR</button>
           </div>
         </div>
       )}
 
-      {/* CHAT FLUTUANTE AGORA RECEBE ESTADOS DE NOTIFICAÇÃO DA HOME */}
       {userProfile && <ChatFlutuante userProfile={userProfile} unreadGeral={unreadGeral} setUnreadGeral={setUnreadGeral} />}
     </div>
   )
