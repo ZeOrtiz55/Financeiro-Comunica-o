@@ -3,26 +3,24 @@ import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 
-// --- COMPONENTE DE CHAT COM REALTIME, SOM E NOTIFICAÇÃO ---
+// --- COMPONENTE DE CHAT (COM SOM, NOTIFICAÇÃO E FIX DE DUPLICIDADE) ---
 function ChatFlutuante({ userProfile }) {
   const [isOpen, setIsOpen] = useState(false)
   const [mensagens, setMensagens] = useState([])
   const [novaMsg, setNovaMsg] = useState('')
-  const [unreadCount, setUnreadCount] = useState(0) // Contador de mensagens
+  const [unreadCount, setUnreadCount] = useState(0)
   const scrollRef = useRef()
-  const isOpenRef = useRef(false) // Ref para o Realtime saber se o chat tá aberto
+  const isOpenRef = useRef(false)
 
-  // Sincroniza a Ref com o estado do chat
   useEffect(() => {
     isOpenRef.current = isOpen
-    if (isOpen) setUnreadCount(0) // Zera quando abre
+    if (isOpen) setUnreadCount(0)
   }, [isOpen])
 
-  // Função do Som (Certifique-se que o arquivo está em public/notificacao.mp3)
   const playSound = () => {
     const audio = new Audio('/notificacao.mp3')
     audio.volume = 0.5
-    audio.play().catch(() => console.log("Som aguardando interação do usuário"))
+    audio.play().catch(() => {})
   }
 
   useEffect(() => {
@@ -34,26 +32,20 @@ function ChatFlutuante({ userProfile }) {
           const souEu = String(msgNova.usuario_id) === String(userProfile?.id)
 
           setMensagens(prev => {
-            // SE FUI EU: Removemos a mensagem temporária (ID que começa com "temp-")
-            // e adicionamos a mensagem oficial do banco
             if (souEu) {
-              const semTemporarias = prev.filter(m => !String(m.id).startsWith('temp-'))
-              return [...semTemporarias, msgNova]
+              // Remove a msg temporária e coloca a oficial do banco
+              const semTemps = prev.filter(m => !String(m.id).startsWith('temp-'))
+              return [...semTemps, msgNova]
             }
-
-            // SE FOI OUTRA PESSOA: Só adiciona se não estiver na lista
             if (prev.find(m => m.id === msgNova.id)) return prev
             
-            // Toca som e aumenta bolinha se for de outra pessoa
             playSound()
             if (!isOpenRef.current) setUnreadCount(c => c + 1)
-            
             return [...prev, msgNova]
           })
         }
       ).subscribe()
 
-    // Carregar histórico
     supabase.from('mensagens_chat').select('*').order('created_at', { ascending: true }).limit(50)
       .then(({ data }) => data && setMensagens(data))
 
@@ -67,52 +59,34 @@ function ChatFlutuante({ userProfile }) {
   const enviarMsg = async (e) => {
     e.preventDefault()
     if (!novaMsg.trim()) return
-
     const textoTemp = novaMsg
     setNovaMsg('')
 
-    // CRIAMOS UM ID TEMPORÁRIO QUE COMEÇA COM "temp-"
-    const msgTemp = {
-      id: `temp-${Date.now()}`, 
-      texto: textoTemp,
-      usuario_nome: userProfile.nome,
-      usuario_id: userProfile.id
-    }
-    
+    const msgTemp = { id: `temp-${Date.now()}`, texto: textoTemp, usuario_nome: userProfile.nome, usuario_id: userProfile.id }
     setMensagens(prev => [...prev, msgTemp])
 
-    await supabase.from('mensagens_chat').insert([
-      { texto: textoTemp, usuario_nome: userProfile.nome, usuario_id: userProfile.id }
-    ])
+    await supabase.from('mensagens_chat').insert([{ texto: textoTemp, usuario_nome: userProfile.nome, usuario_id: userProfile.id }])
   }
 
   return (
     <div style={{ position: 'fixed', bottom: '30px', right: '30px', zIndex: 1000 }}>
-      {/* BOTÃO COM BOLINHA */}
       <div style={{ position: 'relative' }}>
         <button onClick={() => setIsOpen(!isOpen)} style={{ width: '60px', height: '60px', borderRadius: '50%', background: '#22c55e', color: 'white', border: 'none', fontSize: '24px', cursor: 'pointer', boxShadow: '0 10px 20px rgba(0,0,0,0.1)' }}>
           {isOpen ? '✕' : '💬'}
         </button>
-        
         {!isOpen && unreadCount > 0 && (
-          <div style={{ position: 'absolute', top: '-5px', right: '-5px', background: 'red', color: 'white', borderRadius: '50%', width: '22px', height: '22px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 'bold', border: '2px solid white' }}>
-            {unreadCount}
-          </div>
+          <div style={{ position: 'absolute', top: '-5px', right: '-5px', background: 'red', color: 'white', borderRadius: '50%', width: '22px', height: '22px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 'bold', border: '2px solid white' }}>{unreadCount}</div>
         )}
       </div>
-
       {isOpen && (
         <div style={{ position: 'absolute', bottom: '80px', right: 0, width: '320px', height: '400px', background: 'white', borderRadius: '25px', display: 'flex', flexDirection: 'column', border: '1px solid #ddd', overflow: 'hidden', boxShadow: '0 20px 40px rgba(0,0,0,0.1)' }}>
-          <div style={{ padding: '15px', background: '#22c55e', color: 'white', fontSize: '13px', fontWeight: 'bold' }}>Chat Nova Tratores</div>
+          <div style={{ padding: '15px', background: '#22c55e', color: 'white', fontWeight: 'bold' }}>Chat Nova Tratores</div>
           <div ref={scrollRef} style={{ flex: 1, padding: '15px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {mensagens.map(m => {
-              const ehMinha = String(m.usuario_id) === String(userProfile.id)
-              return (
-                <div key={m.id} style={{ alignSelf: ehMinha ? 'flex-end' : 'flex-start', background: ehMinha ? '#22c55e' : '#eee', color: ehMinha ? 'white' : 'black', padding: '8px 12px', borderRadius: '12px', fontSize: '11px', maxWidth: '85%' }}>
-                  <b style={{ fontSize: '8px', display: 'block' }}>{m.usuario_nome}</b>{m.texto}
-                </div>
-              )
-            })}
+            {mensagens.map(m => (
+              <div key={m.id} style={{ alignSelf: String(m.usuario_id) === String(userProfile.id) ? 'flex-end' : 'flex-start', background: String(m.usuario_id) === String(userProfile.id) ? '#22c55e' : '#eee', color: String(m.usuario_id) === String(userProfile.id) ? 'white' : 'black', padding: '8px 12px', borderRadius: '12px', fontSize: '11px', maxWidth: '85%' }}>
+                <b style={{ fontSize: '8px', display: 'block' }}>{m.usuario_nome}</b>{m.texto}
+              </div>
+            ))}
           </div>
           <form onSubmit={enviarMsg} style={{ padding: '10px', display: 'flex', gap: '5px', borderTop: '1px solid #eee' }}>
             <input value={novaMsg} onChange={e => setNovaMsg(e.target.value)} placeholder="Dúvida..." style={{ flex: 1, border: '1px solid #ddd', borderRadius: '8px', padding: '8px', fontSize: '12px', outline: 'none' }} />
@@ -131,6 +105,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true)
   const [isSalvando, setIsSalvando] = useState(false)
   const [tarefaSelecionada, setTarefaSelecionada] = useState(null)
+  const [isSelecaoOpen, setIsSelecaoOpen] = useState(false) // MODAL NOVO CHAMADO
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   
   const [fileBoleto, setFileBoleto] = useState(null)
@@ -139,23 +114,22 @@ export default function Home() {
 
   const router = useRouter()
 
-  useEffect(() => {
-    const carregar = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) return router.push('/login')
-      const { data: prof } = await supabase.from('financeiro_usu').select('*').eq('id', session.user.id).single()
-      setUserProfile(prof)
-      const { data: chamados } = await supabase.from('Chamado_NF').select('*').neq('status', 'concluido')
-      const filtradas = (chamados || []).filter(t => {
-        if (prof?.funcao === 'Financeiro') return t.status === 'gerar_boleto'
-        if (prof?.funcao === 'Pós-Vendas') return t.status === 'enviar_cliente' || t.status === 'vencido'
-        return false
-      })
-      setTarefas(filtradas)
-      setLoading(false)
-    }
-    carregar()
-  }, [router])
+  const carregarDados = async () => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) return router.push('/login')
+    const { data: prof } = await supabase.from('financeiro_usu').select('*').eq('id', session.user.id).single()
+    setUserProfile(prof)
+    const { data: chamados } = await supabase.from('Chamado_NF').select('*').neq('status', 'concluido')
+    const filtradas = (chamados || []).filter(t => {
+      if (prof?.funcao === 'Financeiro') return t.status === 'gerar_boleto'
+      if (prof?.funcao === 'Pós-Vendas') return t.status === 'enviar_cliente' || t.status === 'vencido'
+      return false
+    })
+    setTarefas(filtradas)
+    setLoading(false)
+  }
+
+  useEffect(() => { carregarDados() }, [router])
 
   const upload = async (file, folder) => {
     const path = `${folder}/${Date.now()}-${file.name}`
@@ -196,6 +170,8 @@ export default function Home() {
 
   return (
     <div style={{ padding: '30px 20px', maxWidth: '850px', margin: '0 auto', fontFamily: 'sans-serif' }}>
+      
+      {/* HEADER RESTAURADO */}
       <header style={{ ...glassStyle, padding: '20px 30px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
           <div style={{ width: '45px', height: '45px', background: '#22c55e', borderRadius: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold' }}>{userProfile?.nome?.charAt(0)}</div>
@@ -205,11 +181,14 @@ export default function Home() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: '10px' }}>
+          <button onClick={() => router.push('/kanban')} style={{ background: '#f0fdf4', color: '#166534', border: '1px solid #dcfce7', padding: '10px 15px', borderRadius: '12px', fontWeight: '900', fontSize: '10px', cursor:'pointer' }}>📊 FLUXO NF</button>
           <button onClick={() => setIsSettingsOpen(true)} style={{ background: '#f1f5f9', border: 'none', padding: '10px', borderRadius: '12px', cursor:'pointer' }}>⚙️</button>
+          <button onClick={() => setIsSelecaoOpen(true)} style={{ background: '#22c55e', color: 'white', padding: '10px 20px', borderRadius: '12px', border: 'none', fontWeight:'bold', cursor:'pointer' }}>+ NOVO</button>
           <button onClick={() => supabase.auth.signOut().then(() => router.push('/login'))} style={{ background:'none', border:'none', color:'#B91C1C', fontWeight:'bold', fontSize:'11px', cursor:'pointer' }}>SAIR</button>
         </div>
       </header>
 
+      {/* FILA DE TAREFAS */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
         <h2 style={{ fontSize: '22px', fontWeight: '900', color: '#14532d' }}>Fila: {userProfile?.funcao}</h2>
         {tarefas.map(t => (
@@ -221,24 +200,35 @@ export default function Home() {
             <p style={{ fontWeight: '900', fontSize: '18px', color: '#166534' }}>R$ {t.valor_servico}</p>
           </div>
         ))}
+        {tarefas.length === 0 && <p style={{textAlign:'center', color:'#999'}}>Nenhuma tarefa pendente. ✨</p>}
       </div>
 
+      {/* MODAL DETALHE DA TAREFA */}
       {tarefaSelecionada && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(12px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '20px' }}>
           <div style={{ background: 'white', padding: '40px', borderRadius: '45px', width: '100%', maxWidth: '450px' }}>
-            <h3 style={{ fontWeight: '900', margin: 0 }}>{tarefaSelecionada.nom_cliente}</h3>
-            <p style={{ fontSize: '12px', color: '#22c55e', fontWeight: 'bold', marginBottom: '25px' }}>{tarefaSelecionada.tarefa}</p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+            <h3 style={{ fontWeight: '900' }}>{tarefaSelecionada.nom_cliente}</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginTop: '20px' }}>
               {tarefaSelecionada.status === 'gerar_boleto' && <input type="file" onChange={e => setFileBoleto(e.target.files[0])} />}
               {tarefaSelecionada.status === 'enviar_cliente' && (
-                <button onClick={() => { window.open(tarefaSelecionada.anexo_boleto); setFoiBaixado(true); }} style={{ background: '#eff6ff', border: '1px solid #3b82f6', padding: '15px', borderRadius: '12px', color: '#1d4ed8', fontWeight: 'bold', cursor: 'pointer' }}>⬇ BAIXAR BOLETO</button>
+                <button onClick={() => { window.open(tarefaSelecionada.anexo_boleto); setFoiBaixado(true); }} style={{ background: '#eff6ff', border: '1px solid #3b82f6', padding: '15px', borderRadius: '12px', color: '#1d4ed8', fontWeight: 'bold' }}>⬇ BAIXAR BOLETO</button>
               )}
               {tarefaSelecionada.status === 'vencido' && <input type="file" onChange={e => setFileComprovante(e.target.files[0])} />}
-              <button onClick={handleAvanco} disabled={isSalvando} style={{ background: isSalvando ? '#999' : 'black', color: 'white', border: 'none', padding: '18px', borderRadius: '15px', fontWeight: 'bold', cursor: 'pointer', marginTop: '10px' }}>
-                {isSalvando ? 'PROCESSANDO...' : 'CONFIRMAR E AVANÇAR ⮕'}
-              </button>
-              <button onClick={() => setTarefaSelecionada(null)} style={{ background: 'none', border: 'none', color: '#999', cursor: 'pointer' }}>CANCELAR</button>
+              <button onClick={handleAvanco} disabled={isSalvando} style={{ background: 'black', color: 'white', padding: '18px', borderRadius: '15px', fontWeight: 'bold' }}>{isSalvando ? 'PROCESSANDO...' : 'CONFIRMAR ⮕'}</button>
+              <button onClick={() => setTarefaSelecionada(null)} style={{ background: 'none', border: 'none', color: '#999' }}>CANCELAR</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL NOVO CHAMADO (RESTAURADO) */}
+      {isSelecaoOpen && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(12px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+          <div style={{ background: 'white', padding: '40px', borderRadius: '45px', width: '90%', maxWidth: '400px' }}>
+            <h3 style={{fontWeight:'900', marginBottom:'20px'}}>Novo Chamado</h3>
+            <p style={{fontSize:'13px', color:'#666', marginBottom:'20px'}}>Deseja iniciar um novo fluxo de faturamento?</p>
+            <button onClick={() => router.push('/abrir-chamado')} style={{ width:'100%', background:'#22c55e', color:'white', padding:'15px', borderRadius:'15px', border:'none', fontWeight:'bold', cursor:'pointer', marginBottom:'10px' }}>INICIAR FLUXO</button>
+            <button onClick={() => setIsSelecaoOpen(false)} style={{ width:'100%', background:'none', color:'#999', padding:'10px', border:'none', cursor:'pointer' }}>CANCELAR</button>
           </div>
         </div>
       )}
