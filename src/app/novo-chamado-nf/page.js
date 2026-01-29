@@ -52,7 +52,6 @@ export default function NovoChamadoNF() {
       const urlP = (tipoNF === 'pecas' || tipoNF === 'ambas') ? await uploadFile(filePeca, 'pecas') : null
       const urlPix = (formData.forma_pagamento === 'Pix') ? await uploadFile(filePix, 'comprovantes') : null
 
-      // Lógica de PIX: Pula para validar_pix, senão vai para gerar_boleto
       const isPix = formData.forma_pagamento === 'Pix';
       const statusInicial = isPix ? 'validar_pix' : 'gerar_boleto';
       const tarefaInicial = isPix ? 'Validar Recebimento Pix' : 'Gerar Boleto';
@@ -65,28 +64,23 @@ export default function NovoChamadoNF() {
         anexo_nf_servico: urlS,
         anexo_nf_peca: urlP,
         comprovante_pagamento: urlPix,
-        vencimento_boleto: formData.data_primeira_parcela // Salva a 1ª data no campo de vencimento padrão
+        vencimento_boleto: formData.data_primeira_parcela
       }])
 
       if (!error) {
         alert("Chamado gerado com sucesso!")
         router.push('/')
       } else throw error
-    } catch (err) {
-      alert("Erro: " + err.message)
-    } finally { setLoading(false) }
+    } catch (err) { alert("Erro: " + err.message) } finally { setLoading(false) }
   }
 
-  const glassInput = { padding: '14px', borderRadius: '15px', border: '1px solid rgba(255,255,255,0.5)', background: 'rgba(255,255,255,0.4)', width: '100%', boxSizing: 'border-box' }
+  const glassInput = { padding: '14px', borderRadius: '15px', border: '1px solid #ddd', background: '#fff', width: '100%', boxSizing: 'border-box' }
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 20px', fontFamily:'sans-serif' }}>
-      <div style={{ background: 'rgba(255, 255, 255, 0.45)', backdropFilter: 'blur(15px)', padding: '40px', borderRadius: '45px', width: '100%', maxWidth: '550px', border: '1px solid rgba(255,255,255,0.3)' }}>
-        
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 20px', fontFamily:'sans-serif', background:'#f8fafc' }}>
+      <div style={{ background: '#fff', padding: '40px', borderRadius: '45px', width: '100%', maxWidth: '550px', boxShadow: '0 20px 40px rgba(0,0,0,0.05)' }}>
         <h2 style={{ color: '#14532d', fontWeight: '900', textAlign: 'center', marginBottom: '30px' }}>NOVO FATURAMENTO</h2>
-
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-          
           <select required style={glassInput} onChange={(e) => setTipoNF(e.target.value)}>
             <option value="">O QUE ESTÁ LANÇANDO?</option>
             <option value="servico">Nota de Serviço</option>
@@ -97,14 +91,14 @@ export default function NovoChamadoNF() {
           {tipoNF && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {(tipoNF === 'servico' || tipoNF === 'ambas') && (
-                <div style={{ background: 'rgba(255,255,255,0.2)', padding: '15px', borderRadius: '20px' }}>
+                <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '20px', border:'1px solid #eee' }}>
                   <label style={{fontSize:'10px', fontWeight:'bold'}}>NF SERVIÇO</label>
                   <input type="text" placeholder="Nº NF" required style={glassInput} onChange={(e) => setFormData({...formData, num_nf_servico: e.target.value})} />
                   <input type="file" required style={{ marginTop: '10px', fontSize: '11px' }} onChange={(e) => setFileServico(e.target.files[0])} />
                 </div>
               )}
               {(tipoNF === 'pecas' || tipoNF === 'ambas') && (
-                <div style={{ background: 'rgba(255,255,255,0.2)', padding: '15px', borderRadius: '20px' }}>
+                <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '20px', border:'1px solid #eee' }}>
                   <label style={{fontSize:'10px', fontWeight:'bold'}}>NF PEÇAS</label>
                   <input type="text" placeholder="Nº NF" required style={glassInput} onChange={(e) => setFormData({...formData, num_nf_peca: e.target.value})} />
                   <input type="file" required style={{ marginTop: '10px', fontSize: '11px' }} onChange={(e) => setFilePeca(e.target.files[0])} />
@@ -131,13 +125,11 @@ export default function NovoChamadoNF() {
           )}
 
           {formData.forma_pagamento === 'Boleto Parcelado' && (
-            <div style={{ display:'flex', gap:'10px' }}>
-               <input type="number" placeholder="Qtd Parcelas" style={glassInput} onChange={(e) => setFormData({...formData, qtd_parcelas: e.target.value})} />
-            </div>
+             <input type="number" placeholder="Qtd Parcelas" style={glassInput} onChange={(e) => setFormData({...formData, qtd_parcelas: e.target.value})} />
           )}
 
           {formData.forma_pagamento.includes('Boleto') && (
-            <div style={{ background: 'rgba(255,255,255,0.2)', padding: '15px', borderRadius: '20px' }}>
+            <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '20px' }}>
               <label style={{fontSize:'10px', fontWeight:'bold'}}>DATA DA 1ª PARCELA / VENCIMENTO</label>
               <input type="date" required style={glassInput} onChange={(e) => setFormData({...formData, data_primeira_parcela: e.target.value})} />
             </div>
@@ -151,7 +143,7 @@ export default function NovoChamadoNF() {
             <option value="Pós-Vendas">Pós-Vendas</option>
           </select>
 
-          <button disabled={loading} style={{ backgroundColor: '#22c55e', color: 'white', padding: '18px', borderRadius: '20px', border: 'none', fontWeight: '900', cursor: 'pointer' }}>
+          <button disabled={loading} style={{ backgroundColor: '#22c55e', color: '#fff', padding: '18px', borderRadius: '20px', border: 'none', fontWeight: '900', cursor: 'pointer' }}>
             {loading ? 'GERANDO...' : 'CRIAR CHAMADO NO FLUXO'}
           </button>
         </form>
