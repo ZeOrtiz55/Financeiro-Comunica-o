@@ -121,7 +121,7 @@ export default function Home() {
       supabase.channel('notificacoes').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'mensagens_chat' }, payload => {
         if (String(payload.new.usuario_id) !== String(session.user.id)) {
           setNotificacao(n => n + 1)
-          const audio = new Audio('/notificacao.mp3')
+          const audio = new Audio('/notificacao.mp3.mp3')
           audio.play().catch(() => {}) // Ignora erro se o arquivo não existir
         }
       }).subscribe()
