@@ -9,23 +9,23 @@ export default function Chat({ userProfile }) {
   const [unreadCount, setUnreadCount] = useState(0)
   const scrollRef = useRef()
   
-  // Ref para rastrear se o chat está aberto dentro dos callbacks do Supabase
   const isOpenRef = useRef(isOpen)
 
   useEffect(() => {
     isOpenRef.current = isOpen
-    if (isOpen) setUnreadCount(0) // Zera as notificações ao abrir
+    if (isOpen) {
+      setUnreadCount(0) // Zera as notificações ao abrir
+    }
   }, [isOpen])
 
-  // Função robusta para o som
   const playNotificationSound = () => {
     try {
-      // Som de "beep" curto e limpo
-      const audio = new Audio('https://www.soundjay.com/buttons/beep-07a.mp3')
-      audio.volume = 0.4
-      audio.play().catch(e => console.log("Navegador bloqueou áudio: interaja com a página primeiro."))
+      // Se você colocou o som na pasta 'public', use: '/notificacao.mp3'
+      const audio = new Audio('https://www.soundjay.com/buttons/beep-07a.mp3') 
+      audio.volume = 0.5
+      audio.play()
     } catch (err) {
-      console.error("Erro ao carregar áudio:", err)
+      console.log("Erro ao tocar som:", err)
     }
   }
 
@@ -34,22 +34,17 @@ export default function Chat({ userProfile }) {
       .channel('chat_realtime')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'mensagens_chat' }, 
         (payload) => {
-          // 1. Evita duplicados (checa se o ID já existe na lista)
+          // 1. Adiciona a mensagem
           setMensagens((prev) => {
             const jaExiste = prev.find(m => m.id === payload.new.id)
             if (jaExiste) return prev
             return [...prev, payload.new]
           })
 
-          // 2. Lógica de Notificação e Som
-          // Usamos String() para garantir que a comparação funcione mesmo se um ID for número e outro string
-          const idRemetente = String(payload.new.usuario_id)
-          const meuId = String(userProfile?.id)
-
-          if (idRemetente !== meuId) {
+          // 2. Lógica de Notificação (SÓ SE NÃO FOR EU)
+          if (String(payload.new.usuario_id) !== String(userProfile?.id)) {
             playNotificationSound()
 
-            // Aumenta contador se o chat estiver fechado
             if (!isOpenRef.current) {
               setUnreadCount(prev => prev + 1)
             }
@@ -59,11 +54,7 @@ export default function Chat({ userProfile }) {
       .subscribe()
 
     const carregarHistorico = async () => {
-      const { data } = await supabase
-        .from('mensagens_chat')
-        .select('*')
-        .order('created_at', { ascending: true })
-        .limit(50)
+      const { data } = await supabase.from('mensagens_chat').select('*').order('created_at', { ascending: true }).limit(50)
       if (data) setMensagens(data)
     }
     carregarHistorico()
@@ -71,104 +62,114 @@ export default function Chat({ userProfile }) {
     return () => { supabase.removeChannel(channel) }
   }, [userProfile?.id])
 
-  // Auto-scroll para o final
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-    }
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
   }, [mensagens, isOpen])
 
   const enviarMensagem = async (e) => {
     e.preventDefault()
     if (!novaMsg.trim()) return
 
-    const textoTemp = novaMsg
-    setNovaMsg('')
-
-    // Update otimista (mostra na hora para quem envia)
     const msgTemporaria = { 
-      texto: textoTemp, 
+      texto: novaMsg, 
       usuario_nome: userProfile.nome, 
       usuario_id: userProfile.id,
-      id: Math.random() // ID temporário
+      id: Math.random() 
     }
+
     setMensagens(prev => [...prev, msgTemporaria])
+    setNovaMsg('')
 
     await supabase.from('mensagens_chat').insert([{ 
-      texto: textoTemp, 
+      texto: msgTemporaria.texto, 
       usuario_nome: userProfile.nome, 
       usuario_id: userProfile.id 
     }])
   }
 
-  const glassStyle = {
-    background: 'rgba(255, 255, 255, 0.85)',
-    backdropFilter: 'blur(15px)',
-    border: '1px solid rgba(255, 255, 255, 0.3)',
-    borderRadius: '25px',
-    boxShadow: '0 10px 30px rgba(0,0,0,0.1)'
-  }
-
   return (
-    <div style={{ position: 'fixed', bottom: '30px', right: '30px', zIndex: 1000 }}>
-      {/* BOTÃO FLUTUANTE */}
-      <button 
-        onClick={() => setIsOpen(!isOpen)} 
-        style={{ 
-          width: '60px', height: '60px', borderRadius: '50%', 
-          background: '#22c55e', color: 'white', border: 'none', 
-          fontSize: '24px', cursor: 'pointer', position: 'relative',
-          boxShadow: '0 10px 20px rgba(34, 197, 94, 0.3)' 
-        }}
-      >
-        {isOpen ? '✕' : '💬'}
+    <div style={{ position: 'fixed', bottom: '30px', right: '30px', zIndex: 9999 }}>
+      
+      {/* BOTÃO COM A NOTIFICAÇÃO */}
+      <div style={{ position: 'relative' }}>
+        <button 
+          onClick={() => setIsOpen(!isOpen)} 
+          style={{ 
+            width: '65px', height: '65px', borderRadius: '50%', 
+            background: '#22c55e', color: 'white', border: 'none', 
+            fontSize: '28px', cursor: 'pointer',
+            boxShadow: '0 10px 25px rgba(0,0,0,0.2)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center'
+          }}
+        >
+          {isOpen ? '✕' : '💬'}
+        </button>
 
-        {/* CONTADOR DE NOTIFICAÇÃO (BADGE) */}
+        {/* BOLINHA VERMELHA (BADGE) */}
         {!isOpen && unreadCount > 0 && (
           <div style={{
-            position: 'absolute', top: '-5px', right: '-5px',
-            background: '#ef4444', color: 'white', fontSize: '11px',
-            fontWeight: 'bold', width: '22px', height: '22px',
-            borderRadius: '50%', display: 'flex', alignItems: 'center',
-            justifyContent: 'center', border: '2px solid white'
+            position: 'absolute',
+            top: '-2px',
+            right: '-2px',
+            background: '#ff0000', // Vermelho vivo
+            color: 'white',
+            fontSize: '12px',
+            fontWeight: 'bold',
+            minWidth: '22px',
+            height: '22px',
+            borderRadius: '11px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            border: '2px solid white',
+            boxShadow: '0 2px 5px rgba(0,0,0,0.3)',
+            zIndex: 10001 // Garantir que fique por cima de tudo
           }}>
             {unreadCount}
           </div>
         )}
-      </button>
+      </div>
 
-      {/* JANELA DE CHAT */}
+      {/* JANELA DO CHAT */}
       {isOpen && (
-        <div style={{ ...glassStyle, position: 'absolute', bottom: '80px', right: 0, width: '320px', height: '450px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <div style={{ padding: '20px', background: 'rgba(34, 197, 94, 0.1)', borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
-            <h4 style={{ margin: 0, fontSize: '14px', color: '#14532d' }}>Dúvidas Nova Tratores</h4>
-            <span style={{ fontSize: '10px', color: '#22c55e' }}>● Online agora</span>
+        <div style={{ 
+          position: 'absolute', bottom: '85px', right: 0, 
+          width: '330px', height: '480px', background: 'white',
+          borderRadius: '25px', display: 'flex', flexDirection: 'column', 
+          boxShadow: '0 15px 40px rgba(0,0,0,0.2)', border: '1px solid #eee',
+          overflow: 'hidden'
+        }}>
+          {/* TOPO */}
+          <div style={{ padding: '15px 20px', background: '#22c55e', color: 'white' }}>
+            <h4 style={{ margin: 0, fontSize: '14px' }}>Atendimento</h4>
+            <span style={{ fontSize: '10px' }}>Respondemos na hora</span>
           </div>
 
-          {/* LISTA DE MENSAGENS */}
-          <div ref={scrollRef} style={{ flex: 1, padding: '15px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {/* MENSAGENS */}
+          <div ref={scrollRef} style={{ flex: 1, padding: '15px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px', background: '#f9f9f9' }}>
             {mensagens.map((m) => (
               <div key={m.id} style={{ 
                 alignSelf: String(m.usuario_id) === String(userProfile.id) ? 'flex-end' : 'flex-start',
-                maxWidth: '80%', padding: '10px 15px', borderRadius: '15px',
+                maxWidth: '85%', padding: '10px 14px', borderRadius: '15px',
                 background: String(m.usuario_id) === String(userProfile.id) ? '#22c55e' : 'white',
-                color: String(m.usuario_id) === String(userProfile.id) ? 'white' : 'black',
-                fontSize: '12px', boxShadow: '0 2px 5px rgba(0,0,0,0.05)'
+                color: String(m.usuario_id) === String(userProfile.id) ? 'white' : '#333',
+                fontSize: '13px', boxShadow: '0 1px 2px rgba(0,0,0,0.1)'
               }}>
-                <p style={{ margin: 0, fontSize: '9px', opacity: 0.7, fontWeight: 'bold' }}>{m.usuario_nome}</p>
-                <p style={{ margin: 0 }}>{m.texto}</p>
+                <b style={{ fontSize: '9px', display: 'block', opacity: 0.8 }}>{m.usuario_nome}</b>
+                {m.texto}
               </div>
             ))}
           </div>
 
-          <form onSubmit={enviarMensagem} style={{ padding: '15px', display: 'flex', gap: '10px' }}>
+          {/* INPUT */}
+          <form onSubmit={enviarMensagem} style={{ padding: '15px', display: 'flex', gap: '8px', background: 'white', borderTop: '1px solid #eee' }}>
             <input 
               value={novaMsg} 
               onChange={(e) => setNovaMsg(e.target.value)} 
-              placeholder="Digite sua dúvida..." 
-              style={{ flex: 1, padding: '10px', borderRadius: '10px', border: '1px solid #ddd', outline: 'none', fontSize: '12px' }} 
+              placeholder="Sua mensagem..." 
+              style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #ddd', outline: 'none' }} 
             />
-            <button style={{ background: '#14532d', color: 'white', border: 'none', padding: '10px', borderRadius: '10px', cursor: 'pointer' }}>➔</button>
+            <button style={{ background: '#22c55e', color: 'white', border: 'none', padding: '10px 15px', borderRadius: '8px', cursor: 'pointer' }}>➔</button>
           </form>
         </div>
       )}
