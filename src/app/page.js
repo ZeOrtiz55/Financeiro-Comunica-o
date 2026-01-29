@@ -3,7 +3,7 @@ import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 
-// --- 1. CHAT ESPECÍFICO DO CARD (LADO DIREITO DO MODAL) ---
+// --- 1. CHAT ESPECÍFICO DO CARD ---
 function ChatChamado({ chamadoId, userProfile }) {
   const [mensagens, setMensagens] = useState([])
   const [novaMsg, setNovaMsg] = useState('')
@@ -63,9 +63,7 @@ function ChatFlutuante({ userProfile, unreadGeral, setUnreadGeral }) {
   useEffect(() => {
     if (!userProfile?.id) return
     supabase.from('mensagens_chat').select('*').is('chamado_id', null).order('created_at', { ascending: true }).limit(50).then(({ data }) => data && setMensagens(data))
-  }, [userProfile?.id])
-
-  useEffect(() => {
+    
     const channel = supabase.channel('chat_geral_refresh').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'mensagens_chat' }, 
       p => { if (!p.new.chamado_id && String(p.new.usuario_id) !== String(userProfile.id)) setMensagens(prev => [...prev, p.new]) }
     ).subscribe()
@@ -113,57 +111,58 @@ export default function Home() {
   const [tarefaSelecionada, setTarefaSelecionada] = useState(null)
   const [isSelecaoOpen, setIsSelecaoOpen] = useState(false)
   
-  // Notificações
   const [unreadGeral, setUnreadGeral] = useState(0)
   const [notificacoesCards, setNotificacoesCards] = useState([]) 
   const [showNotiPanel, setShowNotiPanel] = useState(false)
 
   const router = useRouter()
 
-  useEffect(() => {
-    const carregar = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) return router.push('/login')
-      const { data: prof } = await supabase.from('financeiro_usu').select('*').eq('id', session.user.id).single()
-      setUserProfile(prof)
-      const { data: chs } = await supabase.from('Chamado_NF').select('*').neq('status', 'concluido').order('id', {ascending: false})
-      
-      const filtradas = (chs || []).filter(t => {
-        if (prof?.funcao === 'Financeiro') return t.status === 'gerar_boleto'
-        if (prof?.funcao === 'Pós-Vendas') return t.status === 'enviar_cliente' || t.status === 'vencido'
-        return false
-      })
-      setTarefas(filtradas)
-      setLoading(false)
+  const carregarDadosIniciais = async () => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) return router.push('/login')
+    
+    const { data: prof } = await supabase.from('financeiro_usu').select('*').eq('id', session.user.id).single()
+    setUserProfile(prof)
+    
+    const { data: chs } = await supabase.from('Chamado_NF').select('*').neq('status', 'concluido').order('id', {ascending: false})
+    
+    const filtradas = (chs || []).filter(t => {
+      if (prof?.funcao === 'Financeiro') return t.status === 'gerar_boleto'
+      if (prof?.funcao === 'Pós-Vendas') return t.status === 'enviar_cliente' || t.status === 'vencido'
+      return false
+    })
+    setTarefas(filtradas)
+    setLoading(false)
 
-      const channel = supabase.channel('notificacoes_master').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'mensagens_chat' }, 
-        payload => {
-          if (String(payload.new.usuario_id) === String(session.user.id)) return 
+    // Listener de Mensagens Corrigido
+    supabase.channel('notificacoes_master').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'mensagens_chat' }, 
+      async payload => {
+        if (String(payload.new.usuario_id) === String(session.user.id)) return 
 
-          new Audio('/notificacao.mp3.mp3').play().catch(() => {})
+        new Audio('/notificacao.mp3').play().catch(() => {})
 
-          if (payload.new.chamado_id) {
-            const card = chs?.find(c => String(c.id) === String(payload.new.chamado_id))
-            setNotificacoesCards(prev => [{ 
-              id: payload.new.id, 
-              remetente: payload.new.usuario_nome, 
-              chamadoId: payload.new.chamado_id,
-              cliente: card ? card.nom_cliente : "Chamado"
-            }, ...prev])
-          } else {
-            setUnreadGeral(prev => prev + 1)
-          }
+        if (payload.new.chamado_id) {
+          // Busca o nome do cliente direto no banco se não tiver na lista local
+          const { data: cardInfo } = await supabase.from('Chamado_NF').select('nom_cliente').eq('id', payload.new.chamado_id).single()
+          
+          setNotificacoesCards(prev => [{ 
+            id: payload.new.id, 
+            remetente: payload.new.usuario_nome, 
+            chamadoId: payload.new.chamado_id,
+            cliente: cardInfo ? cardInfo.nom_cliente : "Processo"
+          }, ...prev])
+        } else {
+          setUnreadGeral(prev => prev + 1)
         }
-      ).subscribe()
+      }
+    ).subscribe()
+  }
 
-      return () => { supabase.removeChannel(channel) }
-    }
-    carregar()
-  }, [router])
+  useEffect(() => { carregarDadosIniciais() }, [router])
 
   const glassStyle = { background: 'rgba(255, 255, 255, 0.5)', backdropFilter: 'blur(15px)', border: '1px solid rgba(255, 255, 255, 0.3)', borderRadius: '30px' }
 
-  if (loading) return <div style={{padding:'100px', textAlign:'center', fontWeight:'bold'}}>Iniciando sistema...</div>
+  if (loading) return <div style={{padding:'100px', textAlign:'center', fontWeight:'bold'}}>Carregando...</div>
 
   return (
     <div style={{ padding: '30px 20px', maxWidth: '900px', margin: '0 auto', fontFamily: 'sans-serif' }}>
@@ -181,27 +180,26 @@ export default function Home() {
         
         <div style={{ display: 'flex', gap: '15px', alignItems:'center', position: 'relative' }}>
           
-          {/* BOTÃO DO SINO (CUSTOMIZADO) */}
           <div onClick={() => setShowNotiPanel(!showNotiPanel)} style={{ position: 'relative', fontSize: '22px', cursor: 'pointer', background: '#f8fafc', padding: '8px', borderRadius: '12px' }} className={notificacoesCards.length > 0 ? 'bell-shake' : ''}>
             🔔
             {notificacoesCards.length > 0 && <span style={{ position: 'absolute', top: '-5px', right: '-5px', background: 'red', color: 'white', fontSize: '10px', borderRadius: '50%', width: '18px', height: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid white', fontWeight:'bold' }}>{notificacoesCards.length}</span>}
           </div>
 
-          {/* PAINEL DE NOTIFICAÇÕES BONITO */}
           {showNotiPanel && (
-            <div style={{ position: 'absolute', top: '55px', right: 0, width: '300px', background: 'white', borderRadius: '20px', boxShadow: '0 15px 40px rgba(0,0,0,0.15)', zIndex: 4000, border: '1px solid #eee', overflow: 'hidden' }}>
-              <div style={{ padding: '15px', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <b style={{ fontSize: '13px' }}>Notificações</b>
+            <div style={{ position: 'absolute', top: '55px', right: 0, width: '320px', background: 'white', borderRadius: '20px', boxShadow: '0 15px 40px rgba(0,0,0,0.15)', zIndex: 4000, border: '1px solid #eee', overflow: 'hidden' }}>
+              <div style={{ padding: '15px', background:'#f8fafc', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <b style={{ fontSize: '13px' }}>🔔 Mensagens nos Cards</b>
                 <button onClick={() => {setNotificacoesCards([]); setShowNotiPanel(false)}} style={{ background:'none', border:'none', color:'#22c55e', fontSize:'11px', fontWeight:'bold', cursor:'pointer' }}>Limpar</button>
               </div>
-              <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+              <div style={{ maxHeight: '350px', overflowY: 'auto' }}>
                 {notificacoesCards.length > 0 ? notificacoesCards.map(n => (
-                  <div key={n.id} style={{ padding: '12px 15px', borderBottom: '1px solid #f9f9f9', cursor:'pointer' }} onClick={() => setShowNotiPanel(false)}>
-                    <p style={{ margin: 0, fontSize: '11px' }}>
-                      <b>{n.remetente}</b> enviou uma mensagem no card <b style={{color:'#166534'}}>#{n.chamadoId} - {n.cliente}</b>
+                  <div key={n.id} style={{ padding: '15px', borderBottom: '1px solid #f9f9f9', background: '#fff' }} onClick={() => setShowNotiPanel(false)}>
+                    <p style={{ margin: 0, fontSize: '12px', lineHeight:'1.4' }}>
+                      <b>{n.remetente}</b> mandou mensagem no processo:<br/>
+                      <span style={{color:'#166534', fontWeight:'bold'}}>#{n.chamadoId} - {n.cliente}</span>
                     </p>
                   </div>
-                )) : <p style={{ padding: '20px', textAlign: 'center', fontSize: '12px', color: '#999' }}>Nenhuma mensagem nova.</p>}
+                )) : <p style={{ padding: '30px', textAlign: 'center', fontSize: '12px', color: '#999' }}>Nenhuma novidade nos cards.</p>}
               </div>
             </div>
           )}
@@ -212,40 +210,30 @@ export default function Home() {
       </header>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-        <h2 style={{ fontSize: '22px', fontWeight: '900', color: '#14532d', marginBottom: '10px' }}>Sua Fila de Trabalho</h2>
+        <h2 style={{ fontSize: '22px', fontWeight: '900', color: '#14532d', marginBottom: '10px' }}>Sua Fila</h2>
         {tarefas.map(t => (
-          <div key={t.id} onClick={() => setTarefaSelecionada(t)} style={{ ...glassStyle, padding: '20px 25px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', transition: '0.2s', border: '1px solid transparent' }} onMouseEnter={e => e.currentTarget.style.borderColor = '#22c55e'} onMouseLeave={e => e.currentTarget.style.borderColor = 'transparent'}>
+          <div key={t.id} onClick={() => setTarefaSelecionada(t)} style={{ ...glassStyle, padding: '20px 25px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', transition: '0.2s', border: '1px solid transparent' }}>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '11px', fontWeight: '900', color: '#166534' }}>#{t.id}</span>
-                <span style={{ fontSize: '8px', fontWeight: '900', color: '#166534', background: 'rgba(34,197,94,0.1)', padding: '3px 7px', borderRadius: '5px' }}>{t.tarefa?.toUpperCase()}</span>
+                <b style={{ fontSize: '14px', color: '#166534' }}>#{t.id}</b>
+                <span style={{ fontSize: '9px', fontWeight: '900', color: '#166534', background: 'rgba(34,197,94,0.1)', padding: '3px 7px', borderRadius: '5px' }}>{t.tarefa?.toUpperCase()}</span>
               </div>
-              <h3 style={{ margin: '8px 0 0 0', fontWeight: '800', fontSize: '16px' }}>{t.nom_cliente}</h3>
+              <h3 style={{ margin: '5px 0 0 0', fontWeight: '800', fontSize: '16px' }}>{t.nom_cliente}</h3>
             </div>
             <b style={{ color: '#166534', fontSize:'18px' }}>R$ {t.valor_servico}</b>
           </div>
         ))}
-        {tarefas.length === 0 && <div style={{textAlign:'center', padding:'40px', color:'#999'}}>Tudo em dia por aqui! ✨</div>}
       </div>
 
-      {/* MODAL DETALHE + CHAT */}
       {tarefaSelecionada && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(10px)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
           <div style={{ background: 'white', width: '100%', maxWidth: '950px', borderRadius: '40px', display: 'grid', gridTemplateColumns: '1fr 380px', overflow: 'hidden', boxShadow: '0 25px 60px rgba(0,0,0,0.2)' }}>
             <div style={{ padding: '40px', overflowY: 'auto', maxHeight: '85vh' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '5px' }}>
-                 <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#166534', background: '#f0fdf4', padding: '4px 10px', borderRadius: '8px' }}>#{tarefaSelecionada.id}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                 <b style={{ fontSize: '18px', color: '#166534' }}>#{tarefaSelecionada.id}</b>
                  <h2 style={{ color: '#14532d', margin: 0 }}>{tarefaSelecionada.nom_cliente}</h2>
               </div>
-              <p style={{fontSize:'12px', color:'#666'}}>{tarefaSelecionada.tarefa}</p>
-              
-              <div style={{ marginTop: '30px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                 <p><b>Valor Total:</b> R$ {tarefaSelecionada.valor_servico}</p>
-                 <p><b>NF Serviço:</b> {tarefaSelecionada.num_nf_servico || '---'}</p>
-                 <p><b>Pagamento:</b> {tarefaSelecionada.forma_pagamento}</p>
-                 
-                 <button onClick={() => setTarefaSelecionada(null)} style={{ background: '#000', color: '#fff', border: 'none', padding: '18px', borderRadius: '15px', fontWeight: 'bold', cursor:'pointer', marginTop: '20px' }}>FECHAR DETALHES</button>
-              </div>
+              <button onClick={() => setTarefaSelecionada(null)} style={{ background: '#000', color: '#fff', border: 'none', padding: '18px', borderRadius: '15px', fontWeight: 'bold', cursor:'pointer', marginTop: '30px', width:'100%' }}>FECHAR</button>
             </div>
             <div style={{ padding: '30px', background: '#f8fafc' }}>
               {userProfile && <ChatChamado chamadoId={tarefaSelecionada.id} userProfile={userProfile} />}
@@ -254,12 +242,11 @@ export default function Home() {
         </div>
       )}
 
-      {/* MODAL NOVO CHAMADO */}
       {isSelecaoOpen && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ background: 'white', padding: '40px', borderRadius: '45px', width: '90%', maxWidth: '400px', textAlign:'center' }}>
-            <h3 style={{fontWeight:'900', marginBottom:'20px'}}>Novo Faturamento</h3>
-            <button onClick={() => router.push('/novo-chamado-nf')} style={{ width: '100%', background: '#22c55e', color: 'white', padding: '20px', borderRadius: '15px', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}>📑 NOTA FISCAL / SERVIÇO</button>
+            <h3 style={{fontWeight:'900', marginBottom:'20px'}}>Novo Chamado</h3>
+            <button onClick={() => router.push('/novo-chamado-nf')} style={{ width: '100%', background: '#22c55e', color: 'white', padding: '20px', borderRadius: '15px', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}>📑 NOTA FISCAL</button>
             <button onClick={() => setIsSelecaoOpen(false)} style={{ background: 'none', border: 'none', color: '#999', marginTop:'15px', cursor: 'pointer' }}>CANCELAR</button>
           </div>
         </div>
