@@ -1,151 +1,324 @@
 'use client'
-import { useState, useEffect, useRef } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
+import { useRouter } from 'next/navigation'
 
-export default function Chat({ userProfile }) {
-  const [isOpen, setIsOpen] = useState(false)
+// --- COMPONENTE DE CHAT INDIVIDUAL (ABRE DENTRO DO CARD) ---
+function ChatChamado({ chamadoId, nomCliente, userProfile, onClose }) {
   const [mensagens, setMensagens] = useState([])
   const [novaMsg, setNovaMsg] = useState('')
-  const [unreadCount, setUnreadCount] = useState(0)
   const scrollRef = useRef()
-  
-  const isOpenRef = useRef(isOpen)
-
-  // Sincroniza a Ref com o estado aberto/fechado
-  useEffect(() => {
-    isOpenRef.current = isOpen
-    if (isOpen) setUnreadCount(0)
-  }, [isOpen])
-
-  const playNotificationSound = () => {
-    const audio = new Audio('/notificacao.mp3') // Certifique se o nome está idêntico na pasta public
-    audio.volume = 0.5
-    audio.play().catch(e => console.warn("Bloqueio de áudio do navegador: Clique na tela primeiro!"))
-  }
 
   useEffect(() => {
+    if (!chamadoId) return
+    
+    // 1. Escuta apenas mensagens DESTE chamado específico
     const channel = supabase
-      .channel('chat_realtime')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'mensagens_chat' }, 
-        (payload) => {
-          const msgDB = payload.new
-          
-          // CONVERSÃO FORÇADA PARA EVITAR ERRO DE TIPO (Número vs Texto)
-          const meuId = String(userProfile?.id || '').trim()
-          const remetenteId = String(msgDB.usuario_id || '').trim()
-
-          console.log(`[DEBUG] Msg de: ${remetenteId} | Meu ID: ${meuId}`)
-
-          setMensagens((prev) => {
-            // Se eu já tenho essa mensagem (pelo ID real do banco), ignoro
-            if (prev.find(m => m.id === msgDB.id)) return prev
-            
-            // Se a mensagem que chegou no Realtime tem o MEU ID, eu ignoro
-            // porque ela já foi adicionada na tela pelo 'enviarMensagem'
-            if (remetenteId === meuId) return prev
-            
-            // SE CHEGOU AQUI, A MENSAGEM É DE OUTRA PESSOA
-            if (!isOpenRef.current) {
-               setUnreadCount(c => c + 1)
-            }
-            playNotificationSound()
-            
-            return [...prev, msgDB]
-          })
+      .channel(`chat_card_${chamadoId}`)
+      .on('postgres_changes', { 
+        event: 'INSERT', 
+        schema: 'public', 
+        table: 'mensagens_chat',
+        filter: `chamado_id=eq.${chamadoId}` 
+      }, payload => {
+        const msgNova = payload.new
+        // Se a mensagem não for minha, adiciono na tela
+        if (String(msgNova.usuario_id) !== String(userProfile.id)) {
+          setMensagens(prev => [...prev, msgNova])
         }
-      )
-      .subscribe()
+      }).subscribe()
 
-    const carregar = async () => {
-      const { data } = await supabase.from('mensagens_chat').select('*').order('created_at', { ascending: true }).limit(50)
-      if (data) setMensagens(data)
-    }
-    carregar()
+    // 2. Carrega o histórico de mensagens deste chamado
+    supabase.from('mensagens_chat')
+      .select('*')
+      .eq('chamado_id', chamadoId)
+      .order('created_at', { ascending: true })
+      .then(({ data }) => data && setMensagens(data))
 
     return () => { supabase.removeChannel(channel) }
-  }, [userProfile?.id])
+  }, [chamadoId, userProfile.id])
 
-  useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-  }, [mensagens, isOpen])
+  useEffect(() => { 
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight 
+  }, [mensagens])
 
-  const enviarMensagem = async (e) => {
+  const enviar = async (e) => {
     e.preventDefault()
     if (!novaMsg.trim()) return
-
     const texto = novaMsg
     setNovaMsg('')
 
-    // ID temporário para o Update Otimista
+    // Update Otimista (aparece na hora para quem manda)
     const tempId = Date.now()
-    setMensagens(prev => [...prev, { 
-        id: tempId, 
-        texto, 
-        usuario_nome: userProfile.nome, 
-        usuario_id: userProfile.id 
-    }])
+    setMensagens(prev => [...prev, { id: tempId, texto, usuario_nome: userProfile.nome, usuario_id: userProfile.id }])
 
-    const { error } = await supabase.from('mensagens_chat').insert([{ 
+    // Salva no banco com o ID do chamado
+    await supabase.from('mensagens_chat').insert([{ 
       texto, 
       usuario_nome: userProfile.nome, 
-      usuario_id: userProfile.id 
+      usuario_id: userProfile.id, 
+      chamado_id: chamadoId 
     }])
-
-    if (error) {
-        alert("Erro ao enviar")
-        setMensagens(prev => prev.filter(m => m.id !== tempId))
-    }
   }
 
   return (
-    <div style={{ position: 'fixed', bottom: '30px', right: '30px', zIndex: 9999 }}>
-      
-      {/* BOTÃO */}
-      <div style={{ position: 'relative' }}>
-        <button onClick={() => setIsOpen(!isOpen)} style={{ width: '65px', height: '65px', borderRadius: '50%', background: '#22c55e', color: 'white', border: 'none', fontSize: '28px', cursor: 'pointer', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}>
-          {isOpen ? '✕' : '💬'}
-        </button>
-
-        {/* BOLINHA VERMELHA - POSIÇÃO FORÇADA */}
-        {!isOpen && unreadCount > 0 && (
-          <div style={{
-            position: 'absolute', top: '-5px', right: '-5px',
-            background: 'red', color: 'white', fontSize: '12px',
-            fontWeight: 'bold', width: '25px', height: '25px',
-            borderRadius: '50%', display: 'flex', alignItems: 'center',
-            justifyContent: 'center', border: '2px solid white', zIndex: 10000
-          }}>
-            {unreadCount}
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 5000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ background: 'white', width: '360px', height: '550px', borderRadius: '30px', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 20px 50px rgba(0,0,0,0.3)' }}>
+        <div style={{ padding: '20px', background: '#22c55e', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <b style={{display:'block', fontSize:'14px'}}>Chat: {nomCliente}</b>
+            <span style={{fontSize:'10px'}}>Protocolo #{chamadoId}</span>
           </div>
-        )}
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'white', fontSize: '20px', cursor: 'pointer' }}>✕</button>
+        </div>
+        <div ref={scrollRef} style={{ flex: 1, padding: '15px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px', background:'#f8f9fa' }}>
+          {mensagens.map(m => {
+            const ehMinha = String(m.usuario_id) === String(userProfile.id)
+            return (
+              <div key={m.id} style={{ alignSelf: ehMinha ? 'flex-end' : 'flex-start', background: ehMinha ? '#22c55e' : 'white', color: ehMinha ? 'white' : '#333', padding: '10px 14px', borderRadius: '15px', fontSize: '13px', boxShadow: '0 2px 5px rgba(0,0,0,0.05)', maxWidth: '85%' }}>
+                <b style={{ fontSize: '9px', display: 'block', marginBottom:'2px', opacity: 0.7 }}>{m.usuario_nome}</b>
+                {m.texto}
+              </div>
+            )
+          })}
+        </div>
+        <form onSubmit={enviar} style={{ padding: '15px', display: 'flex', gap: '8px', background: 'white', borderTop: '1px solid #eee' }}>
+          <input value={novaMsg} onChange={e => setNovaMsg(e.target.value)} placeholder="Digite sua mensagem..." style={{ flex: 1, padding: '12px', borderRadius: '12px', border: '1px solid #ddd', outline:'none' }} />
+          <button style={{ background: '#22c55e', color: 'white', border: 'none', borderRadius: '12px', width:'45px', cursor:'pointer' }}>➔</button>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+// --- PÁGINA PRINCIPAL (HOME) ---
+export default function Home() {
+  const [tarefas, setTarefas] = useState([])
+  const [userProfile, setUserProfile] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [isSalvando, setIsSalvando] = useState(false)
+  const [tarefaSelecionada, setTarefaSelecionada] = useState(null)
+  const [chatAberto, setChatAberto] = useState(null) // Para saber qual chat mostrar
+  const [notificacaoGlobal, setNotificacaoGlobal] = useState(0)
+
+  // Estados do Formulário NF
+  const [isSelecaoOpen, setIsSelecaoOpen] = useState(false)
+  const [showFormNf, setShowFormNf] = useState(false)
+  const [tipoFaturamento, setTipoFaturamento] = useState('') // 'os', 'peca', 'ambos'
+  const [novoChamado, setNovoChamado] = useState({
+    nom_cliente: '', valor_servico: '', forma_pagamento: 'Boleto 30 dias', 
+    setor: 'Financeiro', num_nf_peca: '', num_nf_servico: '', obs: '',
+    qtd_parcelas: 1, datas_parcelas: []
+  })
+
+  // Arquivos
+  const [fileOS, setFileOS] = useState(null)
+  const [filePeca, setFilePeca] = useState(null)
+  const [filePix, setFilePix] = useState(null)
+
+  const router = useRouter()
+
+  useEffect(() => {
+    const carregar = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) return router.push('/login')
+      const { data: prof } = await supabase.from('financeiro_usu').select('*').eq('id', session.user.id).single()
+      setUserProfile(prof)
+      
+      // SINO: Escuta mensagens de QUALQUER chamado no sistema
+      supabase.channel('sino_global').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'mensagens_chat' }, payload => {
+        if (String(payload.new.usuario_id) !== String(session.user.id)) {
+          setNotificacaoGlobal(prev => prev + 1)
+          new Audio('/notificacao.mp3').play().catch(()=>{})
+        }
+      }).subscribe()
+
+      carregarTarefas(prof)
+    }
+    carregar()
+  }, [])
+
+  const carregarTarefas = async (prof) => {
+    const { data: chamados } = await supabase.from('Chamado_NF').select('*').neq('status', 'concluido').order('id', {ascending: false})
+    const filtradas = (chamados || []).filter(t => {
+      if (prof?.funcao === 'Financeiro') return t.status === 'gerar_boleto' || t.status === 'validar_pix'
+      if (prof?.funcao === 'Pós-Vendas') return t.status === 'enviar_cliente' || t.status === 'vencido'
+      return false
+    })
+    setTarefas(filtradas)
+    setLoading(false)
+  }
+
+  const upload = async (file, folder) => {
+    if (!file) return null
+    const path = `${folder}/${Date.now()}-${file.name}`
+    await supabase.storage.from('anexos').upload(path, file)
+    const { data } = supabase.storage.from('anexos').getPublicUrl(path)
+    return data.publicUrl
+  }
+
+  const salvarNovoChamado = async () => {
+    if (!novoChamado.nom_cliente || !novoChamado.valor_servico) return alert("Preencha cliente e valor!")
+    setIsSalvando(true)
+    try {
+      const urlOS = await upload(fileOS, 'servicos')
+      const urlPeca = await upload(filePeca, 'pecas')
+      const urlPix = await upload(filePix, 'comprovantes')
+
+      let status = 'gerar_boleto', tarefa = 'Gerar Boleto'
+      if (novoChamado.forma_pagamento === 'Pix') {
+        status = 'validar_pix'; tarefa = 'Validar Recebimento Pix'
+      }
+
+      const { error } = await supabase.from('Chamado_NF').insert([{
+        ...novoChamado, status, tarefa,
+        anexo_nf_servico: urlOS, anexo_nf_peca: urlPeca, comprovante_pagamento: urlPix,
+        obs: `${novoChamado.obs} | Parcelas: ${novoChamado.datas_parcelas.join(' / ')}`
+      }])
+      
+      if (!error) {
+        alert("Sucesso!"); setIsSelecaoOpen(false); setShowFormNf(false); carregarTarefas(userProfile)
+      }
+    } catch (e) { alert(e.message) }
+    finally { setIsSalvando(false) }
+  }
+
+  const glassStyle = { background: 'rgba(255, 255, 255, 0.45)', backdropFilter: 'blur(15px)', border: '1px solid rgba(255, 255, 255, 0.3)', borderRadius: '35px' }
+
+  if (loading) return <div style={{padding:'100px', textAlign:'center', fontWeight:'bold'}}>Carregando...</div>
+
+  return (
+    <div style={{ padding: '30px 20px', maxWidth: '850px', margin: '0 auto', fontFamily: 'sans-serif' }}>
+      
+      {/* HEADER COM SINO */}
+      <header style={{ ...glassStyle, padding: '20px 30px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+          <div style={{ width: '45px', height: '45px', background: '#22c55e', borderRadius: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold' }}>{userProfile?.nome?.charAt(0)}</div>
+          <div>
+            <h1 style={{ fontSize: '14px', margin: 0 }}>{userProfile?.nome}</h1>
+            <p style={{ fontSize: '10px', color: '#166534', fontWeight: 'bold' }}>{userProfile?.funcao?.toUpperCase()}</p>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+          
+          {/* SINO DE NOTIFICAÇÃO */}
+          <div onClick={() => setNotificacaoGlobal(0)} style={{ position: 'relative', fontSize: '22px', cursor: 'pointer', background: '#fff', padding: '8px', borderRadius: '12px' }}>
+            🔔
+            {notificacaoGlobal > 0 && (
+              <div style={{ position: 'absolute', top: '-5px', right: '-5px', background: 'red', color: 'white', fontSize: '10px', width: '18px', height: '18px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight:'bold' }}>{notificacaoGlobal}</div>
+            )}
+          </div>
+
+          <button onClick={() => router.push('/kanban')} style={{ background: '#f0fdf4', color: '#166534', border: '1px solid #dcfce7', padding: '10px 15px', borderRadius: '12px', fontWeight: '900', fontSize: '10px', cursor:'pointer' }}>📊 FLUXO NF</button>
+          <button onClick={() => setIsSelecaoOpen(true)} style={{ background: '#22c55e', color: 'white', padding: '10px 20px', borderRadius: '12px', border: 'none', fontWeight:'bold', cursor:'pointer' }}>+ NOVO</button>
+        </div>
+      </header>
+
+      {/* LISTA DE CARDS */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+        <h2 style={{ fontSize: '22px', fontWeight: '900', color: '#14532d' }}>Fila de Trabalho</h2>
+        {tarefas.map(t => (
+          <div key={t.id} 
+               onClick={() => setChatAberto({id: t.id, nome: t.nom_cliente})} // CLIQUE NO CARD ABRE CHAT
+               style={{ ...glassStyle, padding: '25px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position:'relative' }}
+          >
+            <div style={{ flex: 1 }}>
+              <span style={{ fontSize: '8px', fontWeight: '900', color: '#166534', background: 'rgba(34,197,94,0.1)', padding: '4px 8px', borderRadius: '6px' }}>{t.tarefa.toUpperCase()}</span>
+              <h3 style={{ margin: '10px 0 0 0', fontWeight: '800' }}>{t.nom_cliente}</h3>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }} onClick={(e) => e.stopPropagation()}>
+               <p style={{ fontWeight: '900', fontSize: '18px', color: '#166534' }}>R$ {t.valor_servico}</p>
+               
+               {/* BOTÃO PARA AVANÇAR A TAREFA (MODAL ANTIGO) */}
+               <button onClick={() => setTarefaSelecionada(t)} style={{ background: '#f1f5f9', border: 'none', padding: '10px', borderRadius: '12px', cursor: 'pointer', fontSize: '10px', fontWeight: 'bold' }}>AVANÇAR ⮕</button>
+            </div>
+          </div>
+        ))}
       </div>
 
-      {/* JANELA */}
-      {isOpen && (
-        <div style={{ position: 'absolute', bottom: '85px', right: 0, width: '320px', height: '450px', background: 'white', borderRadius: '20px', display: 'flex', flexDirection: 'column', boxShadow: '0 15px 30px rgba(0,0,0,0.2)', overflow: 'hidden', border: '1px solid #eee' }}>
-          <div style={{ padding: '15px', background: '#22c55e', color: 'white', fontWeight: 'bold' }}>Chat Online</div>
-          <div ref={scrollRef} style={{ flex: 1, padding: '15px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', background: '#f9f9f9' }}>
-            {mensagens.map(m => {
-                const souEu = String(m.usuario_id) === String(userProfile?.id)
-                return (
-                    <div key={m.id} style={{ 
-                        alignSelf: souEu ? 'flex-end' : 'flex-start',
-                        background: souEu ? '#22c55e' : '#e5e7eb',
-                        color: souEu ? 'white' : 'black',
-                        padding: '8px 12px', borderRadius: '12px', fontSize: '13px', maxWidth: '80%'
-                    }}>
-                        <b style={{fontSize:'9px', display:'block'}}>{m.usuario_nome}</b>
-                        {m.texto}
-                    </div>
-                )
-            })}
+      {/* FORMULÁRIO NF (O QUE VOCÊ TINHA PEDIDO ONTEM) */}
+      {showFormNf && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(10px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+          <div style={{ background: 'white', padding: '30px', borderRadius: '40px', width: '100%', maxWidth: '550px', maxHeight: '90vh', overflowY: 'auto' }}>
+            <h2 style={{ fontWeight: '900', color: '#14532d', marginBottom: '25px' }}>Novo Faturamento</h2>
+            
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ fontSize: '11px', fontWeight: 'bold' }}>TIPO:</label>
+              <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
+                <button onClick={() => setTipoFaturamento('os')} style={{ flex: 1, padding: '10px', borderRadius: '10px', border: tipoFaturamento === 'os' ? '2px solid #22c55e' : '1px solid #ddd' }}>Ordem Serviço</button>
+                <button onClick={() => setTipoFaturamento('peca')} style={{ flex: 1, padding: '10px', borderRadius: '10px', border: tipoFaturamento === 'peca' ? '2px solid #22c55e' : '1px solid #ddd' }}>Peças</button>
+                <button onClick={() => setTipoFaturamento('ambos')} style={{ flex: 1, padding: '10px', borderRadius: '10px', border: tipoFaturamento === 'ambos' ? '2px solid #22c55e' : '1px solid #ddd' }}>As duas</button>
+              </div>
+            </div>
+
+            {(tipoFaturamento === 'os' || tipoFaturamento === 'ambos') && <div style={{marginBottom:15}}><label style={{fontSize:11, fontWeight:'bold'}}>ANEXAR O.S:</label><input type="file" onChange={e => setFileOS(e.target.files[0])}/></div>}
+            {(tipoFaturamento === 'peca' || tipoFaturamento === 'ambos') && <div style={{marginBottom:15}}><label style={{fontSize:11, fontWeight:'bold'}}>ANEXAR NOTA PEÇAS:</label><input type="file" onChange={e => setFilePeca(e.target.files[0])}/></div>}
+
+            <input placeholder="Nome do Cliente" style={{ width: '100%', padding: '15px', borderRadius: '12px', border: '1px solid #ddd', marginBottom: 15 }} onChange={e => setNovoChamado({...novoChamado, nom_cliente: e.target.value})} />
+            <input placeholder="Valor R$" type="number" style={{ width: '100%', padding: '15px', borderRadius: '12px', border: '1px solid #ddd', marginBottom: 15 }} onChange={e => setNovoChamado({...novoChamado, valor_servico: e.target.value})} />
+
+            <label style={{ fontSize: '11px', fontWeight: 'bold' }}>FORMA DE PAGAMENTO:</label>
+            <select style={{ width: '100%', padding: '15px', borderRadius: '12px', border: '1px solid #ddd', marginTop: 8, marginBottom: 20 }} onChange={e => setNovoChamado({...novoChamado, forma_pagamento: e.target.value})}>
+              <option>Boleto 30 dias</option>
+              <option>Boleto Parcelado</option>
+              <option>Cartão Parcelado</option>
+              <option>Cartão a vista</option>
+              <option>Pix</option>
+            </select>
+
+            {novoChamado.forma_pagamento === 'Boleto Parcelado' && (
+              <div style={{ background: '#f0fdf4', padding: 20, borderRadius: 20, marginBottom: 20 }}>
+                <input placeholder="Qtd Parcelas" type="number" onChange={e => setNovoChamado({...novoChamado, qtd_parcelas: e.target.value})} style={{width:'100%', padding:10, marginBottom:10}}/>
+                {[...Array(Number(novoChamado.qtd_parcelas || 0))].map((_, i) => (
+                  <input key={i} type="date" style={{width:'100%', marginBottom:5, padding:8}} onChange={e => {
+                    const d = [...novoChamado.datas_parcelas]; d[i] = e.target.value; setNovoChamado({...novoChamado, datas_parcelas: d})
+                  }}/>
+                ))}
+              </div>
+            )}
+
+            {novoChamado.forma_pagamento === 'Pix' && <div style={{background:'#eff6ff', padding:20, borderRadius:20, marginBottom:20}}><label>ANEXAR COMPROVANTE PIX:</label><input type="file" onChange={e => setFilePix(e.target.files[0])}/></div>}
+
+            <button onClick={salvarNovoChamado} disabled={isSalvando} style={{ width: '100%', background: '#22c55e', color: 'white', padding: '20px', borderRadius: '15px', fontWeight: 'bold', border: 'none', cursor:'pointer' }}>
+              {isSalvando ? 'SALVANDO...' : 'CRIAR CHAMADO ⮕'}
+            </button>
+            <button onClick={() => setShowFormNf(false)} style={{ width: '100%', background: 'none', border: 'none', color: '#999', marginTop: 15, cursor:'pointer' }}>CANCELAR</button>
           </div>
-          <form onSubmit={enviarMensagem} style={{ padding: '10px', display: 'flex', gap: '5px' }}>
-            <input value={novaMsg} onChange={e => setNovaMsg(e.target.value)} placeholder="Sua dúvida..." style={{ flex: 1, border: '1px solid #ddd', borderRadius: '8px', padding: '8px' }} />
-            <button style={{ background: '#22c55e', color: 'white', border: 'none', borderRadius: '8px', padding: '0 15px' }}>➔</button>
-          </form>
         </div>
       )}
+
+      {/* CHAT INDIVIDUAL (ABRE AO CLICAR NO CARD) */}
+      {chatAberto && (
+        <ChatChamado 
+          chamadoId={chatAberto.id} 
+          nomCliente={chatAberto.nome} 
+          userProfile={userProfile} 
+          onClose={() => setChatAberto(null)} 
+        />
+      )}
+
+      {/* MODAL DETALHE/AVANÇAR (CASO PRECISE ANEXAR BOLETO, ETC) */}
+      {tarefaSelecionada && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(12px)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: 'white', padding: '40px', borderRadius: '40px', width: '90%', maxWidth: '450px', textAlign: 'center' }}>
+            <h3>{tarefaSelecionada.nom_cliente}</h3>
+            {/* Lógica para avançar (anexar boleto, validar pix, etc) conforme já tínhamos */}
+            <button onClick={() => setTarefaSelecionada(null)} style={{ background: '#000', color: '#fff', padding: '15px 30px', borderRadius: '15px', border: 'none', fontWeight: 'bold', cursor:'pointer', marginTop: 20 }}>FECHAR</button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL NOVO CHAMADO */}
+      {isSelecaoOpen && !showFormNf && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(10px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: 'white', padding: '40px', borderRadius: '45px', width: '90%', maxWidth: '400px', textAlign: 'center' }}>
+            <h3 style={{fontWeight:'900', marginBottom:'30px'}}>Novo Chamado</h3>
+            <button onClick={() => setShowFormNf(true)} style={{ width:'100%', background:'#22c55e', color:'white', padding:'20px', borderRadius:'15px', border:'none', fontWeight:'bold', cursor:'pointer', marginBottom:'15px' }}>📑 NOTA FISCAL / FATURAMENTO</button>
+            <button onClick={() => setIsSelecaoOpen(false)} style={{ background:'none', color:'#999', border:'none', cursor:'pointer' }}>CANCELAR</button>
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }
