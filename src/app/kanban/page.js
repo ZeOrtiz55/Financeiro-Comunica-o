@@ -2,8 +2,35 @@
 import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
+// ÍCONES MODERNOS
+import { Bell, MessageSquare, X, Menu, ArrowLeft, ShieldCheck, LogOut, CreditCard, Calendar, FileText, Download, CheckCircle, Upload, Send, History } from 'lucide-react'
 
-// --- COMPONENTE DE CHAT DO CARD (LADO DIREITO DO MODAL) ---
+// --- TELA DE CARREGAMENTO PADRONIZADA ---
+function LoadingScreen() {
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: '#000', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@100;300;400;900&display=swap" rel="stylesheet" />
+        <div style={{ textAlign: 'center' }}>
+            <h1 style={{ color: '#fff', fontFamily: 'Montserrat, sans-serif', fontWeight: '100', fontSize: '28px', letterSpacing: '8px', textTransform: 'uppercase', marginBottom: '10px' }}>
+                COMUNICAÇÃO FINANCEIRO
+            </h1>
+            <b style={{ color: '#fff', fontFamily: 'Montserrat, sans-serif', fontWeight: '900', fontSize: '32px', letterSpacing: '2px', textTransform: 'uppercase' }}>
+                NOVA TRATORES
+            </b>
+        </div>
+    </div>
+  )
+}
+
+const formatarData = (dataStr) => {
+  if (!dataStr || dataStr === 'null') return '';
+  if (dataStr.includes(',')) return dataStr.split(',').map(d => formatarData(d.trim())).join(' | ');
+  const partes = dataStr.split('-');
+  if (partes.length !== 3) return dataStr;
+  return `${partes[2]}/${partes[1]}/${partes[0]}`;
+};
+
+// --- 1. CHAT COM MOLDURA E ÁREA DE ENVIO DESTACADA ---
 function ChatChamado({ chamadoId, userProfile }) {
   const [mensagens, setMensagens] = useState([])
   const [novaMsg, setNovaMsg] = useState('')
@@ -33,18 +60,49 @@ function ChatChamado({ chamadoId, userProfile }) {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', borderLeft: '1px solid #eee', paddingLeft: '20px' }}>
-      <h4 style={{ fontSize: '11px', color: '#166534', marginBottom: '10px', fontWeight:'900' }}>CONVERSA DO PROCESSO</h4>
-      <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', padding: '10px', background: '#f8fafc', borderRadius: '15px' }}>
-        {mensagens.map(m => ( 
-          <div key={m.id} style={{ alignSelf: String(m.usuario_id) === String(userProfile.id) ? 'flex-end' : 'flex-start', background: String(m.usuario_id) === String(userProfile.id) ? '#22c55e' : '#fff', color: String(m.usuario_id) === String(userProfile.id) ? '#fff' : '#000', padding: '10px', borderRadius: '12px', fontSize: '11px', boxShadow: '0 2px 5px rgba(0,0,0,0.05)' }}>
-            <b style={{fontSize:'8px', display:'block', opacity: 0.6}}>{m.usuario_nome}</b>{m.texto}
-          </div> 
-        ))}
+    <div style={{ 
+      display: 'flex', flexDirection: 'column', height: '100%', 
+      fontFamily: 'Montserrat, sans-serif',
+      border: '1px solid #cbd5e1', borderRadius: '20px', overflow: 'hidden', background: '#fff' 
+    }}>
+      <div style={{ padding: '15px 20px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display:'flex', alignItems:'center', gap:'10px' }}>
+          <MessageSquare size={16} color="#64748b" />
+          <h4 style={{ fontSize: '10px', color: '#64748b', margin: 0, fontWeight:'900', letterSpacing: '2px' }}>CONVERSA INTERNA</h4>
       </div>
-      <form onSubmit={enviar} style={{ display: 'flex', gap: '5px', paddingTop: '15px' }}>
-        <input value={novaMsg} onChange={e => setNovaMsg(e.target.value)} placeholder="Tirar dúvida..." style={{ flex: 1, padding: '10px', borderRadius: '10px', border: '1px solid #ddd', fontSize: '12px' }} />
-        <button style={{ background: '#22c55e', color: 'white', border: 'none', borderRadius: '10px', padding: '10px' }}>➔</button>
+
+      <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', padding: '20px', gap: '12px', background: '#fff' }}>
+        {mensagens.map((m) => {
+           const souEu = String(m.usuario_id) === String(userProfile?.id);
+           return (
+             <div key={m.id} style={{ 
+                alignSelf: souEu ? 'flex-end' : 'flex-start',
+                background: souEu ? '#000000' : '#f1f5f9', 
+                color: souEu ? '#ffffff' : '#000',
+                padding: '12px 18px', borderRadius: souEu ? '15px 15px 2px 15px' : '15px 15px 15px 2px',
+                maxWidth: '85%', boxShadow: souEu ? '0 4px 12px rgba(0,0,0,0.15)' : 'none', border: souEu ? 'none' : '1px solid #e2e8f0'
+             }}>
+                <b style={{fontSize:'8px', color: souEu ? '#94a3b8' : '#64748b', marginBottom: '4px', display:'block'}}>{m.usuario_nome.toUpperCase()}</b>
+                <span style={{fontSize: '14px', fontWeight: souEu ? '500' : '400'}}>{m.texto}</span>
+             </div>
+           )
+        })}
+      </div>
+
+      {/* ÁREA DE ENVIO DESTACADA */}
+      <form onSubmit={enviar} style={{ display: 'flex', gap: '10px', padding: '20px', background: '#f8fafc', borderTop: '1px solid #e2e8f0' }}>
+        <input 
+          value={novaMsg} 
+          onChange={e => setNovaMsg(e.target.value)} 
+          placeholder="Escreva sua mensagem aqui..." 
+          style={{ flex: 1, padding: '15px', borderRadius: '12px', border: '1px solid #cbd5e1', fontSize: '13px', outline: 'none', background: '#fff', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02)' }} 
+        />
+        <button style={{ 
+          background: '#000', color: '#fff', border: 'none', borderRadius: '12px', 
+          width: '50px', height: '50px', display:'flex', alignItems:'center', justifyContent:'center', 
+          cursor: 'pointer', transition: '0.2s' 
+        }}>
+          <Send size={20} />
+        </button>
       </form>
     </div>
   )
@@ -56,14 +114,15 @@ export default function KanbanPage() {
   const [tarefaSelecionada, setTarefaSelecionada] = useState(null)
   const [loading, setLoading] = useState(true)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+  const [fileBoleto, setFileBoleto] = useState(null)
   const router = useRouter()
 
   const colunas = [
-    { id: 'gerar_boleto', titulo: 'Gerar Boleto', cor: '#FEF3C7' },
-    { id: 'enviar_cliente', titulo: 'Enviar Cliente', cor: '#DBEAFE' },
-    { id: 'aguardando_vencimento', titulo: 'Aguardando Pag.', cor: '#F1F5F9' },
-    { id: 'vencido', titulo: 'Vencido!', cor: '#FEE2E2' },
-    { id: 'pago', titulo: 'Pago ✅', cor: '#DCFCE7' }
+    { id: 'gerar_boleto', titulo: 'GERAR BOLETO' },
+    { id: 'enviar_cliente', titulo: 'ENVIAR CLIENTE' },
+    { id: 'aguardando_vencimento', titulo: 'EM ABERTO' },
+    { id: 'vencido', titulo: 'VENCIDO' },
+    { id: 'pago', titulo: 'PAGO' }
   ]
 
   useEffect(() => {
@@ -74,86 +133,92 @@ export default function KanbanPage() {
       setUserProfile(prof)
       const { data } = await supabase.from('Chamado_NF').select('*').neq('status', 'concluido').order('id', {ascending: false})
       setChamados(data || [])
-      setLoading(false)
+      setTimeout(() => setLoading(false), 1000)
     }
     fetchData()
   }, [router])
 
-  const glassStyle = { background: 'white', padding: '20px', borderRadius: '25px', cursor: 'pointer', border: '1px solid #eee', boxShadow: '0 4px 10px rgba(0,0,0,0.02)', transition: '0.3s' }
+  const handleLogout = async () => { await supabase.auth.signOut(); router.push('/login') }
 
-  if (loading) return <div style={{padding:'100px', textAlign:'center', fontWeight:'bold'}}>Carregando Controle de Boletos...</div>
+  const handleGerarBoletoFaturamento = async (id) => {
+    if (!fileBoleto) return alert("Anexe o boleto primeiro.")
+    try {
+      const path = `boletos/${Date.now()}-${fileBoleto.name}`
+      await supabase.storage.from('anexos').upload(path, fileBoleto)
+      const { data } = supabase.storage.from('anexos').getPublicUrl(path)
+      await supabase.from('Chamado_NF').update({ status: 'enviar_cliente', tarefa: 'Enviar Boleto para o Cliente', setor: 'Pós-Vendas', anexo_boleto: data.publicUrl }).eq('id', id)
+      alert("Sucesso!"); window.location.reload()
+    } catch (e) { alert(e.message) }
+  }
+
+  const handleFinalizarEnvioBoleto = async (id) => {
+    await supabase.from('Chamado_NF').update({ status: 'aguardando_vencimento', tarefa: 'Aguardando Pagamento' }).eq('id', id)
+    alert("Movido!"); window.location.reload()
+  }
+
+  if (loading) return <LoadingScreen />
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: '#f8fafc', fontFamily: 'sans-serif' }}>
-      
-      {/* SIDEBAR RETRÁTIL (ESTILO GAVETA) */}
-      <aside 
-        onMouseEnter={() => setIsSidebarOpen(true)}
-        onMouseLeave={() => setIsSidebarOpen(false)}
-        style={{ 
-          width: isSidebarOpen ? '260px' : '65px', 
-          background: '#fff', 
-          height: '100vh', 
-          position: 'fixed', 
-          left: 0, 
-          top: 0, 
-          borderRight: '1px solid #eee', 
-          padding: '30px 10px', 
-          display: 'flex', 
-          flexDirection: 'column', 
-          transition: 'width 0.3s ease', 
-          zIndex: 1000, 
-          overflow: 'hidden', 
-          boxShadow: '4px 0 15px rgba(0,0,0,0.05)' 
-        }}
-      >
-        <div style={{ opacity: isSidebarOpen ? 1 : 0, transition: '0.2s', whiteSpace: 'nowrap' }}>
-           <b style={{display:'block', marginBottom:'40px', textAlign:'center', color:'#22c55e'}}>NOVA TRATORES</b>
-           <nav style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <button onClick={() => router.push('/')} style={{ background:'none', color:'#666', border:'none', padding:'15px', borderRadius:'12px', textAlign:'left', fontWeight:'bold', cursor:'pointer' }}>🏠 Minhas Tarefas</button>
-              <button onClick={() => router.push('/kanban')} style={{ background:'#f0fdf4', color:'#166534', border:'none', padding:'15px', borderRadius:'12px', textAlign:'left', fontWeight:'bold', cursor:'pointer' }}>📊 Controle Boletos</button>
-              <button onClick={() => router.push('/novo-chamado-nf')} style={{ background:'none', color:'#666', border:'none', padding:'15px', borderRadius:'12px', textAlign:'left', fontWeight:'bold', cursor:'pointer' }}>➕ Novo Faturamento</button>
-           </nav>
+    <div style={{ display: 'flex', minHeight: '100vh', background: '#f1f5f9', fontFamily: 'Montserrat, sans-serif' }}>
+      <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@100;300;400;700;900&display=swap" rel="stylesheet" />
+      <div style={{ position: 'fixed', inset: 0, background: '#f1f5f9', zIndex: 0 }}></div>
+
+      {/* MENU LATERAL COM HISTÓRICOS */}
+      <aside onMouseEnter={()=>setIsSidebarOpen(true)} onMouseLeave={()=>setIsSidebarOpen(false)} style={{ width: isSidebarOpen ? '280px' : '65px', background: 'rgba(255, 255, 255, 0.95)', backdropFilter: 'blur(10px)', height: '100vh', position: 'fixed', left: 0, top: 0, borderRight: '1px solid #cbd5e1', padding: '30px 15px', display: 'flex', flexDirection: 'column', transition: '0.4s ease', zIndex: 1100, overflow: 'hidden' }}>
+        <div style={{ opacity: isSidebarOpen ? 1 : 0, transition: '0.2s', whiteSpace: 'nowrap', flex: 1 }}>
+            <b style={{display:'block', marginBottom:'35px', textAlign:'center', color: '#000', fontSize:'18px', fontWeight: '900', letterSpacing:'3px'}}>NOVA</b>
+            <div style={{ padding: '0 5px 25px', borderBottom: '1px solid #e2e8f0', marginBottom: '25px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ background: '#000', color: '#fff', width: '38px', height: '38px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><ShieldCheck size={20} /></div>
+                <div style={{ overflow: 'hidden' }}>
+                    <span style={{ fontSize: '13px', color: '#000', fontWeight: '800', display: 'block' }}>{userProfile?.nome}</span>
+                    <span style={{ fontSize: '10px', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>{userProfile?.funcao}</span>
+                </div>
+            </div>
+            <nav style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <button onClick={() => router.push('/')} style={{ background:'none', color: '#475569', border:'none', padding:'15px', textAlign:'left', fontWeight:'700', cursor:'pointer', fontSize: '12px' }}>TAREFAS</button>
+                <button onClick={() => router.push('/kanban')} style={{ background:'#000', color: '#fff', border:'none', padding:'15px', borderRadius:'10px', textAlign:'left', fontWeight:'900', cursor:'pointer', fontSize: '12px' }}>BOLETOS</button>
+                <div style={{padding: '20px 15px 10px', fontSize: '10px', fontWeight: '900', color: '#94a3b8', letterSpacing: '1px'}}>HISTÓRICOS</div>
+                <button onClick={() => router.push('/historico-pagar')} style={{ background:'none', color:'#475569', border:'none', padding:'12px 15px', textAlign:'left', fontWeight:'700', cursor:'pointer', fontSize:'12px', display:'flex', alignItems:'center', gap:'8px' }}><History size={14}/> PAGAR</button>
+                <button onClick={() => router.push('/historico-receber')} style={{ background:'none', color:'#475569', border:'none', padding:'12px 15px', textAlign:'left', fontWeight:'700', cursor:'pointer', fontSize:'12px', display:'flex', alignItems:'center', gap:'8px' }}><History size={14}/> RECEBER</button>
+                <button onClick={handleLogout} style={{ marginTop: '20px', background: '#fee2e2', color: '#dc2626', border: 'none', padding: '12px', borderRadius: '10px', fontWeight: '900', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}><LogOut size={16} /> SAIR</button>
+            </nav>
         </div>
-        {!isSidebarOpen && <div style={{textAlign:'center', fontSize:'24px', marginTop:'20px'}}>☰</div>}
+        {!isSidebarOpen && <div style={{ textAlign:'center', color:'#94a3b8' }}><Menu size={24} /></div>}
       </aside>
 
-      {/* ÁREA DO KANBAN */}
-      <main style={{ marginLeft: '85px', flex: 1, padding: '40px' }}>
-        <h2 style={{ fontWeight: '900', color: '#14532d', marginBottom:'30px', fontSize:'28px' }}>CONTROLE DE BOLETOS</h2>
+      <main style={{ marginLeft: '85px', flex: 1, padding: '50px', zIndex: 1, position: 'relative' }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'50px' }}>
+            <div>
+                <h1 style={{ fontWeight: '300', color: '#0f172a', margin: 0, fontSize:'42px', letterSpacing:'-2px' }}>Controle de Boletos</h1>
+                <div style={{ width: '80px', height: '4px', background: '#000', marginTop: '15px' }}></div>
+            </div>
+            <button onClick={() => router.push('/')} style={{ padding: '15px 30px', borderRadius: '10px', border: '1px solid #000', cursor: 'pointer', background: '#000', color:'#fff', fontWeight:'900', fontSize:'11px' }}>VOLTAR AO PAINEL</button>
+        </div>
         
-        <div style={{ display: 'flex', gap: '15px', overflowX: 'auto', alignItems: 'flex-start', paddingBottom:'20px' }}>
+        <div style={{ display: 'flex', gap: '25px', overflowX: 'auto', alignItems: 'flex-start', paddingBottom:'30px' }}>
           {colunas.map(col => (
-            <div key={col.id} style={{ minWidth: '300px', flex: 1 }}>
-              <div style={{ background: col.cor, padding: '15px', borderRadius: '15px', marginBottom: '15px', textAlign: 'center', fontWeight: '900', fontSize: '12px', color: '#1e293b', border:'1px solid rgba(0,0,0,0.05)' }}>{col.titulo.toUpperCase()}</div>
-              
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div key={col.id} style={{ minWidth: '340px', flex: 1 }}>
+              <h3 style={{ background: '#000', color: '#fff', padding: '20px', borderRadius: '10px', marginBottom: '25px', fontWeight: '300', fontSize: '16px', textAlign: 'center', letterSpacing: '4px' }}>{col.titulo}</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                 {chamados.filter(c => c.status === col.id).map(t => (
-                  <div key={t.id} onClick={() => setTarefaSelecionada(t)} style={glassStyle} onMouseEnter={e => e.currentTarget.style.borderColor = '#22c55e'} onMouseLeave={e => e.currentTarget.style.borderColor = '#eee'}>
-                    <div style={{ display:'flex', alignItems:'center', gap:'8px', marginBottom:'10px' }}>
-                       <b style={{fontSize:'12px', color:'#166534', background:'#f0fdf4', padding:'2px 6px', borderRadius:'5px'}}>#{t.id}</b>
-                       {(t.anexo_nf_servico || t.anexo_nf_peca || t.anexo_boleto || t.comprovante_pagamento) && <span style={{fontSize:'12px'}}>📎</span>}
+                  <div key={t.id} onClick={() => setTarefaSelecionada(t)} style={{ background: '#fff', borderRadius: '15px', border: '1px solid #cbd5e1', cursor: 'pointer', transition: '0.2s ease', overflow: 'hidden', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.05)' }}>
+                    <div style={{ background: '#1e293b', padding: '22px', color: '#fff' }}>
+                        <h4 style={{ margin: 0, fontSize: '24px', fontWeight: '400', color: '#fff', letterSpacing: '-0.5px' }}>{t.nom_cliente.toUpperCase()}</h4>
+                        <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                            <div><span style={{ fontSize: '10px', opacity: 0.7, fontWeight: 'bold', display: 'block', marginBottom: '2px' }}>VALOR TOTAL</span><b style={{ fontSize: '28px', color: '#38bdf8' }}>R$ {t.valor_servico}</b></div>
+                            <div style={{ textAlign: 'right' }}><CreditCard size={16} style={{ opacity: 0.7, marginBottom: '4px' }} /><b style={{ fontSize: '13px', display: 'block', fontWeight: '900' }}>{t.forma_pagamento.toUpperCase()}</b></div>
+                        </div>
                     </div>
-                    
-                    <h4 style={{ margin: 0, fontSize: '15px', fontWeight:'800', color:'#1e293b' }}>{t.nom_cliente}</h4>
-                    
-                    {/* INFORMAÇÕES DETALHADAS NO CARD DO KANBAN */}
-                    <div style={{ marginTop:'12px', display:'flex', flexDirection:'column', gap:'6px', fontSize:'11px', color:'#666' }}>
-                       <span>Nota Serviço: <b>{t.num_nf_servico || '-'}</b></span>
-                       <span>Nota Peças: <b>{t.num_nf_peca || '-'}</b></span>
-                       <span>Pagamento: <b>{t.forma_pagamento}</b></span>
-                       {t.qtd_parcelas > 1 && <span>Parcelas: <b>{t.qtd_parcelas}x</b></span>}
-                       {t.vencimento_boleto && <span>1º Venc: <b>{t.vencimento_boleto}</b></span>}
-                       
-                       <div style={{ marginTop:'8px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                          <b style={{ color: '#166534', fontSize: '16px' }}>R$ {t.valor_servico}</b>
-                       </div>
-
-                       {t.obs && (
-                         <p style={{ margin:'5px 0 0 0', padding:'8px', background:'#fef3c7', borderRadius:'8px', color:'#d97706', fontStyle:'italic' }}>
-                           {t.obs.substring(0, 45)}{t.obs.length > 45 ? '...' : ''}
-                         </p>
-                       )}
+                    <div style={{ padding: '20px' }}>
+                        <div style={{ display:'grid', gridTemplateColumns: '1fr 1fr', gap:'15px', fontSize:'10px' }}>
+                            <div style={{ borderRight: '1px solid #f1f5f9' }}><label style={{display:'block', fontWeight:'900', color:'#94a3b8', marginBottom: '3px'}}>ID PROCESSO</label><b style={{ color: '#0f172a', fontSize: '12px' }}>#{t.id}</b></div>
+                            <div><label style={{display:'block', fontWeight:'900', color:'#94a3b8', marginBottom: '3px'}}>NF PEÇA</label><b style={{ color: '#0f172a', fontSize: '12px' }}>{t.num_nf_peca || '-'}</b></div>
+                        </div>
+                        <div style={{ marginTop:'15px', display: 'flex', alignItems: 'center', gap: '8px', background: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                            <Calendar size={14} color="#ef4444" />
+                            <span style={{ fontSize: '10px', fontWeight: '900', color: '#ef4444' }}>VENCIMENTOS:</span>
+                            <b style={{ fontSize: '11px', color: '#0f172a' }}>{formatarData(t.datas_parcelas) || formatarData(t.vencimento_boleto) || 'Imediato'}</b>
+                        </div>
                     </div>
                   </div>
                 ))}
@@ -163,52 +228,65 @@ export default function KanbanPage() {
         </div>
       </main>
 
-      {/* MODAL DETALHE COMPLETO + CHAT */}
+      {/* MODAL RESPONSIVO */}
       {tarefaSelecionada && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(10px)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-          <div style={{ background: 'white', width: '100%', maxWidth: '1050px', borderRadius: '45px', display: 'grid', gridTemplateColumns: '1fr 380px', overflow: 'hidden', boxShadow: '0 30px 70px rgba(0,0,0,0.3)' }}>
-            
-            <div style={{ padding: '45px', overflowY: 'auto', maxHeight: '85vh' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '10px' }}>
-                 <b style={{ fontSize: '20px', color: '#166534', background: '#f0fdf4', padding: '5px 15px', borderRadius: '12px' }}>#{tarefaSelecionada.id}</b>
-                 <h2 style={{ color: '#14532d', margin: 0, fontSize:'28px', fontWeight:'900' }}>{tarefaSelecionada.nom_cliente}</h2>
-              </div>
-              <p style={{fontSize:'13px', color:'#22c55e', fontWeight:'bold', letterSpacing:'1px', marginBottom:'30px'}}>{tarefaSelecionada.status?.toUpperCase()}</p>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0, 0, 0, 0.6)', backdropFilter: 'blur(10px)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+          <div style={{ 
+            background: '#fff', width: '100%', maxWidth: '1250px', maxHeight: '90vh', borderRadius: '25px', 
+            display: 'flex', flexDirection: 'row', flexWrap: 'wrap', overflow: 'hidden', border: '1px solid #cbd5e1' 
+          }}>
+            <div style={{ flex: '1 1 600px', padding: '40px 60px', overflowY: 'auto', maxHeight: '90vh' }}>
+              <button onClick={() => setTarefaSelecionada(null)} style={{ background: '#000', border: 'none', color: '#fff', padding: '12px 25px', borderRadius: '8px', fontWeight: '900', cursor: 'pointer', fontSize:'11px', marginBottom: '40px', display:'flex', alignItems:'center', gap:'10px' }}><ArrowLeft size={16}/> VOLTAR</button>
               
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', background:'#f8fafc', padding:'25px', borderRadius:'25px', fontSize:'14px' }}>
-                 <div><label style={{fontSize:'10px', color:'#999', fontWeight:'bold', display:'block', marginBottom:'4px'}}>VALOR TOTAL</label><b>R$ {tarefaSelecionada.valor_servico}</b></div>
-                 <div><label style={{fontSize:'10px', color:'#999', fontWeight:'bold', display:'block', marginBottom:'4px'}}>PAGAMENTO</label><b>{tarefaSelecionada.forma_pagamento}</b></div>
-                 <div><label style={{fontSize:'10px', color:'#999', fontWeight:'bold', display:'block', marginBottom:'4px'}}>NOTA DE SERVIÇO</label><b>{tarefaSelecionada.num_nf_servico || '---'}</b></div>
-                 <div><label style={{fontSize:'10px', color:'#999', fontWeight:'bold', display:'block', marginBottom:'4px'}}>NOTA DE PEÇAS</label><b>{tarefaSelecionada.num_nf_peca || '---'}</b></div>
-                 <div><label style={{fontSize:'10px', color:'#999', fontWeight:'bold', display:'block', marginBottom:'4px'}}>QTD PARCELAS</label><b>{tarefaSelecionada.qtd_parcelas || 1}x</b></div>
-                 <div><label style={{fontSize:'10px', color:'#999', fontWeight:'bold', display:'block', marginBottom:'4px'}}>1º VENCIMENTO</label><b>{tarefaSelecionada.vencimento_boleto || 'Imediato'}</b></div>
-                 <div><label style={{fontSize:'10px', color:'#999', fontWeight:'bold', display:'block', marginBottom:'4px'}}>SETOR ORIGEM</label><b>{tarefaSelecionada.setor || 'Não informado'}</b></div>
+              <div style={{ marginBottom: '40px' }}>
+                 <b style={{ fontSize: '18px', color: '#3b82f6', fontWeight: '800' }}>#{tarefaSelecionada.id}</b>
+                 <h2 style={{ color: '#0f172a', margin: '5px 0 0 0', fontSize:'42px', fontWeight:'100' }}>{tarefaSelecionada.nom_cliente.toUpperCase()}</h2>
               </div>
 
-              {tarefaSelecionada.obs && (
-                <div style={{ marginTop: '20px', background:'#fffbeb', padding:'20px', borderRadius:'20px', border:'1px solid #fef3c7' }}>
-                  <label style={{fontSize:'10px', color:'#d97706', fontWeight:'bold', display:'block', marginBottom:'5px'}}>OBSERVAÇÕES:</label>
-                  <p style={{margin:0, fontSize:'13px', lineHeight:'1.5'}}>{tarefaSelecionada.obs}</p>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', border: '1px solid #e2e8f0', background: '#fcfcfc', borderRadius:'15px', overflow:'hidden', marginBottom: '30px' }}>
+                 <div style={{ padding: '25px', borderRight: '1px solid #e2e8f0', borderBottom: '1px solid #e2e8f0' }}><label style={{fontSize:'10px', color: '#94a3b8', fontWeight:'900', display:'block', marginBottom:'10px'}}>VALOR TOTAL</label><b style={{fontSize:'28px', fontWeight:'900', color:'#0f172a'}}>R$ {tarefaSelecionada.valor_servico}</b></div>
+                 <div style={{ padding: '25px', borderBottom: '1px solid #e2e8f0' }}><label style={{fontSize:'10px', color: '#94a3b8', fontWeight:'900', display:'block', marginBottom:'10px'}}>PAGAMENTO</label><b style={{fontSize: '18px', fontWeight: '700', color: '#334155'}}>{tarefaSelecionada.forma_pagamento?.toUpperCase()}</b></div>
+                 <div style={{ padding: '25px', borderRight: '1px solid #e2e8f0' }}><label style={{fontSize:'10px', color: '#94a3b8', fontWeight:'900', display:'block', marginBottom:'10px'}}>VENCIMENTOS</label><b style={{fontSize: '14px', fontWeight: '700', color: '#334155'}}>{formatarData(tarefaSelecionada.datas_parcelas) || formatarData(tarefaSelecionada.vencimento_boleto) || 'IMEDIATO'}</b></div>
+                 <div style={{ padding: '25px' }}><label style={{fontSize:'10px', color: '#94a3b8', fontWeight:'900', display:'block', marginBottom:'10px'}}>NOTAS FISCAIS</label><b style={{fontSize: '14px', fontWeight: '700', color: '#334155'}}>{tarefaSelecionada.num_nf_servico && `S: ${tarefaSelecionada.num_nf_servico}`} {tarefaSelecionada.num_nf_peca && `| P: ${tarefaSelecionada.num_nf_peca}`}</b></div>
+              </div>
+
+              {userProfile?.funcao === 'Financeiro' && tarefaSelecionada.status === 'gerar_boleto' && (
+                <div style={{ background: '#eff6ff', padding: '30px', borderRadius: '15px', border: '1px solid #3b82f6', marginBottom: '35px' }}>
+                    <h3 style={{ fontSize: '15px', margin: '0 0 20px 0', color: '#1e3a8a', fontWeight: '900' }}>GERAR BOLETO:</h3>
+                    <label style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:'15px', background:'#fff', padding:'25px', borderRadius:'12px', border:'2px dashed #3b82f6', cursor:'pointer', marginBottom:'20px' }}>
+                        <Upload size={28} color="#3b82f6" />
+                        <div style={{textAlign:'left'}}><span style={{fontSize:'16px', fontWeight:'800', color:'#1d4ed8', display:'block'}}>{fileBoleto ? fileBoleto.name : 'ANEXAR BOLETO'}</span><span style={{fontSize:'11px', color:'#60a5fa'}}>PDF, JPG, PNG</span></div>
+                        <input type="file" hidden onChange={e => setFileBoleto(e.target.files[0])} />
+                    </label>
+                    <button onClick={() => handleGerarBoletoFaturamento(tarefaSelecionada.id)} style={{ width: '100%', background: '#1e3a8a', color: '#fff', padding: '20px', borderRadius: '12px', fontWeight: '900', border: 'none', cursor: 'pointer', fontSize: '14px', display:'flex', alignItems:'center', justifyContent:'center', gap:'10px' }}><Send size={18}/> ENVIAR PARA PÓS-VENDAS</button>
                 </div>
               )}
 
-              {/* BOTÕES DE ARQUIVOS */}
-              <div style={{ marginTop: '20px', display: 'flex', gap: '10px', flexWrap:'wrap' }}>
-                {tarefaSelecionada.anexo_nf_servico && <a href={tarefaSelecionada.anexo_nf_servico} target="_blank" style={{ background:'#eff6ff', color:'#1d4ed8', padding:'10px 15px', borderRadius:'10px', fontSize:'11px', fontWeight:'bold', textDecoration:'none' }}>📄 NOTA SERVIÇO</a>}
-                {tarefaSelecionada.anexo_nf_peca && <a href={tarefaSelecionada.anexo_nf_peca} target="_blank" style={{ background:'#eff6ff', color:'#1d4ed8', padding:'10px 15px', borderRadius:'10px', fontSize:'11px', fontWeight:'bold', textDecoration:'none' }}>⚙️ NOTA PEÇAS</a>}
-                {tarefaSelecionada.anexo_boleto && <a href={tarefaSelecionada.anexo_boleto} target="_blank" style={{ background:'#f0fdf4', color:'#166534', padding:'10px 15px', borderRadius:'10px', fontSize:'11px', fontWeight:'bold', textDecoration:'none' }}>💰 BOLETO</a>}
-                {tarefaSelecionada.comprovante_pagamento && <a href={tarefaSelecionada.comprovante_pagamento} target="_blank" style={{ background:'#f0fdf4', color:'#166534', padding:'10px 15px', borderRadius:'10px', fontSize:'11px', fontWeight:'bold', textDecoration:'none' }}>✅ COMPROVANTE PIX</a>}
-              </div>
+              {userProfile?.funcao === 'Pós-Vendas' && tarefaSelecionada.status === 'enviar_cliente' && (
+                <div style={{ background: '#f0fdf4', padding: '30px', borderRadius: '15px', border: '1px solid #22c55e', marginBottom: '35px', textAlign:'center' }}>
+                    <button onClick={() => handleFinalizarEnvioBoleto(tarefaSelecionada.id)} style={{ width: '100%', background: '#22c55e', color: '#fff', padding: '20px', borderRadius: '12px', fontWeight: '900', border: 'none', cursor: 'pointer', fontSize: '15px' }}>✅ BOLETO ENVIADO: MOVER PARA EM ABERTO</button>
+                </div>
+              )}
 
-              <button onClick={() => setTarefaSelecionada(null)} style={{ background: '#000', color: '#fff', border: 'none', padding: '20px', borderRadius: '20px', fontWeight: 'bold', cursor:'pointer', fontSize:'15px', width:'100%', marginTop:'30px' }}>FECHAR PAINEL</button>
+              <div style={{ marginTop: '40px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                {tarefaSelecionada.anexo_nf_servico && <a href={tarefaSelecionada.anexo_nf_servico} target="_blank" className="btn-anexo"><FileText size={18}/> NF SERVIÇO</a>}
+                {tarefaSelecionada.anexo_nf_peca && <a href={tarefaSelecionada.anexo_nf_peca} target="_blank" className="btn-anexo"><FileText size={18}/> NF PEÇA</a>}
+                {tarefaSelecionada.anexo_boleto && <a href={tarefaSelecionada.anexo_boleto} target="_blank" className="btn-anexo" style={{background:'#1e3a8a', color:'#fff', border:'none'}}><Download size={18}/> BOLETO 1</a>}
+                {tarefaSelecionada.comprovante_pagamento && <a href={tarefaSelecionada.comprovante_pagamento} target="_blank" className="btn-anexo" style={{color:'#16a34a', borderColor:'#22c55e'}}><CheckCircle size={18}/> COMPROVANTE</a>}
+              </div>
             </div>
 
-            <div style={{ padding: '30px', background: '#f8fafc' }}>
+            {/* CHAT COM MOLDURA NO MODAL */}
+            <div style={{ flex: '1 1 400px', padding: '40px', background: '#f8fafc', borderLeft: '1px solid #e2e8f0', maxHeight: '90vh' }}>
               {userProfile && <ChatChamado chamadoId={tarefaSelecionada.id} userProfile={userProfile} />}
             </div>
           </div>
         </div>
       )}
+      <style jsx global>{`
+        .btn-anexo { flex:1; textAlign:center; border:1px solid #cbd5e1; padding:15px; borderRadius:12px; textDecoration:none; color:#0f172a; fontSize:11px; fontWeight:900; display:flex; alignItems:center; justifyContent:center; gap:8px; background:#fff; transition:0.2s; }
+        .btn-anexo:hover { background: #f1f5f9; transform: translateY(-2px); }
+      `}</style>
     </div>
   )
 }
