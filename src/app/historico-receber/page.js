@@ -3,13 +3,16 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 // ÍCONES MODERNOS
-import { Bell, Menu, ArrowLeft, FileText, Download, CheckCircle } from 'lucide-react'
+import { 
+  Bell, Menu, ArrowLeft, FileText, CheckCircle, Download, 
+  Search, LayoutDashboard, ClipboardList, TrendingDown, TrendingUp, UserCheck, LogOut 
+} from 'lucide-react'
 
-// --- TELA DE CARREGAMENTO CHIQUE ---
+// --- TELA DE CARREGAMENTO ---
 function LoadingScreen() {
   return (
     <div style={{ position: 'fixed', inset: 0, background: '#000', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;900&display=swap" rel="stylesheet" />
+        <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;900&display=swap" rel="stylesheet" />
         <h1 style={{ color: '#fff', fontFamily: 'Montserrat, sans-serif', fontWeight: '300', fontSize: '24px', letterSpacing: '4px', textTransform: 'uppercase', textAlign: 'center', lineHeight: '1.4' }}>
             Comunicação Financeiro <br /> 
             <b style={{ fontWeight: '900', fontSize: '28px' }}>Nova Tratores</b>
@@ -22,6 +25,7 @@ export default function HistoricoReceber() {
   const [lista, setLista] = useState([])
   const [loading, setLoading] = useState(true)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+  const [pesquisa, setPesquisa] = useState('') // ESTADO PARA PESQUISA
   const router = useRouter()
 
   useEffect(() => {
@@ -35,99 +39,134 @@ export default function HistoricoReceber() {
         .order('id', { ascending: false })
       
       setLista(data || [])
-      setTimeout(() => setLoading(false), 800) // Transição suave
+      setLoading(false)
     }
     fetchData()
   }, [router])
 
+  const handleLogout = async () => { await supabase.auth.signOut(); router.push('/login') }
+
+  // FILTRO DE PESQUISA POR CLIENTE OU ID
+  const listaFiltrada = lista.filter(item => 
+    item.cliente?.toLowerCase().includes(pesquisa.toLowerCase()) ||
+    item.id.toString().includes(pesquisa)
+  )
+
+  const btnSidebarStyle = {
+    background: 'none',
+    color: '#000',
+    border: 'none',
+    padding: '20px 0',
+    cursor: 'pointer',
+    fontSize: '18px', 
+    fontWeight: '400', // SEM NEGRITO
+    display: 'flex',
+    alignItems: 'center',
+    width: '100%',
+    transition: '0.3s',
+    fontFamily: 'Montserrat'
+  }
+
+  const iconWidth = { minWidth: '85px', display: 'flex', justifyContent: 'center' }
+
   if (loading) return <LoadingScreen />
 
   return (
-    <div style={{ 
-        display: 'flex', minHeight: '100vh', 
-        // NOVA IMAGEM: ARQUITETURA MODERNA MINIMALISTA
-        backgroundImage: `url('https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?q=80&w=2070&auto=format&fit=crop')`, 
-        backgroundSize: 'cover', backgroundAttachment: 'fixed', fontFamily: 'Montserrat, sans-serif' 
-    }}>
+    <div style={{ display: 'flex', minHeight: '100vh', backgroundImage: `url('https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?q=80&w=2070&auto=format&fit=crop')`, backgroundSize: 'cover', backgroundAttachment: 'fixed', fontFamily: 'Montserrat, sans-serif' }}>
       <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;900&display=swap" rel="stylesheet" />
       
-      {/* OVERLAY 50% PARA VISIBILIDADE DA IMAGEM */}
-      <div style={{ position: 'fixed', inset: 0, background: 'rgba(241, 245, 249, 0.5)', zIndex: 0 }}></div>
+      <div style={{ position: 'fixed', inset: 0, background: 'rgba(241, 245, 249, 0.6)', zIndex: 0 }}></div>
 
-      {/* SIDEBAR RETRÁTIL GLASS */}
-      <aside 
-        onMouseEnter={()=>setIsSidebarOpen(true)} 
-        onMouseLeave={()=>setIsSidebarOpen(false)} 
-        style={{ 
-            width: isSidebarOpen ? '280px' : '65px', 
-            background: 'rgba(255, 255, 255, 0.9)', backdropFilter: 'blur(10px)',
-            height: '100vh', position: 'fixed', left: 0, top: 0, borderRight: '1px solid #cbd5e1', padding: '30px 15px', display: 'flex', flexDirection: 'column', transition: '0.4s cubic-bezier(0.4, 0, 0.2, 1)', zIndex: 1100, overflow: 'hidden' 
-        }}
-      >
-        <div style={{ opacity: isSidebarOpen ? 1 : 0, transition:'0.2s', whiteSpace:'nowrap' }}>
-            <b style={{display:'block', marginBottom:'40px', textAlign:'center', color:'#0f172a', fontSize:'18px', fontWeight: '900', letterSpacing:'3px'}}>NOVA</b>
-            <nav style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <button onClick={() => router.push('/')} style={{ background:'none', color:'#475569', border:'none', padding:'12px', borderRadius:'10px', textAlign:'left', fontWeight:'700', cursor:'pointer', fontSize:'12px' }}>TAREFAS</button>
-                <button onClick={() => router.push('/kanban')} style={{ background:'none', color:'#475569', border:'none', padding:'15px', borderRadius:'12px', textAlign:'left', fontWeight:'700', cursor:'pointer', fontSize:'12px' }}>BOLETOS</button>
-                <div style={{padding: '20px 15px 10px', fontSize: '10px', fontWeight: '900', color: '#94a3b8', letterSpacing: '1px'}}>HISTÓRICOS</div>
-                <button onClick={() => router.push('/historico-pagar')} style={{ background:'none', color:'#475569', border:'none', padding:'12px', borderRadius:'10px', textAlign:'left', fontWeight:'700', cursor:'pointer', fontSize:'12px' }}>CONTAS PAGAR</button>
-                <button onClick={() => router.push('/historico-receber')} style={{ background:'#0f172a', color:'#fff', border:'none', padding:'12px 15px', textAlign:'left', fontWeight:'900', cursor:'pointer', fontSize:'12px' }}>CONTAS RECEBER</button>
+      {/* SIDEBAR PADRONIZADA COM ÍCONES PRETOS VISÍVEIS */}
+      <aside onMouseEnter={()=>setIsSidebarOpen(true)} onMouseLeave={()=>setIsSidebarOpen(false)} style={{ width: isSidebarOpen ? '320px' : '85px', background: 'rgba(255, 255, 255, 0.95)', backdropFilter: 'blur(10px)', height: '100vh', position: 'fixed', left: 0, top: 0, borderRight: '1px solid #cbd5e1', padding: '30px 0', display: 'flex', flexDirection: 'column', transition: '0.4s cubic-bezier(0.4, 0, 0.2, 1)', zIndex: 1100, overflow: 'hidden' }}>
+        <div style={{ flex: 1 }}>
+            <div style={{ height: '60px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '40px' }}>
+                {isSidebarOpen ? <b style={{color:'#000', fontSize:'22px', fontWeight: '400', letterSpacing:'3px'}}>NOVA</b> : <Menu size={32} color="#000" />}
+            </div>
+            <nav style={{ display: 'flex', flexDirection: 'column' }}>
+                <button onClick={() => router.push('/')} style={btnSidebarStyle}>
+                    <div style={iconWidth}><LayoutDashboard size={28} color="#000" /></div>
+                    <span style={{ opacity: isSidebarOpen ? 1 : 0, whiteSpace: 'nowrap' }}>TAREFAS</span>
+                </button>
+                <button onClick={() => router.push('/kanban')} style={btnSidebarStyle}>
+                    <div style={iconWidth}><ClipboardList size={28} color="#000" /></div>
+                    <span style={{ opacity: isSidebarOpen ? 1 : 0, whiteSpace: 'nowrap' }}>BOLETOS</span>
+                </button>
+                <div style={{ height: '1px', background: '#e2e8f0', margin: '20px 0', opacity: isSidebarOpen ? 1 : 0 }}></div>
+                <button onClick={() => router.push('/historico-pagar')} style={btnSidebarStyle}>
+                    <div style={iconWidth}><TrendingDown size={28} color="#000" /></div>
+                    <span style={{ opacity: isSidebarOpen ? 1 : 0, whiteSpace: 'nowrap' }}>Concluido- Contas a Pagar</span>
+                </button>
+                <button onClick={() => router.push('/historico-receber')} style={{...btnSidebarStyle, background: 'rgba(0,0,0,0.05)'}}>
+                    <div style={iconWidth}><TrendingUp size={28} color="#000" /></div>
+                    <span style={{ opacity: isSidebarOpen ? 1 : 0, whiteSpace: 'nowrap' }}>Concluido- Contas a Receber</span>
+                </button>
+                <button onClick={() => router.push('/historico-rh')} style={btnSidebarStyle}>
+                    <div style={iconWidth}><UserCheck size={28} color="#000" /></div>
+                    <span style={{ opacity: isSidebarOpen ? 1 : 0, whiteSpace: 'nowrap' }}>Concluido-Chamado RH</span>
+                </button>
             </nav>
         </div>
-        {!isSidebarOpen && (
-            <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', color: '#cbd5e1' }}>
-                <Menu size={24} strokeWidth={1.5} />
-            </div>
-        )}
+        <div style={{ paddingBottom: '20px' }}>
+            <button onClick={handleLogout} style={{ ...btnSidebarStyle, color: '#dc2626' }}>
+                <div style={iconWidth}><LogOut size={28} color="#dc2626" /></div>
+                <span style={{ opacity: isSidebarOpen ? 1 : 0 }}>SAIR</span>
+            </button>
+        </div>
       </aside>
 
-      <main style={{ marginLeft: '85px', flex: 1, padding: '50px', zIndex: 1, position: 'relative' }}>
-        <header style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'60px' }}>
+      <main style={{ marginLeft: isSidebarOpen ? '320px' : '85px', flex: 1, padding: '50px', zIndex: 1, position: 'relative', transition: '0.4s' }}>
+        <header style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-end', marginBottom:'60px' }}>
             <div>
-                <h1 style={{ fontWeight: '900', color: '#0f172a', margin: 0, fontSize:'32px', letterSpacing:'-1.5px' }}>HISTÓRICO DE RECEBIMENTOS</h1>
-                <div style={{ width: '60px', height: '4px', background: '#3b82f6', marginTop: '12px' }}></div>
+                <h1 style={{ fontWeight: '400', color: '#0f172a', margin: 0, fontSize:'38px', letterSpacing:'-1.5px' }}>HISTÓRICO DE RECEBIMENTOS</h1>
+                <div style={{ width: '100px', height: '4px', background: '#3b82f6', marginTop: '15px' }}></div>
             </div>
-            <button onClick={() => router.push('/')} style={{ padding: '12px 25px', borderRadius: '8px', border: '1px solid #0f172a', cursor: 'pointer', background: '#0f172a', color:'#fff', fontWeight:'900', fontSize:'10px', letterSpacing: '1px', display:'flex', alignItems:'center', gap:'10px' }}>
-                <ArrowLeft size={14}/> VOLTAR AO PAINEL
-            </button>
+
+            {/* FILTRO DE PESQUISA */}
+            <div style={{ position: 'relative' }}>
+                <Search size={22} style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+                <input 
+                  type="text" 
+                  placeholder="Pesquisar cliente ou ID..." 
+                  value={pesquisa}
+                  onChange={(e) => setPesquisa(e.target.value)}
+                  style={{ padding: '18px 20px 18px 50px', width: '400px', borderRadius: '15px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '16px', background: '#fff', boxShadow: '0 10px 25px rgba(0,0,0,0.05)' }}
+                />
+            </div>
         </header>
 
-        {/* TABELA EM GRADE EXECUTIVA (OFF-WHITE / GELO) */}
-        <div style={{ background: 'rgba(252, 252, 252, 0.9)', backdropFilter: 'blur(10px)', borderRadius: '15px', border: '1px solid #cbd5e1', overflow: 'hidden', boxShadow: '0 20px 40px rgba(0,0,0,0.05)' }}>
+        <div style={{ background: 'rgba(255, 255, 255, 0.8)', backdropFilter: 'blur(15px)', borderRadius: '25px', border: '1px solid #cbd5e1', overflow: 'hidden', boxShadow: '0 20px 40px rgba(0,0,0,0.08)' }}>
           <table style={{ width:'100%', borderCollapse:'collapse', textAlign:'left' }}>
-            <thead style={{ background: '#f8fafc', borderBottom: '1px solid #cbd5e1' }}>
+            <thead style={{ background: 'rgba(248, 250, 252, 0.5)', borderBottom: '1px solid #cbd5e1' }}>
               <tr>
-                <th style={{ padding:'25px', fontSize:'10px', fontWeight:'900', color:'#94a3b8', letterSpacing:'1px' }}>ID</th>
-                <th style={{ fontSize:'10px', fontWeight:'900', color:'#94a3b8', letterSpacing:'1px' }}>CLIENTE</th>
-                <th style={{ fontSize:'10px', fontWeight:'900', color:'#94a3b8', letterSpacing:'1px' }}>VALOR RECEBIDO</th>
-                <th style={{ fontSize:'10px', fontWeight:'900', color:'#94a3b8', letterSpacing:'1px' }}>DATA VENC.</th>
-                <th style={{ fontSize:'10px', fontWeight:'900', color:'#94a3b8', letterSpacing:'1px', textAlign:'center' }}>DOCUMENTOS</th>
+                <th style={{ padding:'30px', fontSize:'14px', fontWeight:'400', color:'#94a3b8' }}>ID</th>
+                <th style={{ fontSize:'14px', fontWeight:'400', color:'#94a3b8' }}>CLIENTE</th>
+                <th style={{ fontSize:'14px', fontWeight:'400', color:'#94a3b8' }}>VALOR RECEBIDO</th>
+                <th style={{ fontSize:'14px', fontWeight:'400', color:'#94a3b8' }}>VENCIMENTO</th>
+                <th style={{ fontSize:'14px', fontWeight:'400', color:'#94a3b8', textAlign:'center' }}>ARQUIVOS</th>
               </tr>
             </thead>
             <tbody>
-              {lista.map((item, index) => (
-                <tr key={item.id} style={{ 
-                    borderBottom: index === lista.length - 1 ? 'none' : '1px solid #e2e8f0', 
-                    transition: '0.2s'
-                }}>
-                  <td style={{ padding:'20px 25px', fontSize:'12px', fontWeight:'900', color:'#64748b' }}>#{item.id}</td>
-                  <td style={{ fontSize:'14px', fontWeight:'700', color:'#0f172a' }}>{item.cliente.toUpperCase()}</td>
-                  <td style={{ fontSize:'14px', fontWeight:'900', color:'#0f172a' }}>R$ {item.valor}</td>
-                  <td style={{ fontSize:'13px', fontWeight:'500', color:'#475569' }}>{item.data_vencimento}</td>
+              {listaFiltrada.map((item) => (
+                <tr key={item.id} style={{ borderBottom: '1px solid #e2e8f0', transition: '0.2s' }}>
+                  <td style={{ padding:'25px 30px', fontSize:'16px', color:'#64748b' }}>#{item.id}</td>
+                  <td style={{ fontSize:'18px', color:'#0f172a', fontWeight:'400' }}>{item.cliente?.toUpperCase()}</td>
+                  <td style={{ fontSize:'18px', color:'#0f172a', fontWeight:'400' }}>R$ {item.valor}</td>
+                  <td style={{ fontSize:'18px', color:'#475569', fontWeight:'400' }}>{item.data_vencimento}</td>
                   <td style={{ textAlign:'center' }}>
-                    <div style={{ display:'flex', gap:'8px', justifyContent:'center' }}>
+                    <div style={{ display:'flex', gap:'12px', justifyContent:'center' }}>
                       {(item.anexo_nf_servico || item.anexo_nf_peca) && (
-                        <a href={item.anexo_nf_servico || item.anexo_nf_peca} target="_blank" title="Ver Nota" style={{ padding:'8px', borderRadius:'8px', background:'#f1f5f9', color:'#475569', border:'1px solid #cbd5e1' }}>
-                            <FileText size={16} />
+                        <a href={item.anexo_nf_servico || item.anexo_nf_peca} target="_blank" style={{ padding:'10px', borderRadius:'10px', background:'#f1f5f9', color:'#475569', border:'1px solid #cbd5e1' }}>
+                          <FileText size={20} />
                         </a>
                       )}
                       {item.anexo_boleto && (
-                        <a href={item.anexo_boleto} target="_blank" title="Ver Boleto" style={{ padding:'8px', borderRadius:'8px', background:'#f0fdf4', color:'#166534', border:'1px solid #bcf0da' }}>
-                            <Download size={16} />
+                        <a href={item.anexo_boleto} target="_blank" style={{ padding:'10px', borderRadius:'10px', background:'#fff', color:'#0f172a', border:'1px solid #cbd5e1' }}>
+                          <Download size={20} />
                         </a>
                       )}
-                      <div title="Concluído" style={{ padding:'8px', color:'#22c55e' }}>
-                        <CheckCircle size={18} strokeWidth={3} />
+                      <div style={{ padding:'10px', color:'#22c55e' }}>
+                        <CheckCircle size={20} />
                       </div>
                     </div>
                   </td>
@@ -135,18 +174,17 @@ export default function HistoricoReceber() {
               ))}
             </tbody>
           </table>
-          {lista.length === 0 && (
-            <div style={{padding:'80px', textAlign:'center'}}>
-                <p style={{ fontSize:'12px', fontWeight:'700', color:'#94a3b8', letterSpacing:'1px' }}>NENHUM REGISTRO ENCONTRADO NO HISTÓRICO DE RECEBIMENTOS.</p>
+          {listaFiltrada.length === 0 && (
+            <div style={{padding:'100px', textAlign:'center'}}>
+                <p style={{ fontSize:'18px', color:'#94a3b8' }}>Nenhum registro encontrado no histórico.</p>
             </div>
           )}
         </div>
       </main>
 
-      {/* ÍCONE DE NOTIFICAÇÃO FIXO */}
       <div style={{ position: 'fixed', top: '50px', right: '50px', zIndex: 1200 }}>
-          <div style={{ cursor:'pointer', color:'#0f172a', background:'rgba(255,255,255,0.8)', padding:'10px', borderRadius:'12px', border:'1px solid #cbd5e1', backdropFilter:'blur(5px)' }}>
-              <Bell size={22} strokeWidth={1.5} />
+          <div style={{ cursor:'pointer', color:'#0f172a', background:'rgba(255,255,255,0.8)', padding:'12px', borderRadius:'12px', border:'1px solid #cbd5e1', backdropFilter:'blur(5px)' }}>
+              <Bell size={26} strokeWidth={1.5} />
           </div>
       </div>
     </div>
