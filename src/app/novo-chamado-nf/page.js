@@ -67,7 +67,10 @@ export default function NovoChamadoNF() {
       const isPix = formData.forma_pagamento === 'Pix'
       const statusI = isPix ? 'validar_pix' : 'gerar_boleto'
       const tarefaI = isPix ? 'Validar Recebimento Pix' : 'Gerar Boleto'
-      const datasFinal = datasParcelas.slice(0, formData.qtd_parcelas).join(', ')
+      
+      // Filtra as datas e garante que campos vazios não quebrem o banco
+      const datasFinal = datasParcelas.slice(0, formData.qtd_parcelas).filter(d => d !== '').join(', ')
+      const vencimentoFinal = datasParcelas[0] === '' ? null : datasParcelas[0];
 
       const { error } = await supabase.from('Chamado_NF').insert([{
         ...formData,
@@ -77,14 +80,14 @@ export default function NovoChamadoNF() {
         anexo_nf_servico: urlS, 
         anexo_nf_peca: urlP, 
         comprovante_pagamento: urlPix,
-        vencimento_boleto: datasParcelas[0],
+        vencimento_boleto: vencimentoFinal,
         datas_parcelas: datasFinal
       }])
 
       if (error) throw error
       alert("Sucesso! Chamado gerado no fluxo."); router.push('/')
     } catch (err) { 
-      alert("Erro: " + err.message) 
+      alert("Erro ao salvar: " + err.message) 
     } finally { setLoading(false) }
   }
 
@@ -123,7 +126,7 @@ export default function NovoChamadoNF() {
             </div>
           </div>
 
-          {/* INPUTS DE NOTA E ARQUIVO ESTILIZADOS */}
+          {/* INPUTS DE NOTA E ARQUIVO */}
           {tipoNF && (
             <div style={{ display:'flex', flexDirection:'column', gap:'25px', padding: '25px', background: '#f8fafc', borderRadius: '25px', border: '1px solid #e2e8f0' }}>
               {(tipoNF === 'servico' || tipoNF === 'ambas') && (
@@ -179,11 +182,11 @@ export default function NovoChamadoNF() {
             </div>
           </div>
 
-          {/* NOVO DESIGN DO BOTÃO DE COMPROVANTE PIX (ELEGANTE E GRANDE) */}
+          {/* COMPROVANTE PIX */}
           {formData.forma_pagamento === 'Pix' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-               <label style={{ fontSize: '16px', fontWeight: '900', color: '#1e40af', textAlign: 'center' }}>COMPROVANTE DE PAGAMENTO OBRIGATÓRIO</label>
-               <label style={{ 
+                <label style={{ fontSize: '16px', fontWeight: '900', color: '#1e40af', textAlign: 'center' }}>COMPROVANTE DE PAGAMENTO OBRIGATÓRIO</label>
+                <label style={{ 
                     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '20px', 
                     padding: '30px', background: '#eff6ff', border: '2px dashed #3b82f6', 
                     borderRadius: '20px', cursor: 'pointer', transition: '0.3s' 
@@ -194,13 +197,26 @@ export default function NovoChamadoNF() {
                       <span style={{ fontSize: '12px', color: '#60a5fa' }}>Formatos aceitos: PDF, JPG, PNG</span>
                   </div>
                   <input type="file" required style={{ display: 'none' }} onChange={(e)=>setFilePix(e.target.files[0])} />
-               </label>
+                </label>
             </div>
           )}
 
-          {/* PARCELAMENTO (BOLETO OU CARTÃO) */}
+          {/* DATA PARA PIX, BOLETO 30 DIAS OU CARTÃO A VISTA */}
+          {(formData.forma_pagamento === 'Pix' || formData.forma_pagamento === 'Boleto 30 dias' || formData.forma_pagamento === 'Cartão a vista') && (
+            <div>
+               <label style={labelStyle}>{formData.forma_pagamento === 'Pix' ? 'DATA DO PAGAMENTO' : 'DATA DE VENCIMENTO'}</label>
+               <div style={{ position: 'relative' }}>
+                  <Calendar size={20} style={{ position: 'absolute', left: '18px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+                  <input type="date" required style={glassInput} onChange={(e) => {
+                    const d = [...datasParcelas]; d[0] = e.target.value; setDatasParcelas(d);
+                  }} />
+               </div>
+            </div>
+          )}
+
+          {/* PARCELAMENTO */}
           {(formData.forma_pagamento === 'Boleto Parcelado' || formData.forma_pagamento === 'Cartão Parcelado') && (
-             <div style={{ background: '#f8fafc', padding: '30px', borderRadius: '25px', border: '1px solid #cbd5e1' }}>
+              <div style={{ background: '#f8fafc', padding: '30px', borderRadius: '25px', border: '1px solid #cbd5e1' }}>
                 <label style={{...labelStyle, fontSize: '14px'}}>DEFINA AS PARCELAS (MÁX. 5)</label>
                 <input 
                   type="number" min="1" max="5" placeholder="Qtd" 
@@ -217,20 +233,7 @@ export default function NovoChamadoNF() {
                       </div>
                     ))}
                 </div>
-             </div>
-          )}
-
-          {/* VENCIMENTO ÚNICO */}
-          {(formData.forma_pagamento === 'Boleto 30 dias' || formData.forma_pagamento === 'Cartão a vista') && (
-            <div>
-               <label style={labelStyle}>DATA DE VENCIMENTO</label>
-               <div style={{ position: 'relative' }}>
-                  <Calendar size={20} style={{ position: 'absolute', left: '18px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
-                  <input type="date" required style={glassInput} onChange={(e) => {
-                    const d = [...datasParcelas]; d[0] = e.target.value; setDatasParcelas(d);
-                  }} />
-               </div>
-            </div>
+              </div>
           )}
 
           <div>
