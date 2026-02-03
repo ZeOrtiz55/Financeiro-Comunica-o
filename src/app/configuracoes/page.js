@@ -1,15 +1,15 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { 
-  ArrowLeft, User, Volume2, Palette, Camera, Save, Lock, Mail, Settings, Play, CheckCircle2
+  ArrowLeft, User, Volume2, Palette, Camera, Save, Lock, Mail, Settings, Play, CheckCircle2, Moon, Sun
 } from 'lucide-react'
 
-// --- COMPONENTE DE FUNDO COM OBJETOS ABSTRATOS ---
+// --- COMPONENTE DE FUNDO PADRONIZADO COM TEMA ---
 function GeometricBackground() {
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: -1, overflow: 'hidden', background: '#f0f4f8', pointerEvents: 'none' }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: -1, overflow: 'hidden', background: 'var(--bg-pagina)', pointerEvents: 'none' }}>
       <img src="https://images.unsplash.com/photo-1633167606207-d840b5070fc2?q=80&w=900" style={{ position: 'absolute', top: '-15%', left: '-10%', width: '900px', opacity: 0.15, transform: 'rotate(-15deg)' }} alt="" />
       <img src="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=800" style={{ position: 'absolute', bottom: '-10%', right: '-10%', width: '800px', opacity: 0.12, transform: 'rotate(10deg)' }} alt="" />
       <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(circle at center, transparent 0%, rgba(240, 244, 248, 0.4) 100%)' }}></div>
@@ -17,8 +17,12 @@ function GeometricBackground() {
   )
 }
 
-export default function Configuracoes() {
-  const [tab, setTab] = useState('perfil') // Controle de abas
+// Componente interno para lidar com searchParams (Evita erros de build)
+function ConfiguracoesContent() {
+  const searchParams = useSearchParams()
+  const initialTab = searchParams.get('tab') || 'perfil'
+  
+  const [tab, setTab] = useState(initialTab)
   const [userProfile, setUserProfile] = useState(null)
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState(false)
@@ -31,13 +35,15 @@ export default function Configuracoes() {
   const [avatarFile, setAvatarFile] = useState(null)
   const [avatarUrl, setAvatarUrl] = useState('')
 
-  // Estado para o Som
-  const [somSelecionado, setSomSelecionado] = useState('som-notificacao-1.mp3')
+  // Estado para o Som e Tema
+  const [somSelecionado, setSomSelecionado] = useState('som-notificacao-1.mp3.mp3')
+  const [temaSelecionado, setTemaSelecionado] = useState('claro')
 
+  // ATUALIZADO: IDs com .mp3.mp3 para bater com seus arquivos reais
   const sonsDisponiveis = [
-    { id: 'som-notificacao-1.mp3', nome: 'Alerta Clássico 1', desc: 'Som curto e elegante' },
-    { id: 'som-notificacao-2.mp3', nome: 'Alerta Moderno 2', desc: 'Som melódico e suave' },
-    { id: 'som-notificacao-3.mp3', nome: 'Alerta Ativo 3', desc: 'Som de maior destaque' },
+    { id: 'som-notificacao-1.mp3.mp3', nome: 'Alerta Clássico 1', desc: 'Som curto e elegante' },
+    { id: 'som-notificacao-2.mp3.mp3', nome: 'Alerta Moderno 2', desc: 'Som melódico e suave' },
+    { id: 'som-notificacao-3.mp3.mp3', nome: 'Alerta Ativo 3', desc: 'Som de maior destaque' },
   ]
 
   useEffect(() => {
@@ -51,27 +57,34 @@ export default function Configuracoes() {
       setNome(prof?.nome || '')
       setEmail(session.user.email || '')
       setAvatarUrl(prof?.avatar_url || '')
-      setSomSelecionado(prof?.som_notificacao || 'som-notificacao-1.mp3')
+      setSomSelecionado(prof?.som_notificacao || 'som-notificacao-1.mp3.mp3')
+      setTemaSelecionado(prof?.tema || 'claro')
+      
+      // Aplica o tema salvo no banco ao carregar
+      document.documentElement.setAttribute('data-theme', prof?.tema || 'claro');
+      
       setLoading(false)
     }
     carregarDados()
   }, [router])
 
-  // FUNÇÃO CORRIGIDA PARA TOCAR PRÉVIA E EVITAR O ERRO
+  // FUNÇÃO PARA TOCAR PRÉVIA
   const tocarPrevia = (nomeSom) => {
     try {
-      // Certifique-se que o arquivo está na pasta /public/som-notificacao-1.mp3
       const audio = new Audio(`/${nomeSom}`);
-      
       audio.play().catch(e => {
-        console.error("Erro ao reproduzir áudio. Verifique se o arquivo existe na pasta public:", e);
-        alert(`Não foi possível carregar o arquivo: ${nomeSom}. Verifique se ele está na pasta public.`);
+        console.error("Erro ao tocar áudio:", e);
       });
-      
       setSomSelecionado(nomeSom);
     } catch (error) {
-      console.error("Falha ao instanciar áudio:", error);
+      console.error("Erro ao carregar arquivo:", error);
     }
+  }
+
+  // FUNÇÃO PARA TROCAR TEMA VISUALMENTE NA HORA
+  const mudarTemaLocal = (novoTema) => {
+    setTemaSelecionado(novoTema);
+    document.documentElement.setAttribute('data-theme', novoTema);
   }
 
   const handleUpdatePerfil = async (e) => {
@@ -80,7 +93,6 @@ export default function Configuracoes() {
     try {
       let currentAvatarUrl = avatarUrl
 
-      // 1. Se escolheu nova foto, faz upload
       if (avatarFile) {
         const fileExt = avatarFile.name.split('.').pop()
         const fileName = `${userProfile.id}-${Date.now()}.${fileExt}`
@@ -90,26 +102,25 @@ export default function Configuracoes() {
         currentAvatarUrl = urlData.publicUrl
       }
 
-      // 2. Atualiza Tabela de Usuários (Salvando Nome, Foto e SOM)
+      // Atualiza Tabela de Usuários (Salvando Nome, Foto, SOM e TEMA)
       const { error: dbErr } = await supabase
         .from('financeiro_usu')
         .update({ 
           nome, 
           avatar_url: currentAvatarUrl,
-          som_notificacao: somSelecionado 
+          som_notificacao: somSelecionado,
+          tema: temaSelecionado
         })
         .eq('id', userProfile.id)
       
       if (dbErr) throw dbErr
 
-      // 3. Atualiza E-mail e Senha no Auth (se preenchidos)
       if (senha) {
-        const { error: authErr } = await supabase.auth.updateUser({ password: senha })
-        if (authErr) throw authErr
+        await supabase.auth.updateUser({ password: senha })
       }
 
       alert("Configurações salvas com sucesso!")
-      window.location.reload()
+      router.push('/')
     } catch (err) {
       alert("Erro ao atualizar: " + err.message)
     } finally {
@@ -120,14 +131,14 @@ export default function Configuracoes() {
   if (loading) return <div style={{background:'#f0f4f8', height:'100vh', display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'Montserrat'}}>CARREGANDO...</div>
 
   return (
-    <div style={{ minHeight: '100vh', fontFamily: 'Montserrat, sans-serif', padding: '50px' }}>
+    <div style={{ minHeight: '100vh', fontFamily: 'Montserrat, sans-serif', padding: '50px', color: 'var(--texto-principal)' }}>
       <GeometricBackground />
       
       <header style={{ maxWidth: '1200px', margin: '0 auto 40px', display: 'flex', alignItems: 'center', gap: '20px' }}>
         <button onClick={() => router.push('/')} style={{ background: '#000', color: '#fff', border: 'none', padding: '12px 25px', borderRadius: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', fontWeight: '900', fontSize: '12px' }}>
           <ArrowLeft size={16} /> VOLTAR
         </button>
-        <h1 style={{ fontSize: '32px', fontWeight: '900', color: '#0f172a', margin: 0 }}>Configurações</h1>
+        <h1 style={{ fontSize: '32px', fontWeight: '900', margin: 0 }}>Configurações</h1>
       </header>
 
       <main style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', gap: '30px' }}>
@@ -146,27 +157,23 @@ export default function Configuracoes() {
         </div>
 
         {/* ÁREA DE CONTEÚDO (GLASS) */}
-        <div style={{ flex: 1, background: 'rgba(255, 255, 255, 0.8)', backdropFilter: 'blur(15px)', borderRadius: '35px', padding: '50px', border: '1px solid #fff', boxShadow: '0 30px 60px rgba(0,0,0,0.05)' }}>
+        <div style={{ flex: 1, background: 'var(--bg-card)', backdropFilter: 'blur(15px)', borderRadius: '35px', padding: '50px', border: '1px solid var(--borda)', boxShadow: '0 30px 60px rgba(0,0,0,0.05)' }}>
           
           {tab === 'perfil' && (
             <form onSubmit={handleUpdatePerfil}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '30px', marginBottom: '40px' }}>
                 <div style={{ position: 'relative' }}>
                   <div style={{ width: '120px', height: '120px', borderRadius: '40px', background: '#f1f5f9', overflow: 'hidden', border: '4px solid #fff', boxShadow: '0 10px 20px rgba(0,0,0,0.1)' }}>
-                    {avatarFile ? (
-                      <img src={URL.createObjectURL(avatarFile)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    ) : (
-                      <img src={avatarUrl || 'https://via.placeholder.com/150'} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    )}
+                    <img src={avatarFile ? URL.createObjectURL(avatarFile) : avatarUrl || 'https://via.placeholder.com/150'} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="Avatar" />
                   </div>
-                  <label style={{ position: 'absolute', bottom: '-10px', right: '-10px', background: '#000', color: '#fff', padding: '10px', borderRadius: '15px', cursor: 'pointer', boxShadow: '0 5px 15px rgba(0,0,0,0.1)' }}>
+                  <label style={{ position: 'absolute', bottom: '-10px', right: '-10px', background: '#000', color: '#fff', padding: '10px', borderRadius: '15px', cursor: 'pointer', boxShadow: '0 5px 15px rgba(0,0,0,0.2)' }}>
                     <Camera size={18} />
                     <input type="file" hidden accept="image/*" onChange={e => setAvatarFile(e.target.files[0])} />
                   </label>
                 </div>
                 <div>
-                  <h2 style={{ fontSize: '24px', fontWeight: '900', color: '#0f172a', margin: 0 }}>{nome}</h2>
-                  <p style={{ color: '#64748b', fontSize: '14px' }}>{userProfile?.funcao}</p>
+                  <h2 style={{ fontSize: '24px', fontWeight: '900', color: 'var(--texto-principal)', margin: 0 }}>{nome}</h2>
+                  <p style={{ color: 'var(--texto-secundario)', fontSize: '14px' }}>{userProfile?.funcao}</p>
                 </div>
               </div>
 
@@ -193,8 +200,8 @@ export default function Configuracoes() {
 
           {tab === 'som' && (
             <div>
-               <h2 style={{ fontSize: '24px', fontWeight: '900', color: '#0f172a', marginBottom: '10px' }}>Sons de Notificação</h2>
-               <p style={{ color: '#64748b', marginBottom: '30px' }}>Escolha o alerta sonoro que você prefere receber. Clique em um som para ouvir uma prévia.</p>
+               <h2 style={{ fontSize: '24px', fontWeight: '900', color: 'var(--texto-principal)', marginBottom: '10px' }}>Sons de Notificação</h2>
+               <p style={{ color: 'var(--texto-secundario)', marginBottom: '30px' }}>Escolha o alerta sonoro que você prefere receber. Clique em um som para ouvir uma prévia.</p>
                
                <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
                   {sonsDisponiveis.map((som) => (
@@ -205,7 +212,7 @@ export default function Configuracoes() {
                         padding: '25px',
                         borderRadius: '20px',
                         background: somSelecionado === som.id ? 'rgba(0,0,0,0.02)' : 'transparent',
-                        border: somSelecionado === som.id ? '2px solid #000' : '1px solid #e2e8f0',
+                        border: somSelecionado === som.id ? '2px solid #000' : '1px solid var(--borda)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
@@ -218,8 +225,8 @@ export default function Configuracoes() {
                           <Play size={20} fill={somSelecionado === som.id ? "white" : "none"} />
                         </div>
                         <div>
-                          <b style={{ fontSize: '16px', color: '#0f172a', display: 'block' }}>{som.nome}</b>
-                          <span style={{ fontSize: '13px', color: '#94a3b8' }}>{som.desc}</span>
+                          <b style={{ fontSize: '16px', color: 'var(--texto-principal)', display: 'block' }}>{som.nome}</b>
+                          <span style={{ fontSize: '13px', color: 'var(--texto-secundario)' }}>{som.desc}</span>
                         </div>
                       </div>
                       {somSelecionado === som.id && <CheckCircle2 size={24} color="#000" />}
@@ -235,15 +242,68 @@ export default function Configuracoes() {
 
           {tab === 'tema' && (
             <div>
-              <h2 style={{ fontSize: '24px', fontWeight: '900', color: '#0f172a', marginBottom: '10px' }}>Personalização</h2>
-              <p style={{ color: '#64748b' }}>A escolha de temas e cores personalizadas estará disponível na próxima atualização.</p>
+              <h2 style={{ fontSize: '24px', fontWeight: '900', color: 'var(--texto-principal)', marginBottom: '10px' }}>Escolha o Tema</h2>
+              <p style={{ color: 'var(--texto-secundario)', marginBottom: '30px' }}>Escolha o modo que melhor se adapta à sua visão.</p>
+              
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '25px' }}>
+                <div 
+                  onClick={() => mudarTemaLocal('claro')}
+                  style={{
+                    padding: '40px',
+                    borderRadius: '25px',
+                    border: temaSelecionado === 'claro' ? '3px solid #000' : '1px solid var(--borda)',
+                    background: '#fff',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '15px',
+                    cursor: 'pointer',
+                    transition: '0.3s'
+                  }}
+                >
+                  <Sun size={48} color="#fbbf24" />
+                  <b style={{ color: '#000' }}>MODO CLARO</b>
+                  {temaSelecionado === 'claro' && <CheckCircle2 size={24} color="#000" />}
+                </div>
+
+                <div 
+                  onClick={() => mudarTemaLocal('escuro')}
+                  style={{
+                    padding: '40px',
+                    borderRadius: '25px',
+                    border: temaSelecionado === 'escuro' ? '3px solid #3b82f6' : '1px solid var(--borda)',
+                    background: '#0f172a',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '15px',
+                    cursor: 'pointer',
+                    transition: '0.3s'
+                  }}
+                >
+                  <Moon size={48} color="#3b82f6" />
+                  <b style={{ color: '#fff' }}>MODO ESCURO</b>
+                  {temaSelecionado === 'escuro' && <CheckCircle2 size={24} color="#3b82f6" />}
+                </div>
+              </div>
+
+              <button onClick={handleUpdatePerfil} disabled={updating} style={{ marginTop: '40px', background: '#000', color: '#fff', border: 'none', padding: '20px 40px', borderRadius: '18px', fontWeight: '900', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '15px', fontSize: '15px' }}>
+                {updating ? 'SALVANDO...' : <><Save size={20} /> SALVAR PREFERÊNCIA DE TEMA</>}
+              </button>
             </div>
           )}
-
         </div>
       </main>
     </div>
   )
+}
+
+export default function Configuracoes() {
+  return (
+    <Suspense fallback={<div>Carregando...</div>}>
+      <ConfiguracoesContent />
+    </Suspense>
+  );
 }
 
 // ESTILOS AUXILIARES
@@ -253,4 +313,4 @@ const tabBtnStyle = {
 }
 const inputGroup = { display: 'flex', flexDirection: 'column', gap: '10px' }
 const labelStyle = { fontSize: '10px', fontWeight: '900', color: '#94a3b8', letterSpacing: '1px' }
-const inputStyle = { width: '100%', padding: '18px', borderRadius: '15px', border: '1px solid #cbd5e1', outline: 'none', fontFamily: 'Montserrat', fontSize: '15px', background: '#fff' }
+const inputStyle = { width: '100%', padding: '18px', borderRadius: '15px', border: '1px solid #cbd5e1', outline: 'none', fontFamily: 'Montserrat', fontSize: '15px', background: '#fff', color: '#000' }

@@ -262,14 +262,29 @@ export default function Home() {
   const [listaBoletos, setListaBoletos] = useState([])
   const [listaPagar, setListaPagar] = useState([]); const [listaReceber, setListaReceber] = useState([]); const [listaRH, setListaRH] = useState([]);
   const [notificacoes, setNotificacoes] = useState([])
-  const [toasts, setToasts] = useState([]) // ESTADO PARA NOTIFICAÇÕES INVASIVAS
-  const [fileBoleto, setFileBoleto] = useState(null) // ARQUIVO PARA AÇÃO DO FINANCEIRO
+  const [toasts, setToasts] = useState([]) 
+  const [fileBoleto, setFileBoleto] = useState(null)
   const router = useRouter()
 
-  // FUNÇÃO PARA ADICIONAR NOTIFICAÇÃO INVASIVA
+  const btnSidebarStyle = {
+    background: 'none', color: '#000', border: 'none', padding: '20px 0', cursor: 'pointer',
+    fontSize: '18px', fontWeight: '500', display: 'flex', alignItems: 'center', width: '100%', transition: '0.3s'
+  }
+  const iconContainer = { minWidth: '85px', display: 'flex', justifyContent: 'center', alignItems: 'center' }
+
+  // FUNÇÃO PARA TOCAR SOM E ADICIONAR NOTIFICAÇÃO
   const addToast = (notif) => {
     const id = Date.now();
     setToasts(prev => [{...notif, id}, ...prev]);
+    
+    // LOGICA DO SOM
+    try {
+      // Usamos .mp3.mp3 conforme detectado nos arquivos
+      const somPref = userProfile?.som_notificacao || 'som-notificacao-1.mp3.mp3';
+      const audio = new Audio(`/${somPref}`);
+      audio.play().catch(e => console.log("Autoplay bloqueado pelo navegador. Clique na página."));
+    } catch (err) { console.log("Erro ao tocar som"); }
+
     setTimeout(() => {
       setToasts(prev => prev.filter(t => t.id !== id));
     }, 10000); 
@@ -277,7 +292,6 @@ export default function Home() {
 
   const carregarDados = async () => {
     const { data: bolds } = await supabase.from('Chamado_NF').select('*').neq('status', 'concluido').order('id', {ascending: false})
-    
     const hoje = new Date();
     (bolds || []).forEach(async b => {
       if (b.vencimento_boleto && new Date(b.vencimento_boleto) < hoje && b.status !== 'pago' && b.status !== 'vencido') {
@@ -316,11 +330,9 @@ export default function Home() {
     });
 
     setListaBoletos(tarefasFaturamento);
-
     const { data: pag } = await supabase.from('finan_pagar').select('*').neq('status', 'concluido').order('id', {ascending: false})
     const { data: rec } = await supabase.from('finan_receber').select('*').neq('status', 'concluido').order('id', {ascending: false})
     const { data: rhData } = await supabase.from('finan_rh').select('*').neq('status', 'concluido').order('id', {ascending: false})
-    
     setListaRH(rhData || [])
     if (userProfile?.funcao === 'Financeiro') {
       setListaPagar((pag || []).filter(i => i.status === 'financeiro')); setListaReceber((rec || []).filter(i => i.status === 'financeiro'))
@@ -343,7 +355,6 @@ export default function Home() {
   useEffect(() => {
     if (userProfile) {
       carregarDados();
-      
       const channelChat = supabase.channel('chat_notifications_home')
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'mensagens_chat' }, async payload => {
             if (payload.new.usuario_id === userProfile.id) return;
@@ -371,11 +382,7 @@ export default function Home() {
             }
             carregarDados();
         }).subscribe();
-
-      return () => { 
-        supabase.removeChannel(channelChat);
-        supabase.removeChannel(channelMove);
-      };
+      return () => { supabase.removeChannel(channelChat); supabase.removeChannel(channelMove); };
     }
   }, [userProfile]);
 
@@ -394,8 +401,7 @@ export default function Home() {
         }
         await supabase.from(table).update(updateData).eq('id', id);
     }
-    carregarDados();
-    setTarefaSelecionada(null);
+    carregarDados(); setTarefaSelecionada(null);
   };
 
   const handleUpdateFile = async (id, table, field, file) => {
@@ -432,15 +438,8 @@ export default function Home() {
     } catch (err) { alert("Erro: " + err.message); }
   };
 
-  const btnSidebarStyle = {
-    background: 'none', color: '#000', border: 'none', padding: '20px 0', cursor: 'pointer',
-    fontSize: '18px', fontWeight: '500', display: 'flex', alignItems: 'center', width: '100%', transition: '0.3s'
-  }
-  const iconContainer = { minWidth: '85px', display: 'flex', justifyContent: 'center', alignItems: 'center' }
-
-  if (loading) return <LoadingScreen />
-
   const path = typeof window !== 'undefined' ? window.location.pathname : '';
+  if (loading) return <LoadingScreen />
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', fontFamily: 'Montserrat, sans-serif', background: 'transparent' }}>
@@ -508,9 +507,8 @@ export default function Home() {
                   {showConfigMenu && (
                     <div onMouseLeave={() => setShowConfigMenu(false)} style={{ position: 'absolute', top: '55px', right: 0, background: '#fff', padding: '10px 0', borderRadius: '15px', boxShadow: '0 15px 40px rgba(0,0,0,0.15)', border: '1px solid #cbd5e1', zIndex: 2000, width: '200px' }}>
                        <div onClick={() => router.push('/configuracoes')} style={{ padding: '15px 20px', cursor: 'pointer', fontSize: '14px', fontWeight: '700', borderBottom: '1px solid #f1f5f9' }}>PERFIL</div>
-                       {/* ADICIONADO OPÇÃO DE SOM */}
                        <div onClick={() => router.push('/configuracoes?tab=som')} style={{ padding: '15px 20px', cursor: 'pointer', fontSize: '14px', fontWeight: '700', borderBottom: '1px solid #f1f5f9' }}>SOM</div>
-                       <div style={{ padding: '15px 20px', cursor: 'pointer', fontSize: '14px', fontWeight: '700', opacity: 0.5 }}>TEMA</div>
+                       <div onClick={() => router.push('/configuracoes?tab=tema')} style={{ padding: '15px 20px', cursor: 'pointer', fontSize: '14px', fontWeight: '700' }}>TEMA</div>
                     </div>
                   )}
                 </div>
@@ -531,7 +529,7 @@ export default function Home() {
         <div style={{ display: 'flex', gap: '30px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
             <div style={{flex: 1, minWidth: '380px', display: 'flex', flexDirection: 'column', gap: '30px'}}><div style={{padding: '15px', textAlign: 'center', fontWeight: '400', fontSize: '24px', color: '#0f172a'}}>FATURAMENTO</div>
                 {(listaBoletos || []).map(t => {
-                   const isRed = (t.status === 'vencid' || t.tarefa === 'Aguardando Vencimento (Cobrado)' || t.tarefa === 'Cobrar Cliente');
+                   const isRed = (t.status === 'vencido' || t.tarefa === 'Cobrar Cliente');
                    return (
                     <div key={t.id_virtual || t.id} onClick={() => setTarefaSelecionada({ ...t, gTipo: 'boleto' })} className="task-card" style={{ background: isRed ? '#fee2e2' : 'rgba(255,255,255,0.95)', border: isRed ? '1px solid #ef4444' : '1px solid #cbd5e1' }}>
                       <div style={{ background: isRed ? '#ef4444' : '#1e293b', padding: '25px', color: '#fff' }}><h4 style={{ margin: 0, fontSize: '28px', fontWeight: '500' }}>{t.nom_cliente?.toUpperCase()}</h4></div>
@@ -565,21 +563,18 @@ export default function Home() {
                 <label style={{ fontSize: '10px', color: '#000', fontWeight: '500', letterSpacing: '1px' }}>INFORMAÇÕES DO PROCESSO</label>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
                   <div style={{ flex: 1 }}>
-                    {/* DESTAQUE NOME CLIENTE E PAGAMENTO (FONT 400) */}
                     <h2 style={{ fontSize: '56px', fontWeight: '400', color: '#0f172a', margin: 0 }}>{tarefaSelecionada.nom_cliente?.toUpperCase() || tarefaSelecionada.fornecedor?.toUpperCase() || tarefaSelecionada.cliente?.toUpperCase() || tarefaSelecionada.funcionario?.toUpperCase()}</h2>
                     <div style={{ padding: '10px 20px', background: '#0f172a', color: '#fff', borderRadius: '12px', display: 'inline-block', marginTop: '10px', fontSize: '20px', fontWeight: '400' }}>
-                       {tarefaSelecionada.forma_pagamento?.toUpperCase() || 'MÉTODO NÃO INFORMADO'}
+                       {tarefaSelecionada.forma_pagamento?.toUpperCase() || 'NÃO INFORMADO'}
                     </div>
                   </div>
                   <div style={{ textAlign: 'right', background: '#f8fafc', padding: '30px', borderRadius: '25px', border: '1px solid #e2e8f0' }}>
-                     {/* DESTAQUE VALOR (FONT 400) */}
                      <div style={{ fontSize: '12px', color: '#64748b', fontWeight: '400', marginBottom: '5px' }}>{tarefaSelecionada.isChild ? 'VALOR DA PARCELA' : 'VALOR TOTAL'}</div>
                      <div style={{ fontSize: '64px', color: '#0f172a', fontWeight: '400', letterSpacing: '-2px' }}>R$ {tarefaSelecionada.valor_exibicao || tarefaSelecionada.valor || tarefaSelecionada.valor_servico}</div>
                   </div>
                 </div>
               </div>
 
-              {/* GRID LIMPO: REMOVIDO SETOR E STATUS ATUAL */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', border: '1px solid #e2e8f0', borderRadius: '15px', overflow: 'hidden' }}>
                  <div className="info-block-grid"><div style={{fontSize: '11px', color: '#000', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '500'}}>ID PROCESSO</div><span>#{tarefaSelecionada.id}</span></div>
                  <div className="info-block-grid"><div style={{fontSize: '11px', color: '#000', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '500'}}>NF PEÇA (EDITAR)</div><input className="edit-input" defaultValue={tarefaSelecionada?.num_nf_peca} onBlur={(e) => handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'Chamado_NF', 'num_nf_peca', e.target.value)} /></div>
@@ -591,8 +586,7 @@ export default function Home() {
                  <div className="info-block-grid" style={{gridColumn: 'span 3'}}><div style={{fontSize: '11px', color: '#000', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '500'}}>OBSERVAÇÃO (EDITAR)</div><input className="edit-input" defaultValue={tarefaSelecionada?.obs} onBlur={(e) => handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'Chamado_NF', 'obs', e.target.value)} /></div>
               </div>
 
-              {/* BLOCO DA AÇÃO DO FINANCEIRO - APENAS NA FASE GERAR BOLETO */}
-              {userProfile?.funcao === 'Financeiro' && (tarefaSelecionada.status === 'gerar_boleto') && (
+              {userProfile?.funcao === 'Financeiro' && tarefaSelecionada.status === 'gerar_boleto' && (
                 <div style={{ marginTop: '50px', padding: '40px', background: '#f0f9ff', borderRadius: '30px', border: '1px solid #bae6fd' }}>
                     <span style={{ fontSize: '11px', color: '#0369a1', letterSpacing: '2px', display:'block', marginBottom: '20px', fontWeight:'900' }}>AÇÃO DO FINANCEIRO</span>
                     <label style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:'15px', background:'#fff', padding:'25px', borderRadius:'20px', border:'2px dashed #3b82f6', cursor:'pointer', marginBottom:'25px' }}>
@@ -607,8 +601,6 @@ export default function Home() {
               )}
 
               <div style={{marginTop: '30px', display: 'flex', gap: '15px', flexDirection: 'column'}}>
-                
-                {/* LÓGICA PIX: MOSTRAR COMPROVANTE E BOTÃO DE PAGO */}
                 {tarefaSelecionada.forma_pagamento?.toLowerCase() === 'pix' && (
                   <div style={{background:'#f0fdf4', padding:'30px', borderRadius:'20px', border:'1px solid #bbf7d0', marginBottom:'15px'}}>
                      <h4 style={{color:'#166534', marginBottom:'15px', fontWeight:'900'}}>PAGAMENTO VIA PIX</h4>
@@ -620,12 +612,9 @@ export default function Home() {
                      <button onClick={() => handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'Chamado_NF', 'status', 'pago')} style={{width:'100%', background:'#166534', color:'#fff', border:'none', padding:'20px', borderRadius:'15px', cursor:'pointer', fontWeight:'900'}}>CONFERIDO: MOVER PARA PAGO</button>
                   </div>
                 )}
-
-                {/* BOTÃO MOVER PARA CONCLUÍDO (PAGAR / RECEBER) */}
                 {(tarefaSelecionada.gTipo === 'pagar' || tarefaSelecionada.gTipo === 'receber') && (
                   <button onClick={() => handleUpdateField(tarefaSelecionada.id, tarefaSelecionada.gTipo === 'pagar' ? 'finan_pagar' : 'finan_receber', 'status', 'concluido')} style={{background:'#0f172a', color:'#fff', border:'none', padding:'20px', borderRadius:'15px', cursor:'pointer', fontWeight:'900'}}>MOVER PARA CONCLUÍDO (HISTÓRICO)</button>
                 )}
-
                 {tarefaSelecionada.tarefa === 'Cobrar Cliente' && tarefaSelecionada.forma_pagamento?.toLowerCase() !== 'pix' && (
                   <button onClick={() => {
                     handleIncrementRecobranca(tarefaSelecionada.id_virtual || tarefaSelecionada.id, tarefaSelecionada.recombrancas_qtd);
@@ -633,7 +622,6 @@ export default function Home() {
                     alert("Cobrança registrada com sucesso!");
                   }} style={{background:'#22c55e', color:'#fff', border:'none', padding:'20px', borderRadius:'15px', cursor:'pointer', fontWeight:'900'}}>REGISTRAR CLIENTE COBRADO</button>
                 )}
-
                 {userProfile?.funcao !== 'Financeiro' && tarefaSelecionada.status === 'enviar_cliente' && (
                    <button onClick={() => { 
                       handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'Chamado_NF', 'status', 'aguardando_vencimento'); 
@@ -663,15 +651,11 @@ export default function Home() {
       {userProfile && <ChatFlutuante userProfile={userProfile} />}
       
       <style jsx global>{`
-        @keyframes slideIn {
-          from { transform: translateX(100%); opacity: 0; }
-          to { transform: translateX(0); opacity: 1; }
-        }
+        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
         * { font-weight: 400 !important; }
         b, h1, h2, h3, h4, .btn-back, .edit-input { font-weight: 500 !important; }
         .sidebar-btn { background:none; color:#000; border:none; padding:20px 0; cursor:pointer; fontSize:18px; display:flex; alignItems:center; width:100%; transition:0.3s; }
         .sidebar-icon { min-width: 85px; display:flex; justifyContent:center; alignItems:center; }
-        .col-container { flex: 1; min-width: 380px; display: flex; flexDirection: column; gap: 20px; }
         .task-card { background: rgba(255,255,255,0.95); border: 1px solid #cbd5e1; border-radius: 20px; cursor: pointer; overflow: hidden; width: 100%; box-shadow: 0 10px 15px rgba(0,0,0,0.05); transition: 0.2s; }
         .task-card:hover { transform: translateY(-5px); box-shadow: 0 15px 25px rgba(0,0,0,0.1); }
         .payment-badge { background: #000; color: #fff; padding: 5px 12px; border-radius: 8px; font-size: 12px; display: inline-block; font-weight: 400 !important; }

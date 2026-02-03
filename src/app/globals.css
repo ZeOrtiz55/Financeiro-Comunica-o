@@ -2,6 +2,31 @@
 @tailwind components;
 @tailwind utilities;
 
+/* --- INFRAESTRUTURA DE TEMAS (VARIÁVEIS) --- */
+:root {
+  /* Tema Claro (Padrão) */
+  --bg-pagina: #f0fdf4;
+  --bg-imagem-opacity: 0.75;
+  --texto-principal: #0f172a;
+  --texto-secundario: #64748b;
+  --bg-card: rgba(255, 255, 255, 0.95);
+  --borda: #cbd5e1;
+  --bg-modal: #ffffff;
+}
+
+[data-theme='escuro'] {
+  /* Tema Escuro */
+  --bg-pagina: #0f172a;
+  --bg-imagem-opacity: 0.30; /* Reduzimos a opacidade no escuro para o texto brilhar mais */
+  --texto-principal: #f8fafc;
+  --texto-secundario: #94a3b8;
+  --bg-card: rgba(30, 41, 59, 0.95);
+  --borda: #334155;
+  --bg-modal: #1e293b;
+}
+
+/* --- SEUS ESTILOS ORIGINAIS PRESERVADOS --- */
+
 * {
   margin: 0;
   padding: 0;
@@ -12,7 +37,10 @@
 body {
   min-height: 100vh;
   position: relative;
-  background: #f0fdf4; /* Cor de fundo caso a imagem falhe */
+  /* Alterado para usar a variável de tema */
+  background: var(--bg-pagina); 
+  color: var(--texto-principal);
+  transition: background 0.3s ease, color 0.3s ease;
 }
 
 /* Camada da Imagem de Fundo */
@@ -23,9 +51,11 @@ body::before {
   left: 0;
   width: 100%;
   height: 100%;
-  background-image: url('/background.jpg'); /* COLOQUE SUA FOTO NA PASTA PUBLIC COM ESSE NOME */
+  background-image: url('/background.jpg'); 
   background-size: cover;
   background-position: center;
-  opacity: 0.75; /* Opacidade diminuída em 25% */
-  z-index: -1; /* Fica atrás de tudo */
+  /* Alterado para usar a variável de tema */
+  opacity: var(--bg-imagem-opacity); 
+  z-index: -1; 
+  transition: opacity 0.3s ease;
 }
