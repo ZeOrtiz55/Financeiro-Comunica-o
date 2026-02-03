@@ -3,10 +3,10 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { 
-  ArrowLeft, User, Volume2, Palette, Camera, Save, Lock, Mail, Settings 
+  ArrowLeft, User, Volume2, Palette, Camera, Save, Lock, Mail, Settings, Play, CheckCircle2
 } from 'lucide-react'
 
-// --- MESMO FUNDO PADRONIZADO ---
+// --- COMPONENTE DE FUNDO COM OBJETOS ABSTRATOS ---
 function GeometricBackground() {
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: -1, overflow: 'hidden', background: '#f0f4f8', pointerEvents: 'none' }}>
@@ -31,6 +31,15 @@ export default function Configuracoes() {
   const [avatarFile, setAvatarFile] = useState(null)
   const [avatarUrl, setAvatarUrl] = useState('')
 
+  // Estado para o Som
+  const [somSelecionado, setSomSelecionado] = useState('som-notificacao-1.mp3')
+
+  const sonsDisponiveis = [
+    { id: 'som-notificacao-1.mp3', nome: 'Alerta Clássico 1', desc: 'Som curto e elegante' },
+    { id: 'som-notificacao-2.mp3', nome: 'Alerta Moderno 2', desc: 'Som melódico e suave' },
+    { id: 'som-notificacao-3.mp3', nome: 'Alerta Ativo 3', desc: 'Som de maior destaque' },
+  ]
+
   useEffect(() => {
     const carregarDados = async () => {
       const { data: { session } } = await supabase.auth.getSession()
@@ -42,13 +51,31 @@ export default function Configuracoes() {
       setNome(prof?.nome || '')
       setEmail(session.user.email || '')
       setAvatarUrl(prof?.avatar_url || '')
+      setSomSelecionado(prof?.som_notificacao || 'som-notificacao-1.mp3')
       setLoading(false)
     }
     carregarDados()
   }, [router])
 
+  // FUNÇÃO CORRIGIDA PARA TOCAR PRÉVIA E EVITAR O ERRO
+  const tocarPrevia = (nomeSom) => {
+    try {
+      // Certifique-se que o arquivo está na pasta /public/som-notificacao-1.mp3
+      const audio = new Audio(`/${nomeSom}`);
+      
+      audio.play().catch(e => {
+        console.error("Erro ao reproduzir áudio. Verifique se o arquivo existe na pasta public:", e);
+        alert(`Não foi possível carregar o arquivo: ${nomeSom}. Verifique se ele está na pasta public.`);
+      });
+      
+      setSomSelecionado(nomeSom);
+    } catch (error) {
+      console.error("Falha ao instanciar áudio:", error);
+    }
+  }
+
   const handleUpdatePerfil = async (e) => {
-    e.preventDefault()
+    if (e) e.preventDefault()
     setUpdating(true)
     try {
       let currentAvatarUrl = avatarUrl
@@ -63,10 +90,14 @@ export default function Configuracoes() {
         currentAvatarUrl = urlData.publicUrl
       }
 
-      // 2. Atualiza Tabela de Usuários
+      // 2. Atualiza Tabela de Usuários (Salvando Nome, Foto e SOM)
       const { error: dbErr } = await supabase
         .from('financeiro_usu')
-        .update({ nome, avatar_url: currentAvatarUrl })
+        .update({ 
+          nome, 
+          avatar_url: currentAvatarUrl,
+          som_notificacao: somSelecionado 
+        })
         .eq('id', userProfile.id)
       
       if (dbErr) throw dbErr
@@ -77,7 +108,7 @@ export default function Configuracoes() {
         if (authErr) throw authErr
       }
 
-      alert("Perfil atualizado com sucesso!")
+      alert("Configurações salvas com sucesso!")
       window.location.reload()
     } catch (err) {
       alert("Erro ao atualizar: " + err.message)
@@ -86,7 +117,7 @@ export default function Configuracoes() {
     }
   }
 
-  if (loading) return <div style={{background:'#000', height:'100vh'}}></div>
+  if (loading) return <div style={{background:'#f0f4f8', height:'100vh', display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'Montserrat'}}>CARREGANDO...</div>
 
   return (
     <div style={{ minHeight: '100vh', fontFamily: 'Montserrat, sans-serif', padding: '50px' }}>
@@ -128,7 +159,7 @@ export default function Configuracoes() {
                       <img src={avatarUrl || 'https://via.placeholder.com/150'} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     )}
                   </div>
-                  <label style={{ position: 'absolute', bottom: '-10px', right: '-10px', background: '#000', color: '#fff', padding: '10px', borderRadius: '15px', cursor: 'pointer', boxShadow: '0 5px 15px rgba(0,0,0,0.2)' }}>
+                  <label style={{ position: 'absolute', bottom: '-10px', right: '-10px', background: '#000', color: '#fff', padding: '10px', borderRadius: '15px', cursor: 'pointer', boxShadow: '0 5px 15px rgba(0,0,0,0.1)' }}>
                     <Camera size={18} />
                     <input type="file" hidden accept="image/*" onChange={e => setAvatarFile(e.target.files[0])} />
                   </label>
@@ -160,8 +191,54 @@ export default function Configuracoes() {
             </form>
           )}
 
-          {tab === 'som' && <p style={{color: '#64748b'}}>Configurações de Som em breve...</p>}
-          {tab === 'tema' && <p style={{color: '#64748b'}}>Configurações de Tema em breve...</p>}
+          {tab === 'som' && (
+            <div>
+               <h2 style={{ fontSize: '24px', fontWeight: '900', color: '#0f172a', marginBottom: '10px' }}>Sons de Notificação</h2>
+               <p style={{ color: '#64748b', marginBottom: '30px' }}>Escolha o alerta sonoro que você prefere receber. Clique em um som para ouvir uma prévia.</p>
+               
+               <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                  {sonsDisponiveis.map((som) => (
+                    <div 
+                      key={som.id}
+                      onClick={() => tocarPrevia(som.id)}
+                      style={{
+                        padding: '25px',
+                        borderRadius: '20px',
+                        background: somSelecionado === som.id ? 'rgba(0,0,0,0.02)' : 'transparent',
+                        border: somSelecionado === som.id ? '2px solid #000' : '1px solid #e2e8f0',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        cursor: 'pointer',
+                        transition: '0.2s'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+                        <div style={{ width: '45px', height: '45px', borderRadius: '12px', background: somSelecionado === som.id ? '#000' : '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', color: somSelecionado === som.id ? '#fff' : '#000' }}>
+                          <Play size={20} fill={somSelecionado === som.id ? "white" : "none"} />
+                        </div>
+                        <div>
+                          <b style={{ fontSize: '16px', color: '#0f172a', display: 'block' }}>{som.nome}</b>
+                          <span style={{ fontSize: '13px', color: '#94a3b8' }}>{som.desc}</span>
+                        </div>
+                      </div>
+                      {somSelecionado === som.id && <CheckCircle2 size={24} color="#000" />}
+                    </div>
+                  ))}
+               </div>
+
+               <button onClick={handleUpdatePerfil} disabled={updating} style={{ marginTop: '40px', background: '#000', color: '#fff', border: 'none', padding: '20px 40px', borderRadius: '18px', fontWeight: '900', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '15px', fontSize: '15px' }}>
+                {updating ? 'SALVANDO...' : <><Save size={20} /> SALVAR PREFERÊNCIA DE SOM</>}
+              </button>
+            </div>
+          )}
+
+          {tab === 'tema' && (
+            <div>
+              <h2 style={{ fontSize: '24px', fontWeight: '900', color: '#0f172a', marginBottom: '10px' }}>Personalização</h2>
+              <p style={{ color: '#64748b' }}>A escolha de temas e cores personalizadas estará disponível na próxima atualização.</p>
+            </div>
+          )}
 
         </div>
       </main>

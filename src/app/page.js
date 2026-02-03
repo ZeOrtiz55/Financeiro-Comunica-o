@@ -263,21 +263,21 @@ export default function Home() {
   const [listaPagar, setListaPagar] = useState([]); const [listaReceber, setListaReceber] = useState([]); const [listaRH, setListaRH] = useState([]);
   const [notificacoes, setNotificacoes] = useState([])
   const [toasts, setToasts] = useState([]) // ESTADO PARA NOTIFICAÇÕES INVASIVAS
+  const [fileBoleto, setFileBoleto] = useState(null) // ARQUIVO PARA AÇÃO DO FINANCEIRO
   const router = useRouter()
 
-  // FUNÇÃO PARA ADICIONAR NOTIFICAÇÃO INVASIVA (TOAST)
+  // FUNÇÃO PARA ADICIONAR NOTIFICAÇÃO INVASIVA
   const addToast = (notif) => {
     const id = Date.now();
     setToasts(prev => [{...notif, id}, ...prev]);
     setTimeout(() => {
       setToasts(prev => prev.filter(t => t.id !== id));
-    }, 10000); // Fica na tela por 10 segundos
+    }, 10000); 
   };
 
   const carregarDados = async () => {
     const { data: bolds } = await supabase.from('Chamado_NF').select('*').neq('status', 'concluido').order('id', {ascending: false})
     
-    // LOGICA DE AUTO-VENCIMENTO
     const hoje = new Date();
     (bolds || []).forEach(async b => {
       if (b.vencimento_boleto && new Date(b.vencimento_boleto) < hoje && b.status !== 'pago' && b.status !== 'vencido') {
@@ -285,7 +285,6 @@ export default function Home() {
       }
     });
 
-    // --- LÓGICA DE FILTRO HOME PARA PARCELAS REAIS ---
     let tarefasFaturamento = [];
     (bolds || []).forEach(t => {
       if (userProfile?.funcao === 'Financeiro') {
@@ -300,7 +299,6 @@ export default function Home() {
            const statusParc = t[`status_p${i}`];
            const tarefaParc = t[`tarefa_p${i}`];
            const valorParc = t[`valor_parcela${i}`] || (t.valor_servico / (t.qtd_parcelas || 1)).toFixed(2);
-
            if (statusParc === 'enviar_cliente' || tarefaParc === 'Cobrar Cliente') {
              tarefasFaturamento.push({
                ...t,
@@ -346,43 +344,33 @@ export default function Home() {
     if (userProfile) {
       carregarDados();
       
-      // REAL-TIME 1: ESCUTA MENSAGENS DO CHAT
-      const channelChat = supabase.channel('chat_home_global')
+      const channelChat = supabase.channel('chat_notifications_home')
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'mensagens_chat' }, async payload => {
             if (payload.new.usuario_id === userProfile.id) return;
-            
             let titulo = "MENSAGEM GERAL";
             let mensagem = `Nova mensagem de ${payload.new.usuario_nome}`;
             let detalhes = payload.new.texto;
-
             if (payload.new.chamado_id) {
                const { data: card } = await supabase.from('Chamado_NF').select('nom_cliente').eq('id', payload.new.chamado_id).single();
                titulo = "MENSAGEM NO CARD";
                mensagem = `ID: #${payload.new.chamado_id} - Cliente: ${card?.nom_cliente}`;
             }
-
-            // Adiciona na lista do sininho
             setNotificacoes(prev => [{ titulo, mensagem, detalhes, data: new Date().toISOString() }, ...prev]);
-            // Dispara alerta invasivo
             addToast({ tipo: 'chat', titulo, mensagem, detalhes, isGeral: !payload.new.chamado_id });
         }).subscribe();
 
-      // REAL-TIME 2: ESCUTA MOVIMENTAÇÃO DE CARDS
-      const channelMove = supabase.channel('notificacoes_home')
+      const channelMove = supabase.channel('move_notifications_home')
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'Chamado_NF' }, payload => {
-            const info = payload.new;
-            
             if (payload.old.status !== payload.new.status) {
+              const info = payload.new;
               const titulo = "CARD MOVIMENTADO";
               const mensagem = `O card de ${info.nom_cliente} mudou para ${info.status.toUpperCase()}`;
               const detalhes = `ID: #${info.id} | NF Serviço: ${info.num_nf_servico || '-'} | NF Peça: ${info.num_nf_peca || '-'}`;
-              
               setNotificacoes(prev => [{ titulo, mensagem, detalhes, data: new Date().toISOString() }, ...prev]);
               addToast({ tipo: 'movimento', titulo, mensagem, detalhes });
             }
             carregarDados();
-        })
-        .subscribe();
+        }).subscribe();
 
       return () => { 
         supabase.removeChannel(channelChat);
@@ -427,6 +415,23 @@ export default function Home() {
     setTarefaSelecionada(prev => ({...prev, recombrancas_qtd: newVal}));
   };
 
+  const handleGerarBoletoFinanceiro = async (id) => {
+    if (!fileBoleto) return alert("Anexe o boleto.");
+    const idReal = typeof id === 'string' && id.includes('_p') ? id.split('_p')[0] : id;
+    const path = `boletos/${Date.now()}-${fileBoleto.name}`;
+    try {
+      await supabase.storage.from('anexos').upload(path, fileBoleto);
+      const { data } = supabase.storage.from('anexos').getPublicUrl(path);
+      if (typeof id === 'string' && id.includes('_p')) {
+          const pNum = id.split('_p')[1];
+          await supabase.from('Chamado_NF').update({ [`status_p${pNum}`]: 'enviar_cliente', [`tarefa_p${pNum}`]: 'Enviar Boleto para o Cliente', anexo_boleto: data.publicUrl }).eq('id', idReal);
+      } else {
+          await supabase.from('Chamado_NF').update({ status: 'enviar_cliente', tarefa: 'Enviar Boleto para o Cliente', setor: 'Pós-Vendas', anexo_boleto: data.publicUrl }).eq('id', idReal);
+      }
+      alert("Tarefa gerada!"); setFileBoleto(null); setTarefaSelecionada(null); carregarDados();
+    } catch (err) { alert("Erro: " + err.message); }
+  };
+
   const btnSidebarStyle = {
     background: 'none', color: '#000', border: 'none', padding: '20px 0', cursor: 'pointer',
     fontSize: '18px', fontWeight: '500', display: 'flex', alignItems: 'center', width: '100%', transition: '0.3s'
@@ -442,7 +447,6 @@ export default function Home() {
       <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;900&display=swap" rel="stylesheet" />
       <GeometricBackground />
 
-      {/* CONTAINER DE NOTIFICAÇÕES TOAST (FLUTUANTE NO TOPO) */}
       <div style={{ position: 'fixed', top: '20px', right: '20px', zIndex: 10000, display: 'flex', flexDirection: 'column', gap: '15px' }}>
         {toasts.map(t => (
           <NotificationToast key={t.id} notif={t} onClose={() => setToasts(prev => prev.filter(x => x.id !== t.id))} />
@@ -557,29 +561,71 @@ export default function Home() {
               <button onClick={() => setTarefaSelecionada(null)} className="btn-back"><ArrowLeft size={16}/> VOLTAR</button>
               
               <div style={{ marginBottom: '40px' }}>
-                <label style={{ fontSize: '10px', color: '#000', fontWeight: '500', letterSpacing: '1px' }}>NOME DO CLIENTE / FORNECEDOR (EDITÁVEL)</label>
-                <h2 style={{ fontSize: '56px', fontWeight: '400', color: '#0f172a', margin: 0 }}>{tarefaSelecionada.nom_cliente?.toUpperCase()}</h2>
-                <div style={{ padding: '10px 20px', background: '#0f172a', color: '#fff', borderRadius: '12px', display: 'inline-block', marginTop: '10px', fontSize: '20px', fontWeight: '400' }}>
-                   {tarefaSelecionada.forma_pagamento?.toUpperCase() || 'NÃO INFORMADO'}
+                <label style={{ fontSize: '10px', color: '#000', fontWeight: '500', letterSpacing: '1px' }}>INFORMAÇÕES DO PROCESSO</label>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                  <div style={{ flex: 1 }}>
+                    {/* DESTAQUE NOME CLIENTE E PAGAMENTO (FONT 400) */}
+                    <h2 style={{ fontSize: '56px', fontWeight: '400', color: '#0f172a', margin: 0 }}>{tarefaSelecionada.nom_cliente?.toUpperCase() || tarefaSelecionada.fornecedor?.toUpperCase() || tarefaSelecionada.cliente?.toUpperCase() || tarefaSelecionada.funcionario?.toUpperCase()}</h2>
+                    <div style={{ padding: '10px 20px', background: '#0f172a', color: '#fff', borderRadius: '12px', display: 'inline-block', marginTop: '10px', fontSize: '20px', fontWeight: '400' }}>
+                       {tarefaSelecionada.forma_pagamento?.toUpperCase() || 'MÉTODO NÃO INFORMADO'}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                     {/* DESTAQUE VALOR (FONT 400) */}
+                     <div style={{ fontSize: '12px', color: '#64748b', fontWeight: '400' }}>{tarefaSelecionada.isChild ? 'VALOR DA PARCELA' : 'VALOR TOTAL'}</div>
+                     <div style={{ fontSize: '56px', color: '#0f172a', fontWeight: '400' }}>R$ {tarefaSelecionada.valor_exibicao || tarefaSelecionada.valor || tarefaSelecionada.valor_servico}</div>
+                  </div>
                 </div>
               </div>
 
+              {/* GRID LIMPO: REMOVIDO SETOR E STATUS ATUAL */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', border: '1px solid #e2e8f0', borderRadius: '15px', overflow: 'hidden' }}>
                  <div className="info-block-grid"><div style={{fontSize: '11px', color: '#000', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '500'}}>ID PROCESSO</div><span>#{tarefaSelecionada.id}</span></div>
-                 <div className="info-block-grid"><div style={{fontSize: '11px', color: '#000', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '500'}}>VALOR</div><span>R$ {tarefaSelecionada.valor_exibicao}</span></div>
-                 <div className="info-block-grid"><div style={{fontSize: '11px', color: '#000', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '500'}}>STATUS ATUAL</div><span>{tarefaSelecionada.status?.toUpperCase()}</span></div>
                  <div className="info-block-grid"><div style={{fontSize: '11px', color: '#000', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '500'}}>NF PEÇA (EDITAR)</div><input className="edit-input" defaultValue={tarefaSelecionada?.num_nf_peca} onBlur={(e) => handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'Chamado_NF', 'num_nf_peca', e.target.value)} /></div>
                  <div className="info-block-grid"><div style={{fontSize: '11px', color: '#000', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '500'}}>NF SERVIÇO (EDITAR)</div><input className="edit-input" defaultValue={tarefaSelecionada?.num_nf_servico} onBlur={(e) => handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'Chamado_NF', 'num_nf_servico', e.target.value)} /></div>
                  <div className="info-block-grid"><div style={{fontSize: '11px', color: '#000', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '500'}}>VENCIMENTO (EDITAR)</div><input type="date" className="edit-input" defaultValue={tarefaSelecionada?.vencimento_boleto || tarefaSelecionada?.data_vencimento} onBlur={(e) => handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'Chamado_NF', 'vencimento_boleto', e.target.value)} /></div>
-                 <div className="info-block-grid"><div style={{fontSize: '11px', color: '#000', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '500'}}>SETOR</div><span>{tarefaSelecionada.setor || 'N/A'}</span></div>
                  <div className="info-block-grid"><div style={{fontSize: '11px', color: '#000', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '500'}}>RECOBRANÇAS</div><span>{tarefaSelecionada.recombrancas_qtd || 0} vezes</span></div>
                  <div className="info-block-grid"><div style={{fontSize: '11px', color: '#000', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '500'}}>QTD PARCELAS</div><span>{tarefaSelecionada.qtd_parcelas || 1}x</span></div>
                  <div className="info-block-grid" style={{gridColumn: 'span 3'}}><div style={{fontSize: '11px', color: '#000', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '500'}}>DATAS PARCELAS</div><span>{tarefaSelecionada.datas_parcelas || 'N/A'}</span></div>
                  <div className="info-block-grid" style={{gridColumn: 'span 3'}}><div style={{fontSize: '11px', color: '#000', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '500'}}>OBSERVAÇÃO (EDITAR)</div><input className="edit-input" defaultValue={tarefaSelecionada?.obs} onBlur={(e) => handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'Chamado_NF', 'obs', e.target.value)} /></div>
               </div>
 
+              {/* BLOCO DA AÇÃO DO FINANCEIRO - APENAS NA FASE GERAR BOLETO */}
+              {userProfile?.funcao === 'Financeiro' && (tarefaSelecionada.status === 'gerar_boleto') && (
+                <div style={{ marginTop: '50px', padding: '40px', background: '#f0f9ff', borderRadius: '30px', border: '1px solid #bae6fd' }}>
+                    <span style={{ fontSize: '11px', color: '#0369a1', letterSpacing: '2px', display:'block', marginBottom: '20px', fontWeight:'900' }}>AÇÃO DO FINANCEIRO</span>
+                    <label style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:'15px', background:'#fff', padding:'25px', borderRadius:'20px', border:'2px dashed #3b82f6', cursor:'pointer', marginBottom:'25px' }}>
+                        <Upload size={32} color="#3b82f6" />
+                        <div style={{textAlign:'left'}}><span style={{fontSize:'16px', color:'#1d4ed8', display:'block', fontWeight:'500'}}>{fileBoleto ? fileBoleto.name : 'CLIQUE PARA ANEXAR O BOLETO'}</span><span style={{fontSize:'12px', color:'#60a5fa'}}>Clique para selecionar o arquivo</span></div>
+                        <input type="file" hidden onChange={e => setFileBoleto(e.target.files[0])} />
+                    </label>
+                    <button onClick={() => handleGerarBoletoFinanceiro(tarefaSelecionada.id_virtual || tarefaSelecionada.id)} style={{ width: '100%', background: '#0f172a', color: '#fff', padding: '22px', borderRadius: '20px', cursor: 'pointer', fontSize: '16px', display:'flex', alignItems:'center', justifyContent:'center', gap:'12px', fontWeight:'500' }}>
+                        <Send size={20}/> Gerar Tarefa para Pós Vendas: Enviar Boleto
+                    </button>
+                </div>
+              )}
+
               <div style={{marginTop: '30px', display: 'flex', gap: '15px', flexDirection: 'column'}}>
-                {tarefaSelecionada.tarefa === 'Cobrar Cliente' && (
+                
+                {/* LÓGICA PIX: MOSTRAR COMPROVANTE E BOTÃO DE PAGO */}
+                {tarefaSelecionada.forma_pagamento?.toLowerCase() === 'pix' && (
+                  <div style={{background:'#f0fdf4', padding:'30px', borderRadius:'20px', border:'1px solid #bbf7d0', marginBottom:'15px'}}>
+                     <h4 style={{color:'#166534', marginBottom:'15px', fontWeight:'900'}}>PAGAMENTO VIA PIX</h4>
+                     {tarefaSelecionada.comprovante_pagamento && (
+                       <a href={tarefaSelecionada.comprovante_pagamento} target="_blank" className="btn-anexo-doc" style={{marginBottom:'15px', color:'#166534', borderColor:'#166534'}}>
+                         <Download size={18}/> VER COMPROVANTE DE PAGAMENTO
+                       </a>
+                     )}
+                     <button onClick={() => handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'Chamado_NF', 'status', 'pago')} style={{width:'100%', background:'#166534', color:'#fff', border:'none', padding:'20px', borderRadius:'15px', cursor:'pointer', fontWeight:'900'}}>CONFERIDO: MOVER PARA PAGO</button>
+                  </div>
+                )}
+
+                {/* BOTÃO MOVER PARA CONCLUÍDO (PAGAR / RECEBER) */}
+                {(tarefaSelecionada.gTipo === 'pagar' || tarefaSelecionada.gTipo === 'receber') && (
+                  <button onClick={() => handleUpdateField(tarefaSelecionada.id, tarefaSelecionada.gTipo === 'pagar' ? 'finan_pagar' : 'finan_receber', 'status', 'concluido')} style={{background:'#0f172a', color:'#fff', border:'none', padding:'20px', borderRadius:'15px', cursor:'pointer', fontWeight:'900'}}>MOVER PARA CONCLUÍDO (HISTÓRICO)</button>
+                )}
+
+                {tarefaSelecionada.tarefa === 'Cobrar Cliente' && tarefaSelecionada.forma_pagamento?.toLowerCase() !== 'pix' && (
                   <button onClick={() => {
                     handleIncrementRecobranca(tarefaSelecionada.id_virtual || tarefaSelecionada.id, tarefaSelecionada.recombrancas_qtd);
                     handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'Chamado_NF', 'tarefa', 'Aguardando Verificação Financeiro (Cobrado)');
