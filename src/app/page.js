@@ -7,7 +7,7 @@ import {
   Bell, MessageSquare, X, Menu, PlusCircle, FileText, Download, 
   CheckCircle, LogOut, User, ShieldCheck, Upload, Send, 
   Calendar, CreditCard, Hash, History, ArrowLeft, Paperclip, ImageIcon, 
-  CheckCheck, Eye, LayoutDashboard, ClipboardList, UserCheck, TrendingUp, TrendingDown, Settings, Trash2, Edit3, RefreshCw, AlertCircle
+  CheckCheck, Eye, LayoutDashboard, ClipboardList, UserCheck, TrendingUp, TrendingDown, Settings, Trash2, Edit3, RefreshCw, AlertCircle, Trash
 } from 'lucide-react'
 
 // --- COMPONENTE DE NOTIFICAÇÃO INVASIVA (TOAST) ---
@@ -53,7 +53,7 @@ function NotificationToast({ notif, onClose }) {
   );
 }
 
-// --- COMPONENTE DE FUNDO COM OBJETOS ABSTRATOS ---
+// --- COMPONENTE DE FUNDO ---
 function GeometricBackground() {
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: -1, overflow: 'hidden', background: '#f0f4f8', pointerEvents: 'none' }}>
@@ -89,26 +89,27 @@ function ChatChamado({ chamadoId, userProfile }) {
   const [mensagens, setMensagens] = useState([])
   const [novaMsg, setNovaMsg] = useState('')
   const scrollRef = useRef()
+  const idReal = typeof chamadoId === 'string' && chamadoId.includes('_p') ? chamadoId.split('_p')[0] : chamadoId;
 
   useEffect(() => {
-    if (!chamadoId || !userProfile?.id) return
-    supabase.from('mensagens_chat').select('*').eq('chamado_id', chamadoId).order('created_at', { ascending: true })
+    if (!idReal || !userProfile?.id) return
+    supabase.from('mensagens_chat').select('*').eq('chamado_id', idReal).order('created_at', { ascending: true })
       .then(({ data }) => setMensagens(data || []))
 
-    const channel = supabase.channel(`chat_card_${chamadoId}`).on('postgres_changes', { 
-      event: 'INSERT', schema: 'public', table: 'mensagens_chat', filter: `chamado_id=eq.${chamadoId}` 
+    const channel = supabase.channel(`chat_card_${idReal}`).on('postgres_changes', { 
+      event: 'INSERT', schema: 'public', table: 'mensagens_chat', filter: `chamado_id=eq.${idReal}` 
     }, payload => { 
       if (String(payload.new.usuario_id) !== String(userProfile.id)) setMensagens(prev => [...(prev || []), payload.new]) 
     }).subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [chamadoId, userProfile?.id])
+  }, [idReal, userProfile?.id])
 
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight }, [mensagens])
 
   const enviar = async (e) => {
     e.preventDefault(); if (!novaMsg.trim()) return
     const texto = novaMsg; setNovaMsg('')
-    const { error } = await supabase.from('mensagens_chat').insert([{ texto, usuario_nome: userProfile.nome, usuario_id: userProfile.id, chamado_id: chamadoId }])
+    const { error } = await supabase.from('mensagens_chat').insert([{ texto, usuario_nome: userProfile.nome, usuario_id: userProfile.id, chamado_id: idReal }])
     if (error) alert("Erro: " + error.message)
     else setMensagens(prev => [...(prev || []), { id: Date.now(), texto, usuario_nome: userProfile.nome, usuario_id: userProfile.id }])
   }
@@ -266,24 +267,23 @@ export default function Home() {
   const [fileBoleto, setFileBoleto] = useState(null)
   const router = useRouter()
 
+  // DEFINIÇÕES DE ESTILO (CORRIGIDO)
   const btnSidebarStyle = {
     background: 'none', color: '#000', border: 'none', padding: '20px 0', cursor: 'pointer',
     fontSize: '18px', fontWeight: '500', display: 'flex', alignItems: 'center', width: '100%', transition: '0.3s'
   }
   const iconContainer = { minWidth: '85px', display: 'flex', justifyContent: 'center', alignItems: 'center' }
+  const path = typeof window !== 'undefined' ? window.location.pathname : '';
 
-  // FUNÇÃO PARA TOCAR SOM E ADICIONAR NOTIFICAÇÃO
   const addToast = (notif) => {
     const id = Date.now();
     setToasts(prev => [{...notif, id}, ...prev]);
     
-    // LOGICA DO SOM
     try {
-      // Usamos .mp3.mp3 conforme detectado nos arquivos
-      const somPref = userProfile?.som_notificacao || 'som-notificacao-1.mp3.mp3';
+      const somPref = userProfile?.som_notificacao || 'som-notificacao-1.mp3';
       const audio = new Audio(`/${somPref}`);
-      audio.play().catch(e => console.log("Autoplay bloqueado pelo navegador. Clique na página."));
-    } catch (err) { console.log("Erro ao tocar som"); }
+      audio.play().catch(e => console.log("Permissão de áudio pendente. Clique no site."));
+    } catch (err) { console.log("Erro áudio"); }
 
     setTimeout(() => {
       setToasts(prev => prev.filter(t => t.id !== id));
@@ -358,14 +358,18 @@ export default function Home() {
       const channelChat = supabase.channel('chat_notifications_home')
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'mensagens_chat' }, async payload => {
             if (payload.new.usuario_id === userProfile.id) return;
+            
             let titulo = "MENSAGEM GERAL";
             let mensagem = `Nova mensagem de ${payload.new.usuario_nome}`;
             let detalhes = payload.new.texto;
+
             if (payload.new.chamado_id) {
                const { data: card } = await supabase.from('Chamado_NF').select('nom_cliente').eq('id', payload.new.chamado_id).single();
                titulo = "MENSAGEM NO CARD";
-               mensagem = `ID: #${payload.new.chamado_id} - Cliente: ${card?.nom_cliente}`;
+               mensagem = `ID: #${payload.new.chamado_id} | CLIENTE: ${card?.nom_cliente?.toUpperCase()}`;
+               detalhes = `Texto: ${payload.new.texto}`;
             }
+
             setNotificacoes(prev => [{ titulo, mensagem, detalhes, data: new Date().toISOString() }, ...prev]);
             addToast({ tipo: 'chat', titulo, mensagem, detalhes, isGeral: !payload.new.chamado_id });
         }).subscribe();
@@ -375,8 +379,9 @@ export default function Home() {
             if (payload.old.status !== payload.new.status) {
               const info = payload.new;
               const titulo = "CARD MOVIMENTADO";
-              const mensagem = `O card de ${info.nom_cliente} mudou para ${info.status.toUpperCase()}`;
+              const mensagem = `Cliente: ${info.nom_cliente?.toUpperCase()} mudou para ${info.status.toUpperCase()}`;
               const detalhes = `ID: #${info.id} | NF Serviço: ${info.num_nf_servico || '-'} | NF Peça: ${info.num_nf_peca || '-'}`;
+              
               setNotificacoes(prev => [{ titulo, mensagem, detalhes, data: new Date().toISOString() }, ...prev]);
               addToast({ tipo: 'movimento', titulo, mensagem, detalhes });
             }
@@ -438,7 +443,6 @@ export default function Home() {
     } catch (err) { alert("Erro: " + err.message); }
   };
 
-  const path = typeof window !== 'undefined' ? window.location.pathname : '';
   if (loading) return <LoadingScreen />
 
   return (
@@ -477,7 +481,7 @@ export default function Home() {
             <div style={{ display:'flex', gap:'35px', alignItems:'center', position:'relative' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '20px', background: 'rgba(255,255,255,0.6)', padding: '12px 25px', borderRadius: '25px', border: '1px solid #cbd5e1', boxShadow: '0 8px 20px rgba(0,0,0,0.05)' }}>
                   <div style={{ width: '65px', height: '65px', borderRadius: '20px', overflow: 'hidden', background: '#000', border: '2px solid #fff', boxShadow: '0 5px 15px rgba(0,0,0,0.1)' }}>
-                    {userProfile?.avatar_url ? <img src={userProfile.avatar_url} style={{ width:'100%', height:'100%', objectFit:'cover'}} /> : <User color="#fff" style={{padding:'12px'}} size={40}/>}
+                    {userProfile?.avatar_url ? <img src={userProfile.avatar_url} style={{ width:'100%', height:'100%', objectFit:'cover'}} alt="User" /> : <User color="#fff" style={{padding:'12px'}} size={40}/>}
                   </div>
                   <div style={{ textAlign: 'left', lineHeight: '1.2' }}>
                     <b style={{ block: 'block', fontSize: '16px', color: '#0f172a', fontWeight: '500', letterSpacing:'-0.5px' }}>{userProfile?.nome?.toUpperCase()}</b>
@@ -490,7 +494,12 @@ export default function Home() {
                   {notificacoes.length > 0 && <div style={{position:'absolute', top:0, right:0, background:'red', width:'12px', height:'12px', borderRadius:'50%'}}></div>}
                   {showNotifMenu && (
                     <div onMouseLeave={() => setShowNotifMenu(false)} style={{ position: 'absolute', top: '55px', right: 0, background: 'rgba(255,255,255,0.98)', backdropFilter: 'blur(10px)', padding: '25px', borderRadius: '20px', boxShadow: '0 20px 50px rgba(0,0,0,0.15)', border: '1px solid #cbd5e1', zIndex: 2000, width: '400px', maxHeight: '500px', overflowY: 'auto' }}>
-                      <div style={{ fontWeight: '900', fontSize: '12px', color: '#94a3b8', marginBottom: '15px', letterSpacing: '1px' }}>HISTÓRICO RECENTE</div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                        <div style={{ fontWeight: '900', fontSize: '12px', color: '#94a3b8', letterSpacing: '1px' }}>HISTÓRICO RECENTE</div>
+                        <button onClick={() => setNotificacoes([])} style={{ background: 'none', border: 'none', color: '#ef4444', fontSize: '10px', fontWeight: '900', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                           <Trash size={12}/> LIMPAR TUDO
+                        </button>
+                      </div>
                       {notificacoes.length > 0 ? notificacoes.map((n, i) => (
                         <div key={i} style={{ padding: '15px 0', borderBottom: '1px solid #f1f5f9' }}>
                           <div style={{fontWeight: '700', fontSize: '14px', color: '#0f172a'}}>{n.titulo}</div>
@@ -565,7 +574,7 @@ export default function Home() {
                   <div style={{ flex: 1 }}>
                     <h2 style={{ fontSize: '56px', fontWeight: '400', color: '#0f172a', margin: 0 }}>{tarefaSelecionada.nom_cliente?.toUpperCase() || tarefaSelecionada.fornecedor?.toUpperCase() || tarefaSelecionada.cliente?.toUpperCase() || tarefaSelecionada.funcionario?.toUpperCase()}</h2>
                     <div style={{ padding: '10px 20px', background: '#0f172a', color: '#fff', borderRadius: '12px', display: 'inline-block', marginTop: '10px', fontSize: '20px', fontWeight: '400' }}>
-                       {tarefaSelecionada.forma_pagamento?.toUpperCase() || 'NÃO INFORMADO'}
+                       {tarefaSelecionada.forma_pagamento?.toUpperCase() || 'MÉTODO NÃO INFORMADO'}
                     </div>
                   </div>
                   <div style={{ textAlign: 'right', background: '#f8fafc', padding: '30px', borderRadius: '25px', border: '1px solid #e2e8f0' }}>
@@ -586,7 +595,7 @@ export default function Home() {
                  <div className="info-block-grid" style={{gridColumn: 'span 3'}}><div style={{fontSize: '11px', color: '#000', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '500'}}>OBSERVAÇÃO (EDITAR)</div><input className="edit-input" defaultValue={tarefaSelecionada?.obs} onBlur={(e) => handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'Chamado_NF', 'obs', e.target.value)} /></div>
               </div>
 
-              {userProfile?.funcao === 'Financeiro' && tarefaSelecionada.status === 'gerar_boleto' && (
+              {userProfile?.funcao === 'Financeiro' && (tarefaSelecionada.status === 'gerar_boleto') && (
                 <div style={{ marginTop: '50px', padding: '40px', background: '#f0f9ff', borderRadius: '30px', border: '1px solid #bae6fd' }}>
                     <span style={{ fontSize: '11px', color: '#0369a1', letterSpacing: '2px', display:'block', marginBottom: '20px', fontWeight:'900' }}>AÇÃO DO FINANCEIRO</span>
                     <label style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:'15px', background:'#fff', padding:'25px', borderRadius:'20px', border:'2px dashed #3b82f6', cursor:'pointer', marginBottom:'25px' }}>
@@ -654,8 +663,6 @@ export default function Home() {
         @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
         * { font-weight: 400 !important; }
         b, h1, h2, h3, h4, .btn-back, .edit-input { font-weight: 500 !important; }
-        .sidebar-btn { background:none; color:#000; border:none; padding:20px 0; cursor:pointer; fontSize:18px; display:flex; alignItems:center; width:100%; transition:0.3s; }
-        .sidebar-icon { min-width: 85px; display:flex; justifyContent:center; alignItems:center; }
         .task-card { background: rgba(255,255,255,0.95); border: 1px solid #cbd5e1; border-radius: 20px; cursor: pointer; overflow: hidden; width: 100%; box-shadow: 0 10px 15px rgba(0,0,0,0.05); transition: 0.2s; }
         .task-card:hover { transform: translateY(-5px); box-shadow: 0 15px 25px rgba(0,0,0,0.1); }
         .payment-badge { background: #000; color: #fff; padding: 5px 12px; border-radius: 8px; font-size: 12px; display: inline-block; font-weight: 400 !important; }
