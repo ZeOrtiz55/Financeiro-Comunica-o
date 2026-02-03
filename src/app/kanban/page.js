@@ -27,7 +27,7 @@ function LoadingScreen() {
     <div style={{ position: 'fixed', inset: 0, background: '#000', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;900&display=swap" rel="stylesheet" />
         <h1 style={{ color: '#fff', fontFamily: 'Montserrat, sans-serif', fontWeight: '300', fontSize: '28px', letterSpacing: '4px', textTransform: 'uppercase', textAlign: 'center' }}>
-            Controle de Boletos <br /> <span style={{ fontSize: '32px' }}>Nova Tratores</span>
+            Fluxo de Boletos <br /> <span style={{ fontSize: '32px' }}>Nova Tratores</span>
         </h1>
     </div>
   )
@@ -174,12 +174,13 @@ export default function KanbanPage() {
   const [notificacoes, setNotificacoes] = useState([])
   const router = useRouter()
 
+  // NOMES DAS COLUNAS ATUALIZADOS
   const colunas = [
     { id: 'gerar_boleto', titulo: 'GERAR BOLETO' },
-    { id: 'enviar_cliente', titulo: 'ENVIAR CLIENTE' },
-    { id: 'aguardando_vencimento', titulo: 'EM ABERTO' },
-    { id: 'vencido', titulo: 'VENCIDO' },
-    { id: 'pago', titulo: 'PAGO' }
+    { id: 'enviar_cliente', titulo: 'ENVIAR PARA CLIENTE' },
+    { id: 'aguardando_vencimento', titulo: 'AGUARDANDO VENCIMENTO' },
+    { id: 'pago', titulo: 'PAGO' },
+    { id: 'vencido', titulo: 'VENCIDO' }
   ]
 
   const carregarDados = async () => {
@@ -195,12 +196,11 @@ export default function KanbanPage() {
           const numParc = index + 1;
           const vencParc = new Date(dataParc);
           
-          // Lógica de Movimentação Individual baseada nas novas colunas p1, p2...
-          // Agora o card filho usa o status individual para saber em qual coluna ficar
           let statusIndividual = c[`status_p${numParc}`] || 'aguardando_vencimento';
           let tarefaIndividual = c[`tarefa_p${numParc}`] || `Parcela ${numParc}/${c.qtd_parcelas}`;
+          let recobrancasIndividual = c[`recombrancas_qtd_p${numParc}`] || 0;
 
-          // Se a parcela venceu e ainda está no padrão "aguardando", move para "pago"
+          // LOGICA: SE VENCER, VAI PARA PAGO PARA VERIFICAÇÃO FINANCEIRA
           if (vencParc < hoje && statusIndividual === 'aguardando_vencimento') {
             statusIndividual = 'pago';
             tarefaIndividual = `Boleto Vencido: Verificar Pagamento (Parcela ${numParc})`;
@@ -218,14 +218,16 @@ export default function KanbanPage() {
             nom_cliente: `${c.nom_cliente} (PARC ${numParc})`,
             vencimento_boleto: dataParc,
             valor_exibicao: valorDaParcela,
-            status: statusIndividual, // O status individual define a coluna
+            status: statusIndividual, 
             tarefa: tarefaIndividual,
+            recombrancas_qtd_individual: recobrancasIndividual,
             numParcelaReferencia: numParc,
             isChild: true
           });
         });
       } else {
-        const itemNormal = { ...c, valor_exibicao: c.valor_servico };
+        const itemNormal = { ...c, valor_exibicao: c.valor_servico, recombrancas_qtd_individual: c.recombrancas_qtd || 0 };
+        // LOGICA: SE VENCER, VAI PARA PAGO
         if (c.vencimento_boleto && new Date(c.vencimento_boleto) < hoje && c.status !== 'pago' && c.status !== 'vencido' && c.status !== 'gerar_boleto') {
             supabase.from('Chamado_NF').update({ status: 'pago', tarefa: 'Boleto Vencido: Verificar Pagamento' }).eq('id', c.id);
             itemNormal.status = 'pago';
@@ -252,8 +254,18 @@ export default function KanbanPage() {
 
   useEffect(() => {
     if (userProfile) {
-      const channel = supabase.channel('notificacoes_kanban')
+      const channel = supabase.channel('notificacoes_kanban_global')
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'Chamado_NF' }, payload => {
+           // NOTIFICAÇÃO DE MOVIMENTO PARA TODOS
+           const anterior = payload.old.status;
+           const atual = payload.new.status;
+           
+           if (anterior !== atual) {
+             const info = payload.new;
+             const msg = `🔔 MUDANÇA DE FASE\nID: #${info.id}\nCliente: ${info.nom_cliente}\nNFs: ${info.num_nf_servico || '-'} / ${info.num_nf_peca || '-'}\nNova Fase: ${atual.toUpperCase()}`;
+             setNotificacoes(prev => [msg, ...prev]);
+             alert(msg); // Alerta visual imediato
+           }
            carregarDados();
         })
         .subscribe();
@@ -268,12 +280,10 @@ export default function KanbanPage() {
 
   const handleUpdateField = async (id, field, value) => {
     const finalValue = (value === "" && (field.includes('data') || field.includes('vencimento'))) ? null : value;
-    
     if (typeof id === 'string' && id.includes('_p')) {
       const [idReal, pNum] = id.split('_p');
       const fieldNameIndividual = `${field}_p${pNum}`;
       await supabase.from('Chamado_NF').update({ [fieldNameIndividual]: finalValue }).eq('id', idReal);
-      // Atualiza o estado local do card filho
       setTarefaSelecionada(prev => ({...prev, [field]: finalValue}));
     } else {
       const updateData = { [field]: finalValue };
@@ -289,7 +299,7 @@ export default function KanbanPage() {
     const idReal = typeof id === 'string' && id.includes('_p') ? id.split('_p')[0] : id;
     const newVal = (currentVal || 0) + 1;
     await supabase.from('Chamado_NF').update({ recombrancas_qtd: newVal }).eq('id', idReal);
-    setTarefaSelecionada(prev => ({...prev, recombrancas_qtd: newVal}));
+    setTarefaSelecionada(prev => ({...prev, recombrancas_qtd_individual: newVal}));
   };
 
   const handleUpdateFile = async (id, field, file) => {
@@ -297,17 +307,13 @@ export default function KanbanPage() {
     const idReal = typeof id === 'string' && id.includes('_p') ? id.split('_p')[0] : id;
     const cleanName = file.name.normalize('NFD').replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9.-]/g, '_');
     const path = `anexos/${Date.now()}-${cleanName}`;
-    
     try {
       await supabase.storage.from('anexos').upload(path, file);
       const { data: linkData } = supabase.storage.from('anexos').getPublicUrl(path);
       await supabase.from('Chamado_NF').update({ [field]: linkData.publicUrl }).eq('id', idReal);
-      
       setTarefaSelecionada(prev => ({...prev, [field]: linkData.publicUrl}));
-      alert("Arquivo anexado com sucesso!");
-    } catch (err) {
-      alert("Erro ao subir arquivo: " + err.message);
-    }
+      alert("Arquivo anexado!");
+    } catch (err) { alert("Erro: " + err.message); }
   };
 
   const handleGerarBoletoFaturamento = async (id) => {
@@ -315,20 +321,17 @@ export default function KanbanPage() {
     const idReal = typeof id === 'string' && id.includes('_p') ? id.split('_p')[0] : id;
     const cleanName = fileBoleto.name.normalize('NFD').replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9.-]/g, '_');
     const path = `boletos/${Date.now()}-${cleanName}`
-    await supabase.storage.from('anexos').upload(path, fileBoleto)
-    const { data } = supabase.storage.from('anexos').getPublicUrl(path)
-    
-    if (typeof id === 'string' && id.includes('_p')) {
-        const pNum = id.split('_p')[1];
-        await supabase.from('Chamado_NF').update({ 
-            [`status_p${pNum}`]: 'enviar_cliente', 
-            [`tarefa_p${pNum}`]: 'Enviar Boleto para o Cliente',
-            anexo_boleto: data.publicUrl 
-        }).eq('id', idReal);
-    } else {
-        await supabase.from('Chamado_NF').update({ status: 'enviar_cliente', tarefa: 'Enviar Boleto para o Cliente', setor: 'Pós-Vendas', anexo_boleto: data.publicUrl }).eq('id', idReal);
-    }
-    alert("Tarefa gerada!"); window.location.reload();
+    try {
+      await supabase.storage.from('anexos').upload(path, fileBoleto)
+      const { data } = supabase.storage.from('anexos').getPublicUrl(path)
+      if (typeof id === 'string' && id.includes('_p')) {
+          const pNum = id.split('_p')[1];
+          await supabase.from('Chamado_NF').update({ [`status_p${pNum}`]: 'enviar_cliente', [`tarefa_p${pNum}`]: 'Enviar Boleto para o Cliente', anexo_boleto: data.publicUrl }).eq('id', idReal);
+      } else {
+          await supabase.from('Chamado_NF').update({ status: 'enviar_cliente', tarefa: 'Enviar Boleto para o Cliente', setor: 'Pós-Vendas', anexo_boleto: data.publicUrl }).eq('id', idReal);
+      }
+      alert("Tarefa gerada!"); window.location.reload();
+    } catch (err) { alert("Erro: " + err.message); }
   }
 
   const chamadosFiltrados = chamados.filter(c => 
@@ -354,7 +357,13 @@ export default function KanbanPage() {
             </div>
             <nav style={{ display: 'flex', flexDirection: 'column' }}>
                 <button onClick={() => router.push('/')} style={btnSidebarStyle}><div style={{minWidth:'85px', display:'flex', justifyContent:'center'}}><LayoutDashboard size={28}/></div><span style={{ opacity: isSidebarOpen ? 1 : 0 }}>TAREFAS</span></button>
-                <button onClick={() => router.push('/kanban')} style={{...btnSidebarStyle, background: 'rgba(0,0,0,0.05)'}}><div style={{minWidth:'85px', display:'flex', justifyContent:'center'}}><ClipboardList size={28}/></div><span style={{ opacity: isSidebarOpen ? 1 : 0 }}>BOLETOS</span></button>
+                
+                {/* BARRA PRETA INDICADORA NO MENU LATERAL */}
+                <button onClick={() => router.push('/kanban')} style={{...btnSidebarStyle, background: 'rgba(0,0,0,0.05)', borderLeft: '6px solid #000'}}>
+                  <div style={{minWidth:'85px', display:'flex', justifyContent:'center'}}><ClipboardList size={28}/></div>
+                  <span style={{ opacity: isSidebarOpen ? 1 : 0 }}>Fluxo de Boletos</span>
+                </button>
+                
                 <div style={{ height: '1px', background: '#e2e8f0', margin: '20px 0', opacity: isSidebarOpen ? 1 : 0 }}></div>
                 <button onClick={() => router.push('/historico-pagar')} style={btnSidebarStyle}><div style={{minWidth:'85px', display:'flex', justifyContent:'center'}}><TrendingDown size={28}/></div><span style={{ opacity: isSidebarOpen ? 1 : 0 }}>Historico Pagar</span></button>
                 <button onClick={() => router.push('/historico-receber')} style={btnSidebarStyle}><div style={{minWidth:'85px', display:'flex', justifyContent:'center'}}><TrendingUp size={28}/></div><span style={{ opacity: isSidebarOpen ? 1 : 0 }}>Historico Receber</span></button>
@@ -365,10 +374,14 @@ export default function KanbanPage() {
 
       <main style={{ marginLeft: isSidebarOpen ? '320px' : '85px', flex: 1, padding: '50px', transition: '0.4s' }}>
         <header style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'50px' }}>
-            <div><h1 style={{ color: '#0f172a', margin: 0, fontSize:'42px', letterSpacing:'-1.5px', fontWeight:'900' }}>Controle de Boletos</h1><div style={{ width: '80px', height: '4px', background: '#000', marginTop: '15px' }}></div></div>
+            <div>
+              {/* TROCADO NOME PARA FLUXO BOLETOS */}
+              <h1 style={{ color: '#0f172a', margin: 0, fontSize:'42px', letterSpacing:'-1.5px', fontWeight:'900' }}>Fluxo de Boletos</h1>
+              <div style={{ width: '80px', height: '4px', background: '#000', marginTop: '15px' }}></div>
+            </div>
             <div style={{display:'flex', gap:'20px', alignItems:'center'}}>
                 <div style={{position:'relative'}}>
-                  <Bell size={30} onClick={() => alert(notificacoes.join('\n') || "Sem novas notificações")} style={{cursor:'pointer'}} />
+                  <Bell size={30} onClick={() => alert(notificacoes.join('\n\n') || "Sem novas notificações")} style={{cursor:'pointer'}} />
                   {notificacoes.length > 0 && <div style={{position:'absolute', top:-5, right:-5, background:'red', color:'#fff', borderRadius:'50%', width:18, height:18, fontSize:10, display:'flex', alignItems:'center', justifyContent:'center'}}>{notificacoes.length}</div>}
                 </div>
                 <input type="text" placeholder="Pesquisar..." value={pesquisa} onChange={(e) => setPesquisa(e.target.value)} style={{ padding: '18px 20px 18px 50px', width: '400px', borderRadius: '15px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px', fontFamily: 'Montserrat', background: '#fff' }} />
@@ -391,17 +404,35 @@ export default function KanbanPage() {
                    return (
                     <div key={t.id_virtual || t.id} onClick={() => setTarefaSelecionada({ ...t, gTipo: 'boleto' })} className="task-card" style={{ background: deveFicarVermelho ? '#fee2e2' : 'rgba(255,255,255,0.92)', border: deveFicarVermelho ? '1px solid #ef4444' : '1px solid #cbd5e1', boxShadow: '0 10px 15px rgba(0,0,0,0.05)' }}>
                       <div className="card-header-internal" style={{ background: deveFicarVermelho ? '#ef4444' : '#1e293b', padding: '25px', color: '#fff' }}>
-                        <span style={{ fontSize: t.isChild ? '20px' : '28px', fontWeight:'900' }}>{t.nom_cliente?.toUpperCase()}</span>
+                        {/* DESTAQUE NOME DO CLIENTE SEM NEGRITO */}
+                        <span style={{ fontSize: t.isChild ? '20px' : '28px', fontWeight:'400' }}>{t.nom_cliente?.toUpperCase()}</span>
                       </div>
                       <div style={{ padding: '25px' }}>
                         <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-                          <span className="payment-badge">{t.forma_pagamento?.toUpperCase()}</span>
+                          {/* DESTAQUE METODO PAGAMENTO SEM NEGRITO */}
+                          <span className="payment-badge" style={{fontWeight: '400'}}>{t.forma_pagamento?.toUpperCase()}</span>
                           {t.isChild && <span style={{fontSize:'10px', background:'#3b82f6', color:'#fff', padding:'4px 8px', borderRadius:'5px'}}>PARCELA</span>}
                         </div>
-                        <div style={{marginTop:'15px', fontSize:'22px', fontWeight:'900'}}>R$ {t.valor_exibicao}</div>
+                        
+                        {/* DATA DE VENCIMENTO EM GRANDE QUANDO ESTÁ EM "AGUARDANDO" */}
+                        {t.status === 'aguardando_vencimento' && (
+                          <div style={{marginTop:'20px', textAlign:'center'}}>
+                             <div style={{fontSize:'10px', opacity:0.6}}>VENCIMENTO</div>
+                             <div style={{fontSize:'36px', fontWeight:'900', color:'#0f172a'}}>{formatarData(t.vencimento_boleto)}</div>
+                          </div>
+                        )}
+
+                        <div style={{marginTop:'15px', fontSize:'22px', fontWeight:'500'}}>R$ {t.valor_exibicao}</div>
+                        
+                        {/* CONTADOR DE RECOBRANÇAS OCULTO NAS FASES INICIAIS */}
+                        {t.status !== 'gerar_boleto' && t.status !== 'enviar_cliente' && t.status !== 'aguardando_vencimento' && (
+                           <div style={{marginTop:'10px', color: t.status === 'pago' ? '#0f172a' : '#ef4444', fontSize:'13px', fontWeight:'600'}}>
+                             {t.recombrancas_qtd_individual > 0 ? `RECOBRADO ${t.recombrancas_qtd_individual} VEZES` : 'AGUARDANDO COBRANÇA'}
+                           </div>
+                        )}
+
                         {t.status === 'vencido' && (
-                          <div style={{marginTop:'10px', color:'#ef4444', fontSize:'13px', fontWeight:'600'}}>
-                            {t.recombrancas_qtd > 0 ? `RECOBRADO ${t.recombrancas_qtd} VEZES` : 'AGUARDANDO COBRANÇA'}<br/>
+                          <div style={{marginTop:'5px', color:'#ef4444', fontSize:'13px', fontWeight:'600'}}>
                             ATRASADO HÁ {diasAtraso} DIAS
                           </div>
                         )}
@@ -425,11 +456,10 @@ export default function KanbanPage() {
               
               <div style={{ marginBottom: '50px' }}>
                 <span style={{ fontSize: '12px', color: '#000', letterSpacing: '2px', fontWeight:'500' }}>NOME DO CLIENTE {tarefaSelecionada.isChild && '(PARCELA)'}</span>
-                <h2 style={{ fontSize: '56px', color: '#0f172a', margin: '5px 0', lineHeight: 1, fontWeight:'900' }}>{tarefaSelecionada.nom_cliente?.toUpperCase()}</h2>
-                <div className="payment-badge-large">{tarefaSelecionada.forma_pagamento?.toUpperCase() || 'MÉTODO NÃO INFORMADO'}</div>
+                <h2 style={{ fontSize: '56px', color: '#0f172a', margin: '5px 0', lineHeight: 1, fontWeight:'400' }}>{tarefaSelecionada.nom_cliente?.toUpperCase()}</h2>
+                <div className="payment-badge-large" style={{fontWeight: '400'}}>{tarefaSelecionada.forma_pagamento?.toUpperCase() || 'MÉTODO NÃO INFORMADO'}</div>
               </div>
 
-              {/* GRID DE INFORMAÇÕES */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', border: '1px solid #e2e8f0', borderRadius: '15px', overflow: 'hidden' }}>
                  <div className="info-block-grid"><label>ID PROCESSO</label><span>#{tarefaSelecionada.id}</span></div>
                  <div className="info-block-grid"><label>{tarefaSelecionada.isChild ? 'VALOR PARCELA' : 'VALOR TOTAL'}</label><span>R$ {tarefaSelecionada.valor_exibicao}</span></div>
@@ -439,9 +469,7 @@ export default function KanbanPage() {
                  <div className="info-block-grid"><label>QTD PARCELAS</label><span>{tarefaSelecionada.qtd_parcelas || '1'}x</span></div>
               </div>
 
-              {/* BOTÕES DE LÓGICA DE FLUXO */}
               <div style={{marginTop:'40px', display:'flex', gap:'20px', flexWrap:'wrap'}}>
-                
                 {tarefaSelecionada.status === 'pago' && (
                   <div style={{width:'100%', background:'#fff5f5', padding:'40px', borderRadius:'25px', border:'1.5px dashed #ef4444'}}>
                     <h4 style={{color:'#ef4444', marginBottom:'20px', fontWeight:'900'}}>REEMISSÃO POR FALTA DE PAGAMENTO</h4>
@@ -476,17 +504,16 @@ export default function KanbanPage() {
 
                 {tarefaSelecionada.tarefa.includes('COBRAR') && (
                    <button onClick={() => {
-                     handleIncrementRecobranca(tarefaSelecionada.id_virtual || tarefaSelecionada.id, tarefaSelecionada.recombrancas_qtd);
-                     // PERMANECE EM VENCIDO, MUDA APENAS A TAREFA
+                     handleIncrementRecobranca(tarefaSelecionada.id_virtual || tarefaSelecionada.id, tarefaSelecionada.recombrancas_qtd_individual);
                      handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'status', 'vencido');
                      handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'tarefa', 'Aguardando Verificação Financeiro (Cobrado)');
-                     alert("Cobrança registrada! Card permanece em vencido aguardando o Financeiro.");
+                     alert("Cobrança registrada!");
                      window.location.reload();
                    }} style={{width:'100%', background:'#22c55e', color:'#fff', border:'none', padding:'20px', borderRadius:'15px', cursor:'pointer', fontWeight:'900'}}>Cliente Cobrado (Registrar Recobrança)</button>
                 )}
 
                 {userProfile?.funcao !== 'Financeiro' && tarefaSelecionada.status === 'enviar_cliente' && (
-                   <button onClick={() => { handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'status', 'aguardando_vencimento'); handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'tarefa', 'Aguardando Vencimento'); alert("Boleto enviado!"); window.location.reload(); }} style={{background:'#22c55e', color:'#fff', border:'none', padding:'15px 30px', borderRadius:'12px', cursor:'pointer', fontWeight:'500', fontSize:'14px'}}>Boleto enviado: Mover para Aguardando</button>
+                   <button onClick={() => { handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'status', 'aguardando_vencimento'); handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'tarefa', 'Aguardando Vencimento'); alert("Boleto enviado!"); window.location.reload(); }} style={{background:'#22c55e', color:'#fff', border:'none', padding:'15px 30px', borderRadius:'12px', cursor:'pointer', fontWeight:'900', fontSize:'14px'}}>Boleto enviado: Mover para Aguardando</button>
                 )}
               </div>
 
@@ -497,8 +524,7 @@ export default function KanbanPage() {
                 {tarefaSelecionada.anexo_boleto_juros && <a href={tarefaSelecionada.anexo_boleto_juros} target="_blank" className="btn-anexo-doc" style={{borderColor:'#ef4444', color:'#ef4444'}}><Download size={20}/> BOLETO COM JUROS</a>}
               </div>
 
-              {/* FINANCEIRO GERA TAREFA INICIAL */}
-              {userProfile?.funcao === 'Financeiro' && tarefaSelecionada.status === 'gerar_boleto' && (
+              {userProfile?.funcao === 'Financeiro' && (tarefaSelecionada.status === 'gerar_boleto' || tarefaSelecionada.status === 'pago') && (
                 <div style={{ marginTop: '50px', padding: '40px', background: '#f0f9ff', borderRadius: '30px', border: '1px solid #bae6fd' }}>
                     <span style={{ fontSize: '11px', color: '#0369a1', letterSpacing: '2px', display:'block', marginBottom: '20px', fontWeight:'500' }}>AÇÃO DO FINANCEIRO</span>
                     <label style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:'15px', background:'#fff', padding:'25px', borderRadius:'20px', border:'2px dashed #3b82f6', cursor:'pointer', marginBottom:'25px' }}>
@@ -528,7 +554,7 @@ export default function KanbanPage() {
         .task-card:hover { transform: translateY(-5px); box-shadow: 0 15px 25px rgba(0,0,0,0.1); }
         .card-header-internal { padding: 25px; color: #fff; }
         .payment-badge { background: #000; color: #fff; padding: 5px 12px; border-radius: 8px; font-size: 12px; display: inline-block; }
-        .payment-badge-large { background: #0f172a; color: #fff; padding: 10px 20px; border-radius: 12px; display: inline-block; margin-top: 10px; font-size: 20px; font-weight:900 !important; }
+        .payment-badge-large { background: #0f172a; color: #fff; padding: 10px 20px; border-radius: 12px; display: inline-block; margin-top: 10px; font-size: 20px; }
         .info-block-grid { padding: 15px; border: 0.5px solid #e2e8f0; background: #fff; }
         .info-block-grid label { display: block; fontSize: 11px; color: #000; letter-spacing: 1px; margin-bottom: 5px; text-transform: uppercase; }
         .info-block-grid span { fontSize: 15px; color: #0f172a; }

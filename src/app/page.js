@@ -7,8 +7,51 @@ import {
   Bell, MessageSquare, X, Menu, PlusCircle, FileText, Download, 
   CheckCircle, LogOut, User, ShieldCheck, Upload, Send, 
   Calendar, CreditCard, Hash, History, ArrowLeft, Paperclip, ImageIcon, 
-  CheckCheck, Eye, LayoutDashboard, ClipboardList, UserCheck, TrendingUp, TrendingDown, Settings, Trash2, Edit3, RefreshCw
+  CheckCheck, Eye, LayoutDashboard, ClipboardList, UserCheck, TrendingUp, TrendingDown, Settings, Trash2, Edit3, RefreshCw, AlertCircle
 } from 'lucide-react'
+
+// --- COMPONENTE DE NOTIFICAÇÃO INVASIVA (TOAST) ---
+function NotificationToast({ notif, onClose }) {
+  const color = notif.tipo === 'movimento' ? '#2563eb' : (notif.isGeral ? '#0f172a' : '#8b5cf6');
+  
+  return (
+    <div style={{
+      background: '#fff',
+      borderLeft: `8px solid ${color}`,
+      padding: '20px',
+      borderRadius: '15px',
+      boxShadow: '0 15px 40px rgba(0,0,0,0.2)',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '8px',
+      minWidth: '350px',
+      maxWidth: '450px',
+      animation: 'slideIn 0.5s ease-out forwards',
+      position: 'relative',
+      zIndex: 9999,
+      fontFamily: 'Montserrat'
+    }}>
+      <button onClick={onClose} style={{ position: 'absolute', top: '10px', right: '10px', background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8' }}>
+        <X size={18} />
+      </button>
+      
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: color, fontWeight: '900', fontSize: '12px', letterSpacing: '1px' }}>
+        {notif.tipo === 'movimento' ? <RefreshCw size={16}/> : <MessageSquare size={16}/>}
+        {notif.titulo.toUpperCase()}
+      </div>
+
+      <div style={{ fontSize: '15px', color: '#1e293b', lineHeight: '1.4', fontWeight: '400' }}>
+        {notif.mensagem}
+      </div>
+
+      {notif.detalhes && (
+        <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '10px', fontSize: '12px', color: '#64748b', border: '1px solid #e2e8f0', fontWeight: '400' }}>
+          {notif.detalhes}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // --- COMPONENTE DE FUNDO COM OBJETOS ABSTRATOS ---
 function GeometricBackground() {
@@ -219,37 +262,62 @@ export default function Home() {
   const [listaBoletos, setListaBoletos] = useState([])
   const [listaPagar, setListaPagar] = useState([]); const [listaReceber, setListaReceber] = useState([]); const [listaRH, setListaRH] = useState([]);
   const [notificacoes, setNotificacoes] = useState([])
+  const [toasts, setToasts] = useState([]) // ESTADO PARA NOTIFICAÇÕES INVASIVAS
   const router = useRouter()
+
+  // FUNÇÃO PARA ADICIONAR NOTIFICAÇÃO INVASIVA (TOAST)
+  const addToast = (notif) => {
+    const id = Date.now();
+    setToasts(prev => [{...notif, id}, ...prev]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 10000); // Fica na tela por 10 segundos
+  };
 
   const carregarDados = async () => {
     const { data: bolds } = await supabase.from('Chamado_NF').select('*').neq('status', 'concluido').order('id', {ascending: false})
     
     // LOGICA DE AUTO-VENCIMENTO
     const hoje = new Date();
-    const vencidosNovos = (bolds || []).filter(b => 
-      b.vencimento_boleto && 
-      new Date(b.vencimento_boleto) < hoje && 
-      b.status !== 'pago' && 
-      b.status !== 'vencido' &&
-      b.tarefa !== 'Aguardando Vencimento (Cobrado)' // ADICIONADO PARA O CARD NÃO VOLTAR APÓS SER COBRADO
-    );
-
-    if (vencidosNovos.length > 0) {
-      for (const v of vencidosNovos) {
-        await supabase.from('Chamado_NF').update({ status: 'vencido', tarefa: 'Cobrar Cliente', data_entrada_vencido: new Date().toISOString() }).eq('id', v.id);
+    (bolds || []).forEach(async b => {
+      if (b.vencimento_boleto && new Date(b.vencimento_boleto) < hoje && b.status !== 'pago' && b.status !== 'vencido') {
+         await supabase.from('Chamado_NF').update({ status: 'vencido', tarefa: 'Cobrar Cliente', data_entrada_vencido: new Date().toISOString() }).eq('id', b.id);
       }
-    }
+    });
 
-    // FILTRO PARA APARECER NA HOME: 
-    // Se Pós-Vendas, só aparece se a tarefa for explicitamente 'Cobrar Cliente' ou 'Enviar Boleto'. 
-    // Assim que clicar em Cobrado, a tarefa muda para "Aguardando Vencimento (Cobrado)" e some desta lista.
-    setListaBoletos((bolds || []).filter(t => {
-        if (userProfile?.funcao === 'Financeiro') {
-            return (t.status === 'gerar_boleto' || t.status === 'validar_pix' || t.status === 'pago');
-        } else {
-            return (t.status === 'enviar_cliente' || t.tarefa === 'Cobrar Cliente');
+    // --- LÓGICA DE FILTRO HOME PARA PARCELAS REAIS ---
+    let tarefasFaturamento = [];
+    (bolds || []).forEach(t => {
+      if (userProfile?.funcao === 'Financeiro') {
+        if (t.status === 'gerar_boleto' || t.status === 'validar_pix' || t.status === 'pago') {
+          tarefasFaturamento.push({ ...t, valor_exibicao: t.valor_servico });
         }
-    }));
+      } else {
+        if (t.status === 'enviar_cliente' || t.tarefa === 'Cobrar Cliente') {
+           tarefasFaturamento.push({ ...t, valor_exibicao: t.valor_servico });
+        }
+        for (let i = 1; i <= 5; i++) {
+           const statusParc = t[`status_p${i}`];
+           const tarefaParc = t[`tarefa_p${i}`];
+           const valorParc = t[`valor_parcela${i}`] || (t.valor_servico / (t.qtd_parcelas || 1)).toFixed(2);
+
+           if (statusParc === 'enviar_cliente' || tarefaParc === 'Cobrar Cliente') {
+             tarefasFaturamento.push({
+               ...t,
+               id_virtual: `${t.id}_p${i}`, 
+               numParcRef: i,
+               nom_cliente: `${t.nom_cliente} (PARC ${i})`,
+               valor_exibicao: valorParc,
+               tarefa: tarefaParc,
+               status: statusParc,
+               isParcelaReal: true
+             });
+           }
+        }
+      }
+    });
+
+    setListaBoletos(tarefasFaturamento);
 
     const { data: pag } = await supabase.from('finan_pagar').select('*').neq('status', 'concluido').order('id', {ascending: false})
     const { data: rec } = await supabase.from('finan_receber').select('*').neq('status', 'concluido').order('id', {ascending: false})
@@ -277,14 +345,49 @@ export default function Home() {
   useEffect(() => {
     if (userProfile) {
       carregarDados();
-      const channel = supabase.channel('notificacoes_home')
+      
+      // REAL-TIME 1: ESCUTA MENSAGENS DO CHAT
+      const channelChat = supabase.channel('chat_home_global')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'mensagens_chat' }, async payload => {
+            if (payload.new.usuario_id === userProfile.id) return;
+            
+            let titulo = "MENSAGEM GERAL";
+            let mensagem = `Nova mensagem de ${payload.new.usuario_nome}`;
+            let detalhes = payload.new.texto;
+
+            if (payload.new.chamado_id) {
+               const { data: card } = await supabase.from('Chamado_NF').select('nom_cliente').eq('id', payload.new.chamado_id).single();
+               titulo = "MENSAGEM NO CARD";
+               mensagem = `ID: #${payload.new.chamado_id} - Cliente: ${card?.nom_cliente}`;
+            }
+
+            // Adiciona na lista do sininho
+            setNotificacoes(prev => [{ titulo, mensagem, detalhes, data: new Date().toISOString() }, ...prev]);
+            // Dispara alerta invasivo
+            addToast({ tipo: 'chat', titulo, mensagem, detalhes, isGeral: !payload.new.chamado_id });
+        }).subscribe();
+
+      // REAL-TIME 2: ESCUTA MOVIMENTAÇÃO DE CARDS
+      const channelMove = supabase.channel('notificacoes_home')
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'Chamado_NF' }, payload => {
             const info = payload.new;
-            setNotificacoes(prev => [`Chamado #${info.id} (${info.nom_cliente}) mudou para: ${info.status.toUpperCase()}`, ...prev]);
+            
+            if (payload.old.status !== payload.new.status) {
+              const titulo = "CARD MOVIMENTADO";
+              const mensagem = `O card de ${info.nom_cliente} mudou para ${info.status.toUpperCase()}`;
+              const detalhes = `ID: #${info.id} | NF Serviço: ${info.num_nf_servico || '-'} | NF Peça: ${info.num_nf_peca || '-'}`;
+              
+              setNotificacoes(prev => [{ titulo, mensagem, detalhes, data: new Date().toISOString() }, ...prev]);
+              addToast({ tipo: 'movimento', titulo, mensagem, detalhes });
+            }
             carregarDados();
         })
         .subscribe();
-      return () => { supabase.removeChannel(channel) };
+
+      return () => { 
+        supabase.removeChannel(channelChat);
+        supabase.removeChannel(channelMove);
+      };
     }
   }, [userProfile]);
 
@@ -292,33 +395,36 @@ export default function Home() {
 
   const handleUpdateField = async (id, table, field, value) => {
     const finalValue = (value === "" && (field.includes('data') || field.includes('vencimento'))) ? null : value;
-    const updateData = { [field]: finalValue };
-    if (field === 'status' && value === 'vencido') {
-      updateData.data_entrada_vencido = new Date().toISOString();
+    if (typeof id === 'string' && id.includes('_p')) {
+        const [idReal, pNum] = id.split('_p');
+        const fieldNameIndividual = `${field}_p${pNum}`;
+        await supabase.from('Chamado_NF').update({ [fieldNameIndividual]: finalValue }).eq('id', idReal);
+    } else {
+        const updateData = { [field]: finalValue };
+        if (field === 'status' && value === 'vencido') {
+          updateData.data_entrada_vencido = new Date().toISOString();
+        }
+        await supabase.from(table).update(updateData).eq('id', id);
     }
-    const { error } = await supabase.from(table).update(updateData).eq('id', id);
-    if (!error) { setTarefaSelecionada(prev => ({...prev, ...updateData})); carregarDados(); }
+    carregarDados();
+    setTarefaSelecionada(null);
   };
 
   const handleUpdateFile = async (id, table, field, file) => {
     if(!file) return;
+    const idReal = typeof id === 'string' && id.includes('_p') ? id.split('_p')[0] : id;
     const path = `anexos/${Date.now()}-${file.name}`;
     await supabase.storage.from('anexos').upload(path, file);
     const { data } = supabase.storage.from('anexos').getPublicUrl(path);
-    await supabase.from(table).update({ [field]: data.publicUrl }).eq('id', id);
+    await supabase.from(table).update({ [field]: data.publicUrl }).eq('id', idReal);
     alert("Arquivo atualizado!"); carregarDados();
   };
 
   const handleIncrementRecobranca = async (id, currentVal) => {
+    const idReal = typeof id === 'string' && id.includes('_p') ? id.split('_p')[0] : id;
     const newVal = (currentVal || 0) + 1;
-    await supabase.from('Chamado_NF').update({ recombrancas_qtd: newVal }).eq('id', id);
+    await supabase.from('Chamado_NF').update({ recombrancas_qtd: newVal }).eq('id', idReal);
     setTarefaSelecionada(prev => ({...prev, recombrancas_qtd: newVal}));
-  };
-
-  const handleExcluir = async (id, table) => {
-    if(!confirm("Deseja excluir permanentemente?")) return;
-    await supabase.from(table).delete().eq('id', id);
-    alert("Excluído!"); window.location.reload();
   };
 
   const btnSidebarStyle = {
@@ -329,10 +435,19 @@ export default function Home() {
 
   if (loading) return <LoadingScreen />
 
+  const path = typeof window !== 'undefined' ? window.location.pathname : '';
+
   return (
     <div style={{ display: 'flex', minHeight: '100vh', fontFamily: 'Montserrat, sans-serif', background: 'transparent' }}>
       <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;900&display=swap" rel="stylesheet" />
       <GeometricBackground />
+
+      {/* CONTAINER DE NOTIFICAÇÕES TOAST (FLUTUANTE NO TOPO) */}
+      <div style={{ position: 'fixed', top: '20px', right: '20px', zIndex: 10000, display: 'flex', flexDirection: 'column', gap: '15px' }}>
+        {toasts.map(t => (
+          <NotificationToast key={t.id} notif={t} onClose={() => setToasts(prev => prev.filter(x => x.id !== t.id))} />
+        ))}
+      </div>
 
       <aside onMouseEnter={()=>setIsSidebarOpen(true)} onMouseLeave={()=>setIsSidebarOpen(false)} style={{ width: isSidebarOpen ? '320px' : '85px', background: 'rgba(255, 255, 255, 0.95)', backdropFilter: 'blur(10px)', height: '100vh', position: 'fixed', left: 0, top: 0, borderRight: '1px solid #cbd5e1', padding: '30px 0', display: 'flex', flexDirection: 'column', transition: '0.4s ease', zIndex: 1100, overflow: 'hidden' }}>
         <div style={{ flex: 1 }}>
@@ -340,12 +455,12 @@ export default function Home() {
                 {isSidebarOpen ? <b style={{color:'#000', fontSize:'22px', fontWeight: '500', letterSpacing:'3px'}}>NOVA</b> : <Menu size={32} color="#000" />}
             </div>
             <nav style={{ display: 'flex', flexDirection: 'column' }}>
-                <button onClick={() => router.push('/')} style={btnSidebarStyle}><div style={iconContainer}><LayoutDashboard size={28} color="#000" /></div><span style={{ opacity: isSidebarOpen ? 1 : 0, transition: '0.3s', whiteSpace: 'nowrap' }}>TAREFAS</span></button>
-                <button onClick={() => router.push('/kanban')} style={btnSidebarStyle}><div style={iconContainer}><ClipboardList size={28} color="#000" /></div><span style={{ opacity: isSidebarOpen ? 1 : 0, transition: '0.3s', whiteSpace: 'nowrap' }}>BOLETOS</span></button>
+                <button onClick={() => router.push('/')} style={{...btnSidebarStyle, borderLeft: path === '/' ? '6px solid #000' : 'none', background: path === '/' ? 'rgba(0,0,0,0.02)' : 'none' }}><div style={iconContainer}><LayoutDashboard size={28} color="#000" /></div><span style={{ opacity: isSidebarOpen ? 1 : 0, transition: '0.3s', whiteSpace: 'nowrap' }}>TAREFAS</span></button>
+                <button onClick={() => router.push('/kanban')} style={{...btnSidebarStyle, borderLeft: path === '/kanban' ? '6px solid #000' : 'none', background: path === '/kanban' ? 'rgba(0,0,0,0.02)' : 'none' }}><div style={iconContainer}><ClipboardList size={28} color="#000" /></div><span style={{ opacity: isSidebarOpen ? 1 : 0, transition: '0.3s', whiteSpace: 'nowrap' }}>Fluxo de Boletos</span></button>
                 <div style={{ height: '1px', background: '#e2e8f0', margin: '20px 0', opacity: isSidebarOpen ? 1 : 0 }}></div>
-                <button onClick={() => router.push('/historico-pagar')} style={btnSidebarStyle}><div style={iconContainer}><TrendingDown size={28} color="#000" /></div><span style={{ opacity: isSidebarOpen ? 1 : 0, transition: '0.3s', whiteSpace: 'nowrap' }}>Concluido- Contas a Pagar</span></button>
-                <button onClick={() => router.push('/historico-receber')} style={btnSidebarStyle}><div style={iconContainer}><TrendingUp size={28} color="#000" /></div><span style={{ opacity: isSidebarOpen ? 1 : 0, transition: '0.3s', whiteSpace: 'nowrap' }}>Concluido- Contas a Receber</span></button>
-                <button onClick={() => router.push('/historico-rh')} style={btnSidebarStyle}><div style={iconContainer}><UserCheck size={28} color="#000" /></div><span style={{ opacity: isSidebarOpen ? 1 : 0, transition: '0.3s', whiteSpace: 'nowrap' }}>Concluido-Chamado RH</span></button>
+                <button onClick={() => router.push('/historico-pagar')} style={btnSidebarStyle}><div style={iconContainer}><TrendingDown size={28} color="#000" /></div><span style={{ opacity: isSidebarOpen ? 1 : 0, transition: '0.3s', whiteSpace: 'nowrap' }}>Historico Pagar</span></button>
+                <button onClick={() => router.push('/historico-receber')} style={btnSidebarStyle}><div style={iconContainer}><TrendingUp size={28} color="#000" /></div><span style={{ opacity: isSidebarOpen ? 1 : 0, transition: '0.3s', whiteSpace: 'nowrap' }}>Historico Receber</span></button>
+                <button onClick={() => router.push('/historico-rh')} style={btnSidebarStyle}><div style={iconContainer}><UserCheck size={28} color="#000" /></div><span style={{ opacity: isSidebarOpen ? 1 : 0, transition: '0.3s', whiteSpace: 'nowrap' }}>Historico RH</span></button>
             </nav>
         </div>
         <div style={{ paddingBottom: '20px' }}>
@@ -369,11 +484,17 @@ export default function Home() {
 
                 <div onClick={() => setShowNotifMenu(!showNotifMenu)} style={{ cursor:'pointer', color:'#0f172a', position:'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <Bell size={36} strokeWidth={1.5} />
+                  {notificacoes.length > 0 && <div style={{position:'absolute', top:0, right:0, background:'red', width:'12px', height:'12px', borderRadius:'50%'}}></div>}
                   {showNotifMenu && (
-                    <div onMouseLeave={() => setShowNotifMenu(false)} style={{ position: 'absolute', top: '55px', right: 0, background: 'rgba(255,255,255,0.98)', backdropFilter: 'blur(10px)', padding: '25px', borderRadius: '20px', boxShadow: '0 20px 50px rgba(0,0,0,0.15)', border: '1px solid #cbd5e1', zIndex: 2000, width: '350px', maxHeight: '400px', overflowY: 'auto' }}>
+                    <div onMouseLeave={() => setShowNotifMenu(false)} style={{ position: 'absolute', top: '55px', right: 0, background: 'rgba(255,255,255,0.98)', backdropFilter: 'blur(10px)', padding: '25px', borderRadius: '20px', boxShadow: '0 20px 50px rgba(0,0,0,0.15)', border: '1px solid #cbd5e1', zIndex: 2000, width: '400px', maxHeight: '500px', overflowY: 'auto' }}>
+                      <div style={{ fontWeight: '900', fontSize: '12px', color: '#94a3b8', marginBottom: '15px', letterSpacing: '1px' }}>HISTÓRICO RECENTE</div>
                       {notificacoes.length > 0 ? notificacoes.map((n, i) => (
-                        <div key={i} style={{ padding: '10px', borderBottom: '1px solid #eee', fontSize: '12px', color: '#333' }}>{n}</div>
-                      )) : <span style={{ fontSize: '15px', color: '#64748b', fontWeight: '700' }}>Sem notificação</span>}
+                        <div key={i} style={{ padding: '15px 0', borderBottom: '1px solid #f1f5f9' }}>
+                          <div style={{fontWeight: '700', fontSize: '14px', color: '#0f172a'}}>{n.titulo}</div>
+                          <div style={{fontSize: '13px', color: '#334155'}}>{n.mensagem}</div>
+                          <div style={{fontSize: '11px', color: '#94a3b8', marginTop: '5px'}}>{new Date(n.data).toLocaleTimeString()}</div>
+                        </div>
+                      )) : <span style={{ fontSize: '15px', color: '#64748b', fontWeight: '700' }}>Sem notificações</span>}
                     </div>
                   )}
                 </div>
@@ -405,13 +526,13 @@ export default function Home() {
         <div style={{ display: 'flex', gap: '30px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
             <div style={{flex: 1, minWidth: '380px', display: 'flex', flexDirection: 'column', gap: '30px'}}><div style={{padding: '15px', textAlign: 'center', fontWeight: '400', fontSize: '24px', color: '#0f172a'}}>FATURAMENTO</div>
                 {(listaBoletos || []).map(t => {
-                   const isRed = (t.status === 'vencid' || t.tarefa === 'Aguardando Vencimento (Cobrado)' || t.tarefa === 'Cobrar Cliente');
+                   const isRed = (t.status === 'vencido' || t.tarefa === 'Cobrar Cliente');
                    return (
-                    <div key={t.id} onClick={() => setTarefaSelecionada({ ...t, gTipo: 'boleto' })} className="task-card" style={{ background: isRed ? '#fee2e2' : 'rgba(255,255,255,0.95)', border: isRed ? '1px solid #ef4444' : '1px solid #cbd5e1' }}>
+                    <div key={t.id_virtual || t.id} onClick={() => setTarefaSelecionada({ ...t, gTipo: 'boleto' })} className="task-card" style={{ background: isRed ? '#fee2e2' : 'rgba(255,255,255,0.95)', border: isRed ? '1px solid #ef4444' : '1px solid #cbd5e1' }}>
                       <div style={{ background: isRed ? '#ef4444' : '#1e293b', padding: '25px', color: '#fff' }}><h4 style={{ margin: 0, fontSize: '28px', fontWeight: '500' }}>{t.nom_cliente?.toUpperCase()}</h4></div>
                       <div style={{ padding: '25px' }}>
-                        <span className="payment-badge">{t.forma_pagamento?.toUpperCase()}</span>
-                        <div style={{ marginTop: '15px', fontSize: '22px', fontWeight: '500', color: '#0f172a' }}>R$ {t.valor_servico}</div>
+                        <span className="payment-badge" style={{fontWeight: 400}}>{t.forma_pagamento?.toUpperCase()}</span>
+                        <div style={{ marginTop: '15px', fontSize: '22px', fontWeight: '500', color: '#0f172a' }}>R$ {t.valor_exibicao}</div>
                         {isRed && <div style={{marginTop:'10px', color:'#ef4444', fontWeight:'900', fontSize:'12px'}}>{t.tarefa?.toUpperCase()}</div>}
                       </div>
                     </div>
@@ -437,91 +558,50 @@ export default function Home() {
               
               <div style={{ marginBottom: '40px' }}>
                 <label style={{ fontSize: '10px', color: '#000', fontWeight: '500', letterSpacing: '1px' }}>NOME DO CLIENTE / FORNECEDOR (EDITÁVEL)</label>
-                <input 
-                   style={{ border: 'none', fontSize: '56px', fontWeight: '500', color: '#0f172a', width: '100%', outline: 'none', background: 'transparent' }}
-                   defaultValue={(tarefaSelecionada?.nom_cliente || tarefaSelecionada?.fornecedor || tarefaSelecionada?.cliente || tarefaSelecionada?.funcionario)}
-                   onBlur={(e) => handleUpdateField(tarefaSelecionada.id, tarefaSelecionada.gTipo === 'boleto' ? 'Chamado_NF' : tarefaSelecionada.gTipo === 'pagar' ? 'finan_pagar' : 'finan_rh', tarefaSelecionada.gTipo === 'boleto' ? 'nom_cliente' : 'fornecedor', e.target.value)}
-                />
-                <div style={{ padding: '10px 20px', background: '#0f172a', color: '#fff', borderRadius: '12px', display: 'inline-block', marginTop: '10px', fontSize: '20px', fontWeight: '500' }}>
+                <h2 style={{ fontSize: '56px', fontWeight: '400', color: '#0f172a', margin: 0 }}>{tarefaSelecionada.nom_cliente?.toUpperCase()}</h2>
+                <div style={{ padding: '10px 20px', background: '#0f172a', color: '#fff', borderRadius: '12px', display: 'inline-block', marginTop: '10px', fontSize: '20px', fontWeight: '400' }}>
                    {tarefaSelecionada.forma_pagamento?.toUpperCase() || 'NÃO INFORMADO'}
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0', border: '1px solid #e2e8f0', borderRadius: '15px', overflow: 'hidden' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', border: '1px solid #e2e8f0', borderRadius: '15px', overflow: 'hidden' }}>
                  <div className="info-block-grid"><div style={{fontSize: '11px', color: '#000', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '500'}}>ID PROCESSO</div><span>#{tarefaSelecionada.id}</span></div>
-                 <div className="info-block-grid"><div style={{fontSize: '11px', color: '#000', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '500'}}>VALOR TOTAL (EDITAR)</div><input className="edit-input" defaultValue={tarefaSelecionada?.valor || tarefaSelecionada?.valor_servico} onBlur={(e) => handleUpdateField(tarefaSelecionada.id, 'Chamado_NF', 'valor_servico', e.target.value)} /></div>
-                 <div className="info-block-grid"><div style={{fontSize: '11px', color: '#000', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '500'}}>TAREFA ATUAL (EDITAR)</div><input className="edit-input" defaultValue={tarefaSelecionada?.tarefa} onBlur={(e) => handleUpdateField(tarefaSelecionada.id, 'Chamado_NF', 'tarefa', e.target.value)} /></div>
-                 <div className="info-block-grid"><div style={{fontSize: '11px', color: '#000', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '500'}}>VENCIMENTO (EDITAR)</div><input type="date" className="edit-input" defaultValue={tarefaSelecionada?.vencimento_boleto || tarefaSelecionada?.data_vencimento} onBlur={(e) => handleUpdateField(tarefaSelecionada.id, 'Chamado_NF', 'vencimento_boleto', e.target.value)} /></div>
-                 <div className="info-block-grid"><div style={{fontSize: '11px', color: '#000', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '500'}}>NF SERVIÇO (EDITAR)</div><input className="edit-input" defaultValue={tarefaSelecionada?.num_nf_servico} onBlur={(e) => handleUpdateField(tarefaSelecionada.id, 'Chamado_NF', 'num_nf_servico', e.target.value)} /></div>
-                 <div className="info-block-grid"><div style={{fontSize: '11px', color: '#000', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '500'}}>NF PEÇA (EDITAR)</div><input className="edit-input" defaultValue={tarefaSelecionada?.num_nf_peca} onBlur={(e) => handleUpdateField(tarefaSelecionada.id, 'Chamado_NF', 'num_nf_peca', e.target.value)} /></div>
-                 <div className="info-block-grid"><div style={{fontSize: '11px', color: '#000', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '500'}}>QTD PARCELAS (EDITAR)</div><input className="edit-input" defaultValue={tarefaSelecionada?.qtd_parcelas} onBlur={(e) => handleUpdateField(tarefaSelecionada.id, 'Chamado_NF', 'qtd_parcelas', e.target.value)} /></div>
-                 <div className="info-block-grid" style={{gridColumn: 'span 2'}}><div style={{fontSize: '11px', color: '#000', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '500'}}>DATAS DAS PARCELAS (EDITAR)</div><input className="edit-input" defaultValue={tarefaSelecionada?.datas_parcelas} onBlur={(e) => handleUpdateField(tarefaSelecionada.id, 'Chamado_NF', 'datas_parcelas', e.target.value)} /></div>
+                 <div className="info-block-grid"><div style={{fontSize: '11px', color: '#000', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '500'}}>VALOR</div><span>R$ {tarefaSelecionada.valor_exibicao}</span></div>
+                 <div className="info-block-grid"><div style={{fontSize: '11px', color: '#000', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '500'}}>STATUS ATUAL</div><span>{tarefaSelecionada.status?.toUpperCase()}</span></div>
+                 <div className="info-block-grid"><div style={{fontSize: '11px', color: '#000', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '500'}}>NF PEÇA (EDITAR)</div><input className="edit-input" defaultValue={tarefaSelecionada?.num_nf_peca} onBlur={(e) => handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'Chamado_NF', 'num_nf_peca', e.target.value)} /></div>
+                 <div className="info-block-grid"><div style={{fontSize: '11px', color: '#000', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '500'}}>NF SERVIÇO (EDITAR)</div><input className="edit-input" defaultValue={tarefaSelecionada?.num_nf_servico} onBlur={(e) => handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'Chamado_NF', 'num_nf_servico', e.target.value)} /></div>
+                 <div className="info-block-grid"><div style={{fontSize: '11px', color: '#000', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '500'}}>VENCIMENTO (EDITAR)</div><input type="date" className="edit-input" defaultValue={tarefaSelecionada?.vencimento_boleto || tarefaSelecionada?.data_vencimento} onBlur={(e) => handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'Chamado_NF', 'vencimento_boleto', e.target.value)} /></div>
+                 <div className="info-block-grid"><div style={{fontSize: '11px', color: '#000', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '500'}}>SETOR</div><span>{tarefaSelecionada.setor || 'N/A'}</span></div>
+                 <div className="info-block-grid"><div style={{fontSize: '11px', color: '#000', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '500'}}>RECOBRANÇAS</div><span>{tarefaSelecionada.recombrancas_qtd || 0} vezes</span></div>
+                 <div className="info-block-grid"><div style={{fontSize: '11px', color: '#000', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '500'}}>QTD PARCELAS</div><span>{tarefaSelecionada.qtd_parcelas || 1}x</span></div>
+                 <div className="info-block-grid" style={{gridColumn: 'span 3'}}><div style={{fontSize: '11px', color: '#000', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '500'}}>DATAS PARCELAS</div><span>{tarefaSelecionada.datas_parcelas || 'N/A'}</span></div>
+                 <div className="info-block-grid" style={{gridColumn: 'span 3'}}><div style={{fontSize: '11px', color: '#000', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '500'}}>OBSERVAÇÃO (EDITAR)</div><input className="edit-input" defaultValue={tarefaSelecionada?.obs} onBlur={(e) => handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'Chamado_NF', 'obs', e.target.value)} /></div>
               </div>
 
-              {/* BOTÕES DE LÓGICA DE FLUXO */}
               <div style={{marginTop: '30px', display: 'flex', gap: '15px', flexDirection: 'column'}}>
-                
-                {/* 1. SE ESTIVER NO PAGO: BOTÃO PARA ANEXAR NOVO JUROS E MOVER PARA VENCIDO (APENAS FINANCEIRO) */}
-                {tarefaSelecionada.status === 'pago' && userProfile?.funcao === 'Financeiro' && (
-                  <div style={{width:'100%', background:'#fff5f5', padding:'30px', borderRadius:'20px', border:'1px solid #fed7d7'}}>
-                    <h4 style={{color:'#ef4444', marginBottom:'20px', fontWeight:'500'}}>AÇÃO FINANCEIRO: CLIENTE NÃO PAGOU</h4>
-                    <div style={{display:'flex', gap:'20px', flexWrap:'wrap'}}>
-                      <div className="btn-anexo-doc">
-                        <label className="cursor-pointer flex items-center gap-2">
-                           <RefreshCw size={16}/> ANEXAR BOLETO COM NOVO JUROS 
-                           <input type="file" hidden onChange={(e) => handleUpdateFile(tarefaSelecionada.id, 'Chamado_NF', 'anexo_boleto_juros', e.target.files[0])} />
-                        </label>
-                        {tarefaSelecionada.anexo_boleto_juros && <a href={tarefaSelecionada.anexo_boleto_juros} target="_blank"><Eye size={16}/></a>}
-                      </div>
-                      <button onClick={() => {
-                        handleUpdateField(tarefaSelecionada.id, 'Chamado_NF', 'status', 'vencido');
-                        handleUpdateField(tarefaSelecionada.id, 'Chamado_NF', 'tarefa', 'Cobrar Cliente');
-                        window.location.reload();
-                      }} style={{background:'#ef4444', color:'#fff', border:'none', padding:'15px 30px', borderRadius:'12px', cursor:'pointer', fontWeight:'900'}}>Mover Card Para Vencido e Gerar Tarefa Pos vendas: Cobrar Cliente</button>
-                    </div>
-                  </div>
-                )}
-
-                {/* 2. SE ESTIVER VENCIDO: BOTOES DE PAGO OU COBRANÇA */}
-                {tarefaSelecionada.status === 'vencido' && (
-                   <div style={{display:'flex', gap:'15px'}}>
-                      <button onClick={() => handleUpdateField(tarefaSelecionada.id, 'Chamado_NF', 'status', 'pago').then(() => window.location.reload())} style={{flex: 1, background:'#0f172a', color:'#fff', border:'none', padding:'20px', borderRadius:'15px', cursor:'pointer', fontWeight:'900'}}>Confirmar Pagamento: Mover para Pago</button>
-                      
-                      {/* BOTAO COBRAR CLIENTE: SÓ PARA FINANCEIRO */}
-                      {userProfile?.funcao === 'Financeiro' && (
-                        <button onClick={() => {
-                            handleUpdateField(tarefaSelecionada.id, 'Chamado_NF', 'tarefa', 'Cobrar Cliente');
-                            alert("Tarefa gerada para o Pós-Vendas!");
-                            window.location.reload();
-                        }} style={{flex: 1, background:'#ef4444', color:'#fff', border:'none', padding:'20px', borderRadius:'15px', cursor:'pointer', fontWeight:'900'}}>Gerar Tarefa Pos Vendas: Cobrar Cliente</button>
-                      )}
-                   </div>
-                )}
-
-                {/* 3. SE FOR TAREFA DE COBRANÇA (PARA POS-VENDAS) */}
                 {tarefaSelecionada.tarefa === 'Cobrar Cliente' && (
                   <button onClick={() => {
-                    handleIncrementRecobranca(tarefaSelecionada.id, tarefaSelecionada.recombrancas_qtd);
-                    // IMPORTANTE: Mudar para 'Aguardando Vencimento (Cobrado)' faz a tarefa sumir da lista filtrada da Home do Pos-vendas
-                    handleUpdateField(tarefaSelecionada.id, 'Chamado_NF', 'status', 'aguardando_vencimento');
-                    handleUpdateField(tarefaSelecionada.id, 'Chamado_NF', 'tarefa', 'Aguardando Vencimento (Cobrado)');
-                    alert("Cliente Cobrado!");
-                    window.location.reload();
-                  }} style={{background:'#22c55e', color:'#fff', border:'none', padding:'20px', borderRadius:'15px', cursor:'pointer', fontWeight:'900'}}>Cliente Cobrado (Registrar Recobrança e Finalizar Tarefa)</button>
+                    handleIncrementRecobranca(tarefaSelecionada.id_virtual || tarefaSelecionada.id, tarefaSelecionada.recombrancas_qtd);
+                    handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'Chamado_NF', 'tarefa', 'Aguardando Verificação Financeiro (Cobrado)');
+                    alert("Cobrança registrada com sucesso!");
+                  }} style={{background:'#22c55e', color:'#fff', border:'none', padding:'20px', borderRadius:'15px', cursor:'pointer', fontWeight:'900'}}>REGISTRAR CLIENTE COBRADO</button>
                 )}
 
-                {/* Enviar para Aguardando padrão */}
                 {userProfile?.funcao !== 'Financeiro' && tarefaSelecionada.status === 'enviar_cliente' && (
-                   <button onClick={() => { handleUpdateField(tarefaSelecionada.id, 'Chamado_NF', 'status', 'aguardando_vencimento'); handleUpdateField(tarefaSelecionada.id, 'Chamado_NF', 'tarefa', 'Aguardando Vencimento'); alert("Boleto enviado! Movido para Aguardando."); window.location.reload(); }} style={{background:'#22c55e', color:'#fff', border:'none', padding:'15px 30px', borderRadius:'12px', cursor:'pointer', fontWeight:'900', fontSize:'14px'}}>Boleto enviado: Mover para Aguardando</button>
+                   <button onClick={() => { 
+                      handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'Chamado_NF', 'status', 'aguardando_vencimento'); 
+                      handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'Chamado_NF', 'tarefa', 'Aguardando Vencimento'); 
+                      alert("Boleto enviado!"); 
+                   }} style={{background:'#22c55e', color:'#fff', border:'none', padding:'15px 30px', borderRadius:'12px', cursor:'pointer', fontWeight:'900'}}>Confirmar Envio de Boleto</button>
                 )}
               </div>
 
               <div style={{ marginTop: '40px' }}>
                 <label className="label-section">ANEXOS (CLIQUE NO ÍCONE PARA TROCAR)</label>
                 <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap' }}>
-                   <div className="btn-anexo-doc"><label className="cursor-pointer flex items-center gap-2"><RefreshCw size={16}/> NF SERV <input type="file" hidden onChange={(e) => handleUpdateFile(tarefaSelecionada.id, 'Chamado_NF', 'anexo_nf_servico', e.target.files[0])} /></label>{tarefaSelecionada.anexo_nf_servico && <a href={tarefaSelecionada.anexo_nf_servico} target="_blank"><Eye size={16}/></a>}</div>
-                   <div className="btn-anexo-doc"><label className="cursor-pointer flex items-center gap-2"><RefreshCw size={16}/> NF PEÇA <input type="file" hidden onChange={(e) => handleUpdateFile(tarefaSelecionada.id, 'Chamado_NF', 'anexo_nf_peca', e.target.files[0])} /></label>{tarefaSelecionada.anexo_nf_peca && <a href={tarefaSelecionada.anexo_nf_peca} target="_blank"><Eye size={16}/></a>}</div>
-                   <div className="btn-anexo-doc"><label className="cursor-pointer flex items-center gap-2"><RefreshCw size={16}/> BOLETO <input type="file" hidden onChange={(e) => handleUpdateFile(tarefaSelecionada.id, 'Chamado_NF', 'anexo_boleto', e.target.files[0])} /></label>{tarefaSelecionada.anexo_boleto && <a href={tarefaSelecionada.anexo_boleto} target="_blank"><Eye size={16}/></a>}</div>
+                   <div className="btn-anexo-doc"><label className="cursor-pointer flex items-center gap-2"><RefreshCw size={16}/> NF SERV <input type="file" hidden onChange={(e) => handleUpdateFile(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'Chamado_NF', 'anexo_nf_servico', e.target.files[0])} /></label>{tarefaSelecionada.anexo_nf_servico && <a href={tarefaSelecionada.anexo_nf_servico} target="_blank"><Eye size={16}/></a>}</div>
+                   <div className="btn-anexo-doc"><label className="cursor-pointer flex items-center gap-2"><RefreshCw size={16}/> NF PEÇA <input type="file" hidden onChange={(e) => handleUpdateFile(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'Chamado_NF', 'anexo_nf_peca', e.target.files[0])} /></label>{tarefaSelecionada.anexo_nf_peca && <a href={tarefaSelecionada.anexo_nf_peca} target="_blank"><Eye size={16}/></a>}</div>
+                   <div className="btn-anexo-doc"><label className="cursor-pointer flex items-center gap-2"><RefreshCw size={16}/> BOLETO <input type="file" hidden onChange={(e) => handleUpdateFile(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'Chamado_NF', 'anexo_boleto', e.target.files[0])} /></label>{tarefaSelecionada.anexo_boleto && <a href={tarefaSelecionada.anexo_boleto} target="_blank"><Eye size={16}/></a>}</div>
                    {tarefaSelecionada.anexo_boleto_juros && <div className="btn-anexo-doc" style={{borderColor:'#ef4444'}}><label className="flex items-center gap-2" style={{color:'#ef4444'}}><RefreshCw size={16}/> BOLETO JUROS</label><a href={tarefaSelecionada.anexo_boleto_juros} target="_blank"><Download size={16} color="#ef4444"/></a></div>}
                 </div>
               </div>
@@ -536,6 +616,10 @@ export default function Home() {
       {userProfile && <ChatFlutuante userProfile={userProfile} />}
       
       <style jsx global>{`
+        @keyframes slideIn {
+          from { transform: translateX(100%); opacity: 0; }
+          to { transform: translateX(0); opacity: 1; }
+        }
         * { font-weight: 400 !important; }
         b, h1, h2, h3, h4, .btn-back, .edit-input { font-weight: 500 !important; }
         .sidebar-btn { background:none; color:#000; border:none; padding:20px 0; cursor:pointer; fontSize:18px; display:flex; alignItems:center; width:100%; transition:0.3s; }
@@ -543,15 +627,13 @@ export default function Home() {
         .col-container { flex: 1; min-width: 380px; display: flex; flexDirection: column; gap: 20px; }
         .task-card { background: rgba(255,255,255,0.95); border: 1px solid #cbd5e1; border-radius: 20px; cursor: pointer; overflow: hidden; width: 100%; box-shadow: 0 10px 15px rgba(0,0,0,0.05); transition: 0.2s; }
         .task-card:hover { transform: translateY(-5px); box-shadow: 0 15px 25px rgba(0,0,0,0.1); }
-        .payment-badge { background: #000; color: #fff; padding: 5px 12px; border-radius: 8px; font-size: 12px; display: inline-block; font-weight: 500 !important; }
+        .payment-badge { background: #000; color: #fff; padding: 5px 12px; border-radius: 8px; font-size: 12px; display: inline-block; font-weight: 400 !important; }
         .info-block-grid { padding: 15px; border: 0.5px solid #e2e8f0; background: #fff; display: flex; flex-direction: column; justify-content: center; }
         .info-block-grid span, .info-block-grid .edit-input { fontSize: 15px; color: #0f172a; font-weight: 500 !important; }
         .edit-input { border:none; fontSize:15px; width:100%; outline:none; color:#0f172a; background:transparent; }
         .btn-back { background: #0f172a; border: none; color: #fff; padding: 12px 24px; borderRadius: 12px; cursor: pointer; fontSize:12px; marginBottom: 30px; display:flex; alignItems:center; gap:8px; font-weight: 900 !important; }
-        .btn-anexo-doc { padding: 12px 20px; background: #fff; border: 1px solid #cbd5e1; borderRadius: 12px; color: #0f172a; display: flex; alignItems: center; gap: 10px; font-size: 13px; }
+        .btn-anexo-doc { padding: 12px 20px; background: #fff; border: 1px solid #cbd5e1; borderRadius: 12px; color: #0f172a; display: flex; alignItems: center; gap: 10px; font-size: 13px; text-decoration: none; }
         .label-section { display:block; fontSize:12px; color:#000; margin-bottom: 15px; text-transform: uppercase; }
-        .hover-item:hover { background: #f8fafc; }
-        .hover-rotate:hover { transform: rotate(45deg); transition: 0.3s; }
         .tooltip-container { position: relative; display: flex; align-items: center; }
         .tooltip-box { visibility: hidden; background-color: #000; color: #fff; text-align: center; padding: 12px 18px; border-radius: 12px; position: absolute; z-index: 5000; bottom: 125%; right: 0; width: 300px; font-size: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.4); opacity: 0; transition: 0.3s; pointer-events: none; }
         .tooltip-container:hover .tooltip-box { visibility: visible; opacity: 1; }
