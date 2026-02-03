@@ -508,7 +508,8 @@ export default function Home() {
                   {showConfigMenu && (
                     <div onMouseLeave={() => setShowConfigMenu(false)} style={{ position: 'absolute', top: '55px', right: 0, background: '#fff', padding: '10px 0', borderRadius: '15px', boxShadow: '0 15px 40px rgba(0,0,0,0.15)', border: '1px solid #cbd5e1', zIndex: 2000, width: '200px' }}>
                        <div onClick={() => router.push('/configuracoes')} style={{ padding: '15px 20px', cursor: 'pointer', fontSize: '14px', fontWeight: '700', borderBottom: '1px solid #f1f5f9' }}>PERFIL</div>
-                       <div style={{ padding: '15px 20px', cursor: 'pointer', fontSize: '14px', fontWeight: '700', borderBottom: '1px solid #f1f5f9', opacity: 0.5 }}>SOM</div>
+                       {/* ADICIONADO OPÇÃO DE SOM */}
+                       <div onClick={() => router.push('/configuracoes?tab=som')} style={{ padding: '15px 20px', cursor: 'pointer', fontSize: '14px', fontWeight: '700', borderBottom: '1px solid #f1f5f9' }}>SOM</div>
                        <div style={{ padding: '15px 20px', cursor: 'pointer', fontSize: '14px', fontWeight: '700', opacity: 0.5 }}>TEMA</div>
                     </div>
                   )}
@@ -530,7 +531,7 @@ export default function Home() {
         <div style={{ display: 'flex', gap: '30px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
             <div style={{flex: 1, minWidth: '380px', display: 'flex', flexDirection: 'column', gap: '30px'}}><div style={{padding: '15px', textAlign: 'center', fontWeight: '400', fontSize: '24px', color: '#0f172a'}}>FATURAMENTO</div>
                 {(listaBoletos || []).map(t => {
-                   const isRed = (t.status === 'vencido' || t.tarefa === 'Cobrar Cliente');
+                   const isRed = (t.status === 'vencid' || t.tarefa === 'Aguardando Vencimento (Cobrado)' || t.tarefa === 'Cobrar Cliente');
                    return (
                     <div key={t.id_virtual || t.id} onClick={() => setTarefaSelecionada({ ...t, gTipo: 'boleto' })} className="task-card" style={{ background: isRed ? '#fee2e2' : 'rgba(255,255,255,0.95)', border: isRed ? '1px solid #ef4444' : '1px solid #cbd5e1' }}>
                       <div style={{ background: isRed ? '#ef4444' : '#1e293b', padding: '25px', color: '#fff' }}><h4 style={{ margin: 0, fontSize: '28px', fontWeight: '500' }}>{t.nom_cliente?.toUpperCase()}</h4></div>
@@ -570,10 +571,10 @@ export default function Home() {
                        {tarefaSelecionada.forma_pagamento?.toUpperCase() || 'MÉTODO NÃO INFORMADO'}
                     </div>
                   </div>
-                  <div style={{ textAlign: 'right' }}>
+                  <div style={{ textAlign: 'right', background: '#f8fafc', padding: '30px', borderRadius: '25px', border: '1px solid #e2e8f0' }}>
                      {/* DESTAQUE VALOR (FONT 400) */}
-                     <div style={{ fontSize: '12px', color: '#64748b', fontWeight: '400' }}>{tarefaSelecionada.isChild ? 'VALOR DA PARCELA' : 'VALOR TOTAL'}</div>
-                     <div style={{ fontSize: '56px', color: '#0f172a', fontWeight: '400' }}>R$ {tarefaSelecionada.valor_exibicao || tarefaSelecionada.valor || tarefaSelecionada.valor_servico}</div>
+                     <div style={{ fontSize: '12px', color: '#64748b', fontWeight: '400', marginBottom: '5px' }}>{tarefaSelecionada.isChild ? 'VALOR DA PARCELA' : 'VALOR TOTAL'}</div>
+                     <div style={{ fontSize: '64px', color: '#0f172a', fontWeight: '400', letterSpacing: '-2px' }}>R$ {tarefaSelecionada.valor_exibicao || tarefaSelecionada.valor || tarefaSelecionada.valor_servico}</div>
                   </div>
                 </div>
               </div>
