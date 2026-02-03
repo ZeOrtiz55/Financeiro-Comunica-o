@@ -7,7 +7,7 @@ import {
   Bell, MessageSquare, X, Menu, PlusCircle, FileText, Download, 
   CheckCircle, LogOut, User, ShieldCheck, Upload, Send, 
   Calendar, CreditCard, Hash, History, ArrowLeft, Paperclip, ImageIcon, 
-  CheckCheck, Eye, LayoutDashboard, ClipboardList, UserCheck, TrendingUp, TrendingDown, Search, Trash2, Settings, RefreshCw
+  CheckCheck, Eye, LayoutDashboard, ClipboardList, UserCheck, TrendingUp, TrendingDown, Search, Trash2, Settings, RefreshCw, AlertCircle
 } from 'lucide-react'
 
 // --- COMPONENTE DE FUNDO COM OBJETOS ABSTRATOS ---
@@ -153,8 +153,8 @@ function ChatFlutuante({ userProfile }) {
            </div>
            <form onSubmit={enviar} style={{ padding: '25px', display: 'flex', gap: '15px', borderTop:'1px solid #e2e8f0', alignItems:'center' }}>
               <label style={{cursor:'pointer'}}><Paperclip size={24} color="#64748b" /><input type="file" hidden onChange={handleUpload} /></label>
-              <input value={novaMsg} onChange={e => setNovaMsg(e.target.value)} placeholder="Escreva..." style={{flex:1, padding:'18px', borderRadius:'15px', border:'1px solid #e2e8f0', outline:'none'}} />
-              <button disabled={uploading} style={{background:'#0f172a', color:'#fff', border:'none', borderRadius:'15px', width:'60px', height:'60px', cursor:'pointer'}}><Send size={24}/></button>
+              <input value={novaMsg} onChange={e => setNovaMsg(e.target.value)} placeholder="Escreva..." style={{flex:1, padding:'18px', borderRadius:'15px', border:'1px solid #e2e8f0', fontSize:'16px', outline:'none'}} />
+              <button disabled={uploading} style={{background:'#0f172a', color:'#fff', border:'none', borderRadius:'15px', width:'60px', height:'60px', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer'}}><Send size={24}/></button>
            </form>
         </div>
       )}
@@ -174,7 +174,6 @@ export default function KanbanPage() {
   const [notificacoes, setNotificacoes] = useState([])
   const router = useRouter()
 
-  // NOMES DAS COLUNAS ATUALIZADOS
   const colunas = [
     { id: 'gerar_boleto', titulo: 'GERAR BOLETO' },
     { id: 'enviar_cliente', titulo: 'ENVIAR PARA CLIENTE' },
@@ -200,7 +199,6 @@ export default function KanbanPage() {
           let tarefaIndividual = c[`tarefa_p${numParc}`] || `Parcela ${numParc}/${c.qtd_parcelas}`;
           let recobrancasIndividual = c[`recombrancas_qtd_p${numParc}`] || 0;
 
-          // LOGICA: SE VENCER, VAI PARA PAGO PARA VERIFICAÇÃO FINANCEIRA
           if (vencParc < hoje && statusIndividual === 'aguardando_vencimento') {
             statusIndividual = 'pago';
             tarefaIndividual = `Boleto Vencido: Verificar Pagamento (Parcela ${numParc})`;
@@ -227,7 +225,6 @@ export default function KanbanPage() {
         });
       } else {
         const itemNormal = { ...c, valor_exibicao: c.valor_servico, recombrancas_qtd_individual: c.recombrancas_qtd || 0 };
-        // LOGICA: SE VENCER, VAI PARA PAGO
         if (c.vencimento_boleto && new Date(c.vencimento_boleto) < hoje && c.status !== 'pago' && c.status !== 'vencido' && c.status !== 'gerar_boleto') {
             supabase.from('Chamado_NF').update({ status: 'pago', tarefa: 'Boleto Vencido: Verificar Pagamento' }).eq('id', c.id);
             itemNormal.status = 'pago';
@@ -256,7 +253,6 @@ export default function KanbanPage() {
     if (userProfile) {
       const channel = supabase.channel('notificacoes_kanban_global')
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'Chamado_NF' }, payload => {
-           // NOTIFICAÇÃO DE MOVIMENTO PARA TODOS
            const anterior = payload.old.status;
            const atual = payload.new.status;
            
@@ -296,9 +292,16 @@ export default function KanbanPage() {
   };
 
   const handleIncrementRecobranca = async (id, currentVal) => {
-    const idReal = typeof id === 'string' && id.includes('_p') ? id.split('_p')[0] : id;
+    const isChild = typeof id === 'string' && id.includes('_p');
+    const idReal = isChild ? id.split('_p')[0] : id;
+    const pNum = isChild ? id.split('_p')[1] : null;
+    
     const newVal = (currentVal || 0) + 1;
-    await supabase.from('Chamado_NF').update({ recombrancas_qtd: newVal }).eq('id', idReal);
+    const updateData = isChild 
+      ? { [`recombrancas_qtd_p${pNum}`]: newVal } 
+      : { recombrancas_qtd: newVal };
+
+    await supabase.from('Chamado_NF').update(updateData).eq('id', idReal);
     setTarefaSelecionada(prev => ({...prev, recombrancas_qtd_individual: newVal}));
   };
 
@@ -342,6 +345,7 @@ export default function KanbanPage() {
   )
 
   const btnSidebarStyle = { background: 'none', color: '#000', border: 'none', padding: '20px 0', cursor: 'pointer', fontSize: '18px', display: 'flex', alignItems: 'center', width: '100%', transition: '0.3s' }
+  const path = typeof window !== 'undefined' ? window.location.pathname : '';
 
   if (loading) return <LoadingScreen />
 
@@ -470,34 +474,41 @@ export default function KanbanPage() {
               </div>
 
               <div style={{marginTop:'40px', display:'flex', gap:'20px', flexWrap:'wrap'}}>
-                {tarefaSelecionada.status === 'pago' && (
+                {/* APENAS FINANCEIRO PODE MOVER PARA VENCIDO / ANEXAR JUROS */}
+                {userProfile?.funcao === 'Financeiro' && tarefaSelecionada.status === 'pago' && (
                   <div style={{width:'100%', background:'#fff5f5', padding:'40px', borderRadius:'25px', border:'1.5px dashed #ef4444'}}>
                     <h4 style={{color:'#ef4444', marginBottom:'20px', fontWeight:'900'}}>REEMISSÃO POR FALTA DE PAGAMENTO</h4>
                     <div style={{display:'flex', flexDirection:'column', gap:'20px'}}>
-                      <div className="btn-anexo-doc" style={{borderColor:'#ef4444'}}>
-                        <label className="cursor-pointer flex items-center gap-2" style={{width:'100%', color:'#ef4444', fontWeight:'600'}}>
-                            <RefreshCw size={18}/> ANEXAR BOLETO COM NOVOS JUROS
+                      <div style={{background:'#fff', padding:'30px', borderRadius:'20px', border:'2px dashed #ef4444', textAlign:'center'}}>
+                         <label style={{cursor:'pointer', display:'flex', flexDirection:'column', alignItems:'center', gap:'10px'}}>
+                            <Upload size={32} color="#ef4444" />
+                            <span style={{color:'#ef4444', fontWeight:'600'}}>
+                               {tarefaSelecionada.anexo_boleto_juros ? 'TROCAR BOLETO COM JUROS' : 'ANEXAR NOVO BOLETO COM JUROS'}
+                            </span>
                             <input type="file" hidden onChange={(e) => handleUpdateFile(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'anexo_boleto_juros', e.target.files[0])} />
-                        </label>
-                        {tarefaSelecionada.anexo_boleto_juros && <a href={tarefaSelecionada.anexo_boleto_juros} target="_blank" style={{color:'#ef4444'}}><Eye size={18}/></a>}
+                         </label>
+                         {tarefaSelecionada.anexo_boleto_juros && (
+                            <a href={tarefaSelecionada.anexo_boleto_juros} target="_blank" style={{marginTop:'15px', display:'flex', alignItems:'center', justifyContent:'center', gap:'8px', color:'#ef4444', fontSize:'12px', textDecoration:'underline'}}>
+                               <Eye size={16}/> VISUALIZAR ATUAL
+                            </a>
+                         )}
                       </div>
                       <button onClick={() => {
                         handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'status', 'vencido');
                         handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'tarefa', 'Cobrar Cliente');
-                        alert("Card movido para Vencido!");
-                        window.location.reload();
+                        alert("Movido para Vencido!"); window.location.reload();
                       }} style={{background:'#ef4444', color:'#fff', border:'none', padding:'20px', borderRadius:'15px', cursor:'pointer', fontWeight:'900', fontSize:'16px'}}>Mover Card Para Vencido e Gerar Tarefa Pos vendas: Cobrar Cliente</button>
                     </div>
                   </div>
                 )}
 
-                {tarefaSelecionada.status === 'vencido' && (
+                {/* APENAS FINANCEIRO PODE CONFIRMAR PAGAMENTO OU GERAR TAREFA DE COBRANÇA */}
+                {userProfile?.funcao === 'Financeiro' && tarefaSelecionada.status === 'vencido' && (
                   <div style={{display:'flex', gap:'20px', width:'100%'}}>
                     <button onClick={() => handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'status', 'pago').then(() => window.location.reload())} style={{flex: 1, background:'#0f172a', color:'#fff', border:'none', padding:'20px', borderRadius:'15px', cursor:'pointer', fontWeight:'900'}}>Confirmar Pagamento: Mover para Pago</button>
                     <button onClick={() => {
                       handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'tarefa', 'Cobrar Cliente');
-                      alert("Tarefa de cobrança gerada para o Pós-Vendas!");
-                      window.location.reload();
+                      alert("Tarefa de cobrança gerada para o Pós-Vendas!"); window.location.reload();
                     }} style={{flex: 1, background:'#ef4444', color:'#fff', border:'none', padding:'20px', borderRadius:'15px', cursor:'pointer', fontWeight:'900'}}>Gerar Tarefa Pos Vendas: Cobrar Cliente</button>
                   </div>
                 )}
@@ -507,8 +518,7 @@ export default function KanbanPage() {
                      handleIncrementRecobranca(tarefaSelecionada.id_virtual || tarefaSelecionada.id, tarefaSelecionada.recombrancas_qtd_individual);
                      handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'status', 'vencido');
                      handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'tarefa', 'Aguardando Verificação Financeiro (Cobrado)');
-                     alert("Cobrança registrada!");
-                     window.location.reload();
+                     alert("Cobrança registrada!"); window.location.reload();
                    }} style={{width:'100%', background:'#22c55e', color:'#fff', border:'none', padding:'20px', borderRadius:'15px', cursor:'pointer', fontWeight:'900'}}>Cliente Cobrado (Registrar Recobrança)</button>
                 )}
 
@@ -524,7 +534,8 @@ export default function KanbanPage() {
                 {tarefaSelecionada.anexo_boleto_juros && <a href={tarefaSelecionada.anexo_boleto_juros} target="_blank" className="btn-anexo-doc" style={{borderColor:'#ef4444', color:'#ef4444'}}><Download size={20}/> BOLETO COM JUROS</a>}
               </div>
 
-              {userProfile?.funcao === 'Financeiro' && (tarefaSelecionada.status === 'gerar_boleto' || tarefaSelecionada.status === 'pago') && (
+              {/* APENAS FINANCEIRO E APENAS NA FASE GERAR BOLETO */}
+              {userProfile?.funcao === 'Financeiro' && tarefaSelecionada.status === 'gerar_boleto' && (
                 <div style={{ marginTop: '50px', padding: '40px', background: '#f0f9ff', borderRadius: '30px', border: '1px solid #bae6fd' }}>
                     <span style={{ fontSize: '11px', color: '#0369a1', letterSpacing: '2px', display:'block', marginBottom: '20px', fontWeight:'500' }}>AÇÃO DO FINANCEIRO</span>
                     <label style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:'15px', background:'#fff', padding:'25px', borderRadius:'20px', border:'2px dashed #3b82f6', cursor:'pointer', marginBottom:'25px' }}>
