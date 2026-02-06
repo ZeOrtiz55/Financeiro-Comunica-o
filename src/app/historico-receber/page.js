@@ -2,6 +2,8 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
+// IMPORTAÇÃO DO NOVO MENU
+import MenuLateral from '@/components/MenuLateral'
 // ÍCONES MODERNOS
 import { 
   Bell, Menu, ArrowLeft, FileText, CheckCircle, Download, 
@@ -28,6 +30,9 @@ export default function HistoricoReceber() {
   const [pesquisa, setPesquisa] = useState('') // ESTADO PARA PESQUISA
   const router = useRouter()
 
+  // Captura o path atual para o menu saber qual botão destacar
+  const path = typeof window !== 'undefined' ? window.location.pathname : '/historico-receber';
+
   useEffect(() => {
     const fetchData = async () => {
       const { data: { session } } = await supabase.auth.getSession()
@@ -52,23 +57,6 @@ export default function HistoricoReceber() {
     item.id.toString().includes(pesquisa)
   )
 
-  const btnSidebarStyle = {
-    background: 'none',
-    color: '#000',
-    border: 'none',
-    padding: '20px 0',
-    cursor: 'pointer',
-    fontSize: '18px', 
-    fontWeight: '400', // SEM NEGRITO
-    display: 'flex',
-    alignItems: 'center',
-    width: '100%',
-    transition: '0.3s',
-    fontFamily: 'Montserrat'
-  }
-
-  const iconWidth = { minWidth: '85px', display: 'flex', justifyContent: 'center' }
-
   if (loading) return <LoadingScreen />
 
   return (
@@ -77,43 +65,14 @@ export default function HistoricoReceber() {
       
       <div style={{ position: 'fixed', inset: 0, background: 'rgba(241, 245, 249, 0.6)', zIndex: 0 }}></div>
 
-      {/* SIDEBAR PADRONIZADA COM ÍCONES PRETOS VISÍVEIS */}
-      <aside onMouseEnter={()=>setIsSidebarOpen(true)} onMouseLeave={()=>setIsSidebarOpen(false)} style={{ width: isSidebarOpen ? '320px' : '85px', background: 'rgba(255, 255, 255, 0.95)', backdropFilter: 'blur(10px)', height: '100vh', position: 'fixed', left: 0, top: 0, borderRight: '1px solid #cbd5e1', padding: '30px 0', display: 'flex', flexDirection: 'column', transition: '0.4s cubic-bezier(0.4, 0, 0.2, 1)', zIndex: 1100, overflow: 'hidden' }}>
-        <div style={{ flex: 1 }}>
-            <div style={{ height: '60px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '40px' }}>
-                {isSidebarOpen ? <b style={{color:'#000', fontSize:'22px', fontWeight: '400', letterSpacing:'3px'}}>NOVA</b> : <Menu size={32} color="#000" />}
-            </div>
-            <nav style={{ display: 'flex', flexDirection: 'column' }}>
-                <button onClick={() => router.push('/')} style={btnSidebarStyle}>
-                    <div style={iconWidth}><LayoutDashboard size={28} color="#000" /></div>
-                    <span style={{ opacity: isSidebarOpen ? 1 : 0, whiteSpace: 'nowrap' }}>TAREFAS</span>
-                </button>
-                <button onClick={() => router.push('/kanban')} style={btnSidebarStyle}>
-                    <div style={iconWidth}><ClipboardList size={28} color="#000" /></div>
-                    <span style={{ opacity: isSidebarOpen ? 1 : 0, whiteSpace: 'nowrap' }}>BOLETOS</span>
-                </button>
-                <div style={{ height: '1px', background: '#e2e8f0', margin: '20px 0', opacity: isSidebarOpen ? 1 : 0 }}></div>
-                <button onClick={() => router.push('/historico-pagar')} style={btnSidebarStyle}>
-                    <div style={iconWidth}><TrendingDown size={28} color="#000" /></div>
-                    <span style={{ opacity: isSidebarOpen ? 1 : 0, whiteSpace: 'nowrap' }}>Concluido- Contas a Pagar</span>
-                </button>
-                <button onClick={() => router.push('/historico-receber')} style={{...btnSidebarStyle, background: 'rgba(0,0,0,0.05)'}}>
-                    <div style={iconWidth}><TrendingUp size={28} color="#000" /></div>
-                    <span style={{ opacity: isSidebarOpen ? 1 : 0, whiteSpace: 'nowrap' }}>Concluido- Contas a Receber</span>
-                </button>
-                <button onClick={() => router.push('/historico-rh')} style={btnSidebarStyle}>
-                    <div style={iconWidth}><UserCheck size={28} color="#000" /></div>
-                    <span style={{ opacity: isSidebarOpen ? 1 : 0, whiteSpace: 'nowrap' }}>Concluido-Chamado RH</span>
-                </button>
-            </nav>
-        </div>
-        <div style={{ paddingBottom: '20px' }}>
-            <button onClick={handleLogout} style={{ ...btnSidebarStyle, color: '#dc2626' }}>
-                <div style={iconWidth}><LogOut size={28} color="#dc2626" /></div>
-                <span style={{ opacity: isSidebarOpen ? 1 : 0 }}>SAIR</span>
-            </button>
-        </div>
-      </aside>
+      {/* CHAMADA DO COMPONENTE MENU LATERAL CENTRALIZADO */}
+      <MenuLateral 
+        isSidebarOpen={isSidebarOpen} 
+        setIsSidebarOpen={setIsSidebarOpen} 
+        path={path} 
+        router={router} 
+        handleLogout={handleLogout} 
+      />
 
       <main style={{ marginLeft: isSidebarOpen ? '320px' : '85px', flex: 1, padding: '50px', zIndex: 1, position: 'relative', transition: '0.4s' }}>
         <header style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-end', marginBottom:'60px' }}>

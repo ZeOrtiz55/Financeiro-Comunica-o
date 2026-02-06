@@ -2,6 +2,8 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
+// IMPORTAÇÃO DO MENU MODULAR
+import MenuLateral from '@/components/MenuLateral'
 // ÍCONES
 import { 
   Bell, Menu, ArrowLeft, FileText, CheckCircle, Search, 
@@ -33,13 +35,23 @@ function LoadingScreen() {
 
 export default function HistoricoRH() {
   const [chamados, setChamados] = useState([])
+  const [userProfile, setUserProfile] = useState(null) // ESTADO PARA O PERFIL
   const [busca, setBusca] = useState('')
   const [loading, setLoading] = useState(true)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const router = useRouter()
 
+  const path = typeof window !== 'undefined' ? window.location.pathname : '/historico-rh';
+
   useEffect(() => {
-    const carregarHistorico = async () => {
+    const carregarTudo = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) return router.push('/login')
+
+      // Busca o perfil para o menu lateral saber as rotas dinâmicas
+      const { data: prof } = await supabase.from('financeiro_usu').select('*').eq('id', session.user.id).single()
+      setUserProfile(prof)
+
       const { data, error } = await supabase
         .from('finan_rh')
         .select('*')
@@ -50,8 +62,8 @@ export default function HistoricoRH() {
       else setChamados(data || [])
       setLoading(false)
     }
-    carregarHistorico()
-  }, [])
+    carregarTudo()
+  }, [router])
 
   const handleLogout = async () => { await supabase.auth.signOut(); router.push('/login') }
 
@@ -65,24 +77,6 @@ export default function HistoricoRH() {
     return new Date(dataStr).toLocaleDateString('pt-BR')
   }
 
-  // ESTILOS DA SIDEBAR (BOTÕES COM ÍCONES PRETO E FONTE 18 SEM NEGRITO)
-  const btnSidebarStyle = {
-    background: 'none',
-    color: '#000',
-    border: 'none',
-    padding: '20px 0',
-    cursor: 'pointer',
-    fontSize: '18px', 
-    fontWeight: '400',
-    display: 'flex',
-    alignItems: 'center',
-    width: '100%',
-    transition: '0.3s',
-    fontFamily: 'Montserrat'
-  }
-
-  const iconContainer = { minWidth: '85px', display: 'flex', justifyContent: 'center' }
-
   if (loading) return <LoadingScreen />
 
   return (
@@ -90,43 +84,15 @@ export default function HistoricoRH() {
       <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;900&display=swap" rel="stylesheet" />
       <GeometricBackground />
 
-      {/* ASIDE PADRONIZADA */}
-      <aside onMouseEnter={()=>setIsSidebarOpen(true)} onMouseLeave={()=>setIsSidebarOpen(false)} style={{ width: isSidebarOpen ? '320px' : '85px', background: 'rgba(255, 255, 255, 0.95)', backdropFilter: 'blur(10px)', height: '100vh', position: 'fixed', left: 0, top: 0, borderRight: '1px solid #cbd5e1', padding: '30px 0', display: 'flex', flexDirection: 'column', transition: '0.4s cubic-bezier(0.4, 0, 0.2, 1)', zIndex: 1100, overflow: 'hidden' }}>
-        <div style={{ flex: 1 }}>
-            <div style={{ height: '60px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '40px' }}>
-                {isSidebarOpen ? <b style={{color:'#000', fontSize:'22px', fontWeight: '400', letterSpacing:'3px'}}>NOVA</b> : <Menu size={32} color="#000" />}
-            </div>
-            <nav style={{ display: 'flex', flexDirection: 'column' }}>
-                <button onClick={() => router.push('/')} style={btnSidebarStyle}>
-                    <div style={iconContainer}><LayoutDashboard size={28} color="#000" /></div>
-                    <span style={{ opacity: isSidebarOpen ? 1 : 0, transition: '0.3s', whiteSpace: 'nowrap' }}>TAREFAS</span>
-                </button>
-                <button onClick={() => router.push('/kanban')} style={btnSidebarStyle}>
-                    <div style={iconContainer}><ClipboardList size={28} color="#000" /></div>
-                    <span style={{ opacity: isSidebarOpen ? 1 : 0, transition: '0.3s', whiteSpace: 'nowrap' }}>BOLETOS</span>
-                </button>
-                <div style={{ height: '1px', background: '#e2e8f0', margin: '20px 0', opacity: isSidebarOpen ? 1 : 0 }}></div>
-                <button onClick={() => router.push('/historico-pagar')} style={btnSidebarStyle}>
-                    <div style={iconContainer}><TrendingDown size={28} color="#000" /></div>
-                    <span style={{ opacity: isSidebarOpen ? 1 : 0, whiteSpace: 'nowrap' }}>Concluido- Contas a Pagar</span>
-                </button>
-                <button onClick={() => router.push('/historico-receber')} style={btnSidebarStyle}>
-                    <div style={iconContainer}><TrendingUp size={28} color="#000" /></div>
-                    <span style={{ opacity: isSidebarOpen ? 1 : 0, whiteSpace: 'nowrap' }}>Concluido- Contas a Receber</span>
-                </button>
-                <button onClick={() => router.push('/historico-rh')} style={{...btnSidebarStyle, background: 'rgba(0,0,0,0.05)'}}>
-                    <div style={iconContainer}><UserCheck size={28} color="#000" /></div>
-                    <span style={{ opacity: isSidebarOpen ? 1 : 0, whiteSpace: 'nowrap' }}>Concluido-Chamado RH</span>
-                </button>
-            </nav>
-        </div>
-        <div style={{ paddingBottom: '20px' }}>
-            <button onClick={handleLogout} style={{ ...btnSidebarStyle, color: '#dc2626' }}>
-                <div style={iconContainer}><LogOut size={28} color="#dc2626" /></div>
-                <span style={{ opacity: isSidebarOpen ? 1 : 0 }}>SAIR</span>
-            </button>
-        </div>
-      </aside>
+      {/* MENU LATERAL MODULAR - AGORA PASSANDO O userProfile CORRETAMENTE */}
+      <MenuLateral 
+        isSidebarOpen={isSidebarOpen} 
+        setIsSidebarOpen={setIsSidebarOpen} 
+        path={path} 
+        router={router} 
+        handleLogout={handleLogout} 
+        userProfile={userProfile}
+      />
 
       <main style={{ marginLeft: isSidebarOpen ? '320px' : '85px', flex: 1, padding: '50px', zIndex: 1, position: 'relative', transition: '0.4s' }}>
         <header style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-end', marginBottom:'60px' }}>
@@ -147,7 +113,7 @@ export default function HistoricoRH() {
             </div>
         </header>
 
-        <main style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(400px, 1fr))', gap: '30px' }}>
+        <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(400px, 1fr))', gap: '30px' }}>
           {chamadosFiltrados.length > 0 ? (
             chamadosFiltrados.map((c) => (
               <div key={c.id} style={{ background: 'rgba(255, 255, 255, 0.85)', backdropFilter: 'blur(15px)', borderRadius: '25px', border: '1px solid #cbd5e1', padding: '35px', boxShadow: '0 20px 40px rgba(0,0,0,0.05)', position: 'relative' }}>
@@ -184,7 +150,7 @@ export default function HistoricoRH() {
               <p style={{ color: '#94a3b8', fontSize: '20px' }}>Nenhum chamado de RH concluído foi encontrado.</p>
             </div>
           )}
-        </main>
+        </section>
       </main>
 
       <div style={{ position: 'fixed', top: '50px', right: '50px', zIndex: 1200 }}>

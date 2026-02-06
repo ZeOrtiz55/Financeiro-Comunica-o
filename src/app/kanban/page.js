@@ -2,6 +2,8 @@
 import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
+// IMPORTAÇÃO DO MENU MODULAR
+import MenuLateral from '@/components/MenuLateral'
 // IMPORTAÇÃO DE ÍCONES COMPLETA
 import { 
   Bell, MessageSquare, X, Menu, PlusCircle, FileText, Download, 
@@ -27,7 +29,7 @@ function LoadingScreen() {
     <div style={{ position: 'fixed', inset: 0, background: '#000', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;900&display=swap" rel="stylesheet" />
         <h1 style={{ color: '#fff', fontFamily: 'Montserrat, sans-serif', fontWeight: '300', fontSize: '28px', letterSpacing: '4px', textTransform: 'uppercase', textAlign: 'center' }}>
-            Fluxo de Boletos <br /> <span style={{ fontSize: '32px' }}>Nova Tratores</span>
+            Fluxo Pós-Vendas <br /> <span style={{ fontSize: '32px' }}>Nova Tratores</span>
         </h1>
     </div>
   )
@@ -41,7 +43,7 @@ const formatarData = (dataStr) => {
   return `${partes[2]}/${partes[1]}/${anoCurto}`;
 };
 
-// --- 1. CHAT INTERNO (DENTRO DOS CARDS) ---
+// --- 1. CHAT INTERNO ---
 function ChatChamado({ registroId, tipo, userProfile }) {
   const [mensagens, setMensagens] = useState([])
   const [novaMsg, setNovaMsg] = useState('')
@@ -52,8 +54,10 @@ function ChatChamado({ registroId, tipo, userProfile }) {
     if (!registroId || !userProfile?.id) return
     supabase.from('mensagens_chat').select('*').eq(colunaId, registroId).order('created_at', { ascending: true })
       .then(({ data }) => setMensagens(data || []))
-    const channel = supabase.channel(`chat_kbn_${registroId}`).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'mensagens_chat', filter: `${colunaId}=eq.${registroId}` }, payload => { 
-      if (String(payload.new.usuario_id) !== String(userProfile.id)) setMensagens(prev => [...prev, payload.new]) 
+    const channel = supabase.channel(`chat_pos_${registroId}`).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'mensagens_chat', filter: `${colunaId}=eq.${registroId}` }, payload => { 
+      if (payload.new.usuario_id !== userProfile.id) {
+        setMensagens(prev => [...prev, payload.new]) 
+      }
     }).subscribe()
     return () => { supabase.removeChannel(channel) }
   }, [registroId, userProfile?.id, tipo, colunaId])
@@ -63,11 +67,10 @@ function ChatChamado({ registroId, tipo, userProfile }) {
   const enviar = async (e) => {
     e.preventDefault(); if (!novaMsg.trim()) return
     const texto = novaMsg; setNovaMsg('')
+    setMensagens(prev => [...prev, { id: Date.now(), texto, usuario_nome: userProfile.nome, usuario_id: userProfile.id }]);
     const insertData = { texto, usuario_nome: userProfile.nome, usuario_id: userProfile.id };
     insertData[colunaId] = registroId;
-    const { error } = await supabase.from('mensagens_chat').insert([insertData])
-    if (error) alert("Erro: " + error.message)
-    else setMensagens(prev => [...prev, { id: Date.now(), texto, usuario_nome: userProfile.nome, usuario_id: userProfile.id }])
+    await supabase.from('mensagens_chat').insert([insertData])
   }
 
   return (
@@ -89,93 +92,18 @@ function ChatChamado({ registroId, tipo, userProfile }) {
   )
 }
 
-// --- 2. CHAT FLUTUANTE GERAL ---
-function ChatFlutuante({ userProfile }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [mensagens, setMensagens] = useState([]);
-  const [novaMsg, setNovaMsg] = useState('');
-  const [uploading, setUploading] = useState(false);
-  const scrollRef = useRef();
-
-  useEffect(() => {
-    if (!userProfile?.id) return;
-    const load = async () => {
-        const { data } = await supabase.from('mensagens_chat').select('*').is('chamado_id', null).is('pagar_id', null).is('receber_id', null).is('rh_id', null).order('created_at', { ascending: true }).limit(100);
-        setMensagens(data || []);
-    }
-    load();
-    const channel = supabase.channel('chat_geral_kbn').on('postgres_changes', { event: '*', schema: 'public', table: 'mensagens_chat' }, p => { load() }).subscribe();
-    return () => { supabase.removeChannel(channel) };
-  }, [userProfile?.id, isOpen]);
-
-  const handleUpload = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    setUploading(true);
-    try {
-      const fileName = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-      await supabase.storage.from('chat-midia').upload(fileName, file);
-      const { data: { publicUrl } } = supabase.storage.from('chat-midia').getPublicUrl(fileName);
-      await supabase.from('mensagens_chat').insert([{ texto: file.type.startsWith('image') ? '📷 Foto' : '📎 Arquivo', midia_url: publicUrl, usuario_id: userProfile.id, usuario_nome: userProfile.nome, data_hora: new Date().toISOString() }]);
-    } catch (err) { alert("Erro upload: " + err.message); }
-    finally { setUploading(false); }
-  }
-
-  const enviar = async (e) => {
-    e.preventDefault(); if (!novaMsg.trim()) return;
-    const t = novaMsg; setNovaMsg('');
-    await supabase.from('mensagens_chat').insert([{ texto: t, usuario_nome: userProfile.nome, usuario_id: userProfile.id, data_hora: new Date().toISOString() }]);
-  }
-
-  return (
-    <div style={{ position: 'fixed', bottom: '30px', right: '30px', zIndex: 3000, fontFamily: 'Montserrat' }}>
-      <button onClick={() => setIsOpen(!isOpen)} style={{ width: '75px', height: '75px', borderRadius: '25px', background: '#0f172a', color: '#fff', border: 'none', cursor: 'pointer', boxShadow: '0 10px 30px rgba(0,0,0,0.3)', display:'flex', alignItems:'center', justifyContent:'center' }}>
-        {isOpen ? <X size={34} /> : <MessageSquare size={34} />}
-      </button>
-      {isOpen && (
-        <div style={{ position: 'absolute', bottom: '95px', right: 0, width: '500px', height: '750px', background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(10px)', borderRadius: '35px', display: 'flex', flexDirection: 'column', boxShadow: '0 30px 70px rgba(0,0,0,0.3)', border:'1px solid #e2e8f0', overflow:'hidden' }}>
-           <div style={{ padding: '25px', background: '#0f172a', color: '#fff', fontSize:'18px' }}>CENTRAL DE COMUNICAÇÃO NOVA</div>
-           <div ref={scrollRef} style={{ flex: 1, padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '15px' }}>
-              {mensagens.map(m => {
-                const souEu = String(m.usuario_id) === String(userProfile.id);
-                const hora = m.data_hora ? new Date(m.data_hora).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "";
-                return (
-                  <div key={m.id} style={{ alignSelf: souEu ? 'flex-end' : 'flex-start', maxWidth:'80%' }}>
-                    <div style={{ background: souEu ? '#0f172a' : '#fff', color: souEu ? '#fff' : '#000', padding: '15px', borderRadius: '20px', border:'1px solid #e2e8f0' }}>
-                      <span style={{fontSize:'10px', display:'block', opacity:0.6}}>{m.usuario_nome?.toUpperCase()}</span>
-                      {m.midia_url && <div style={{margin:'10px 0'}}><a href={m.midia_url} target="_blank" style={{color:'inherit', fontSize:'12px', display:'flex', alignItems:'center', gap:'5px'}}><FileText size={16}/> VER ANEXO</a></div>}
-                      <div style={{fontSize:'16px'}}>{m.texto}</div>
-                      <div style={{textAlign:'right', fontSize:'10px', opacity:0.5, marginTop:'5px'}}>{hora}</div>
-                    </div>
-                  </div>
-                )
-              })}
-           </div>
-           <form onSubmit={enviar} style={{ padding: '25px', display: 'flex', gap: '15px', borderTop:'1px solid #e2e8f0', alignItems:'center' }}>
-              <label style={{cursor:'pointer'}}><Paperclip size={24} color="#64748b" /><input type="file" hidden onChange={handleUpload} /></label>
-              <input value={novaMsg} onChange={e => setNovaMsg(e.target.value)} placeholder="Escreva..." style={{flex:1, padding:'18px', borderRadius:'15px', border:'1px solid #e2e8f0', fontSize:'16px', outline:'none'}} />
-              <button disabled={uploading} style={{background:'#0f172a', color:'#fff', border:'none', borderRadius:'15px', width:'60px', height:'60px', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer'}}><Send size={24}/></button>
-           </form>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// --- 3. KANBAN PAGE PRINCIPAL ---
-export default function KanbanPage() {
+// --- 3. KANBAN PÓS-VENDAS ---
+export default function KanbanPosVendas() {
   const [chamados, setChamados] = useState([])
   const [userProfile, setUserProfile] = useState(null)
   const [tarefaSelecionada, setTarefaSelecionada] = useState(null)
   const [loading, setLoading] = useState(true)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [pesquisa, setPesquisa] = useState('')
-  const [fileBoleto, setFileBoleto] = useState(null)
-  const [notificacoes, setNotificacoes] = useState([])
+  const [showNovoMenu, setShowNovoMenu] = useState(false)
   const router = useRouter()
 
   const colunas = [
-    { id: 'gerar_boleto', titulo: 'GERAR BOLETO' },
     { id: 'enviar_cliente', titulo: 'ENVIAR PARA CLIENTE' },
     { id: 'aguardando_vencimento', titulo: 'AGUARDANDO VENCIMENTO' },
     { id: 'pago', titulo: 'PAGO' },
@@ -188,13 +116,14 @@ export default function KanbanPage() {
     let cardsProcessados = [];
 
     (data || []).forEach(c => {
+      // Pós-Vendas NÃO vê validar_pix
+      if (c.status === 'validar_pix') return;
+
       if (c.qtd_parcelas > 1 && c.datas_parcelas) {
         const datas = c.datas_parcelas.split(/[\s,]+/).filter(d => d.includes('-'));
-        
         datas.forEach((dataParc, index) => {
           const numParc = index + 1;
           const vencParc = new Date(dataParc);
-          
           let statusIndividual = c[`status_p${numParc}`] || 'aguardando_vencimento';
           let tarefaIndividual = c[`tarefa_p${numParc}`] || `Parcela ${numParc}/${c.qtd_parcelas}`;
           let recobrancasIndividual = c[`recombrancas_qtd_p${numParc}`] || 0;
@@ -202,38 +131,20 @@ export default function KanbanPage() {
           if (vencParc < hoje && statusIndividual === 'aguardando_vencimento') {
             statusIndividual = 'pago';
             tarefaIndividual = `Boleto Vencido: Verificar Pagamento (Parcela ${numParc})`;
-            supabase.from('Chamado_NF').update({ 
-                [`status_p${numParc}`]: statusIndividual, 
-                [`tarefa_p${numParc}`]: tarefaIndividual 
-            }).eq('id', c.id);
           }
 
           const valorDaParcela = c[`valor_parcela${numParc}`] || (c.valor_servico / c.qtd_parcelas).toFixed(2);
-
           cardsProcessados.push({
-            ...c,
-            id_virtual: `${c.id}_p${numParc}`,
-            nom_cliente: `${c.nom_cliente} (PARC ${numParc})`,
-            vencimento_boleto: dataParc,
-            valor_exibicao: valorDaParcela,
-            status: statusIndividual, 
-            tarefa: tarefaIndividual,
-            recombrancas_qtd_individual: recobrancasIndividual,
-            numParcelaReferencia: numParc,
-            isChild: true
+            ...c, id_virtual: `${c.id}_p${numParc}`, nom_cliente: `${c.nom_cliente} (PARC ${numParc})`,
+            vencimento_boleto: dataParc, valor_exibicao: valorDaParcela, status: statusIndividual, 
+            tarefa: tarefaIndividual, recombrancas_qtd_individual: recobrancasIndividual, numParcelaReferencia: numParc, isChild: true
           });
         });
       } else {
         const itemNormal = { ...c, valor_exibicao: c.valor_servico, recombrancas_qtd_individual: c.recombrancas_qtd || 0 };
-        if (c.vencimento_boleto && new Date(c.vencimento_boleto) < hoje && c.status !== 'pago' && c.status !== 'vencido' && c.status !== 'gerar_boleto') {
-            supabase.from('Chamado_NF').update({ status: 'pago', tarefa: 'Boleto Vencido: Verificar Pagamento' }).eq('id', c.id);
-            itemNormal.status = 'pago';
-            itemNormal.tarefa = 'Boleto Vencido: Verificar Pagamento';
-        }
         cardsProcessados.push(itemNormal);
       }
     });
-
     setChamados(cardsProcessados)
   }
 
@@ -243,7 +154,6 @@ export default function KanbanPage() {
       if (!session) return router.push('/login')
       const { data: prof } = await supabase.from('financeiro_usu').select('*').eq('id', session.user.id).single()
       setUserProfile(prof)
-      await carregarDados()
       setLoading(false)
     }
     carregar()
@@ -251,28 +161,13 @@ export default function KanbanPage() {
 
   useEffect(() => {
     if (userProfile) {
-      const channel = supabase.channel('notificacoes_kanban_global')
-        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'Chamado_NF' }, payload => {
-           const anterior = payload.old.status;
-           const atual = payload.new.status;
-           
-           if (anterior !== atual) {
-             const info = payload.new;
-             const msg = `🔔 MUDANÇA DE FASE\nID: #${info.id}\nCliente: ${info.nom_cliente}\nNFs: ${info.num_nf_servico || '-'} / ${info.num_nf_peca || '-'}\nNova Fase: ${atual.toUpperCase()}`;
-             setNotificacoes(prev => [msg, ...prev]);
-             alert(msg); // Alerta visual imediato
-           }
-           carregarDados();
-        })
-        .subscribe();
-      return () => { supabase.removeChannel(channel) };
+        carregarDados();
+        const channel = supabase.channel('notif_kanban_pos').on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'Chamado_NF' }, payload => { carregarDados() }).subscribe();
+        return () => { supabase.removeChannel(channel) };
     }
   }, [userProfile]);
 
-  const handleLogout = async () => { 
-    await supabase.auth.signOut(); 
-    router.push('/login'); 
-  }
+  const handleLogout = async () => { await supabase.auth.signOut(); router.push('/login'); }
 
   const handleUpdateField = async (id, field, value) => {
     const finalValue = (value === "" && (field.includes('data') || field.includes('vencimento'))) ? null : value;
@@ -282,12 +177,8 @@ export default function KanbanPage() {
       await supabase.from('Chamado_NF').update({ [fieldNameIndividual]: finalValue }).eq('id', idReal);
       setTarefaSelecionada(prev => ({...prev, [field]: finalValue}));
     } else {
-      const updateData = { [field]: finalValue };
-      if (field === 'status' && value === 'vencido') {
-        updateData.data_entrada_vencido = new Date().toISOString();
-      }
-      await supabase.from('Chamado_NF').update(updateData).eq('id', id);
-      setTarefaSelecionada(prev => ({...prev, ...updateData}));
+      await supabase.from('Chamado_NF').update({ [field]: finalValue }).eq('id', id);
+      setTarefaSelecionada(prev => ({...prev, [field]: finalValue}));
     }
   };
 
@@ -295,57 +186,17 @@ export default function KanbanPage() {
     const isChild = typeof id === 'string' && id.includes('_p');
     const idReal = isChild ? id.split('_p')[0] : id;
     const pNum = isChild ? id.split('_p')[1] : null;
-    
     const newVal = (currentVal || 0) + 1;
-    const updateData = isChild 
-      ? { [`recombrancas_qtd_p${pNum}`]: newVal } 
-      : { recombrancas_qtd: newVal };
-
+    const updateData = isChild ? { [`recombrancas_qtd_p${pNum}`]: newVal } : { recombrancas_qtd: newVal };
     await supabase.from('Chamado_NF').update(updateData).eq('id', idReal);
     setTarefaSelecionada(prev => ({...prev, recombrancas_qtd_individual: newVal}));
   };
 
-  const handleUpdateFile = async (id, field, file) => {
-    if(!file) return;
-    const idReal = typeof id === 'string' && id.includes('_p') ? id.split('_p')[0] : id;
-    const cleanName = file.name.normalize('NFD').replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9.-]/g, '_');
-    const path = `anexos/${Date.now()}-${cleanName}`;
-    try {
-      await supabase.storage.from('anexos').upload(path, file);
-      const { data: linkData } = supabase.storage.from('anexos').getPublicUrl(path);
-      await supabase.from('Chamado_NF').update({ [field]: linkData.publicUrl }).eq('id', idReal);
-      setTarefaSelecionada(prev => ({...prev, [field]: linkData.publicUrl}));
-      alert("Arquivo anexado!");
-    } catch (err) { alert("Erro: " + err.message); }
-  };
-
-  const handleGerarBoletoFaturamento = async (id) => {
-    if (!fileBoleto) return alert("Anexe o boleto.")
-    const idReal = typeof id === 'string' && id.includes('_p') ? id.split('_p')[0] : id;
-    const cleanName = fileBoleto.name.normalize('NFD').replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9.-]/g, '_');
-    const path = `boletos/${Date.now()}-${cleanName}`
-    try {
-      await supabase.storage.from('anexos').upload(path, fileBoleto)
-      const { data } = supabase.storage.from('anexos').getPublicUrl(path)
-      if (typeof id === 'string' && id.includes('_p')) {
-          const pNum = id.split('_p')[1];
-          await supabase.from('Chamado_NF').update({ [`status_p${pNum}`]: 'enviar_cliente', [`tarefa_p${pNum}`]: 'Enviar Boleto para o Cliente', anexo_boleto: data.publicUrl }).eq('id', idReal);
-      } else {
-          await supabase.from('Chamado_NF').update({ status: 'enviar_cliente', tarefa: 'Enviar Boleto para o Cliente', setor: 'Pós-Vendas', anexo_boleto: data.publicUrl }).eq('id', idReal);
-      }
-      alert("Tarefa gerada!"); window.location.reload();
-    } catch (err) { alert("Erro: " + err.message); }
-  }
-
   const chamadosFiltrados = chamados.filter(c => 
-    c.nom_cliente?.toLowerCase().includes(pesquisa.toLowerCase()) ||
-    c.id.toString().includes(pesquisa) ||
-    c.num_nf_peca?.toString().includes(pesquisa) ||
-    c.num_nf_servico?.toString().includes(pesquisa)
+    c.nom_cliente?.toLowerCase().includes(pesquisa.toLowerCase()) || c.id.toString().includes(pesquisa)
   )
 
-  const btnSidebarStyle = { background: 'none', color: '#000', border: 'none', padding: '20px 0', cursor: 'pointer', fontSize: '18px', display: 'flex', alignItems: 'center', width: '100%', transition: '0.3s' }
-  const path = typeof window !== 'undefined' ? window.location.pathname : '';
+  const path = typeof window !== 'undefined' ? window.location.pathname : '/kanban-posvendas';
 
   if (loading) return <LoadingScreen />
 
@@ -354,97 +205,56 @@ export default function KanbanPage() {
       <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
       <GeometricBackground />
 
-      <aside onMouseEnter={()=>setIsSidebarOpen(true)} onMouseLeave={()=>setIsSidebarOpen(false)} style={{ width: isSidebarOpen ? '320px' : '85px', background: 'rgba(255, 255, 255, 0.95)', backdropFilter: 'blur(10px)', height: '100vh', position: 'fixed', left: 0, top: 0, borderRight: '1px solid #cbd5e1', padding: '30px 0', display: 'flex', flexDirection: 'column', transition: '0.4s', zIndex: 1100, overflow: 'hidden' }}>
-        <div style={{ flex: 1 }}>
-            <div style={{ height: '60px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '40px' }}>
-                {isSidebarOpen ? <span style={{color:'#000', fontSize:'22px', letterSpacing:'3px', fontWeight:'900'}}>NOVA</span> : <Menu size={32} color="#000" />}
-            </div>
-            <nav style={{ display: 'flex', flexDirection: 'column' }}>
-                <button onClick={() => router.push('/')} style={btnSidebarStyle}><div style={{minWidth:'85px', display:'flex', justifyContent:'center'}}><LayoutDashboard size={28}/></div><span style={{ opacity: isSidebarOpen ? 1 : 0 }}>TAREFAS</span></button>
-                
-                {/* BARRA PRETA INDICADORA NO MENU LATERAL */}
-                <button onClick={() => router.push('/kanban')} style={{...btnSidebarStyle, background: 'rgba(0,0,0,0.05)', borderLeft: '6px solid #000'}}>
-                  <div style={{minWidth:'85px', display:'flex', justifyContent:'center'}}><ClipboardList size={28}/></div>
-                  <span style={{ opacity: isSidebarOpen ? 1 : 0 }}>Fluxo de Boletos</span>
-                </button>
-                
-                <div style={{ height: '1px', background: '#e2e8f0', margin: '20px 0', opacity: isSidebarOpen ? 1 : 0 }}></div>
-                <button onClick={() => router.push('/historico-pagar')} style={btnSidebarStyle}><div style={{minWidth:'85px', display:'flex', justifyContent:'center'}}><TrendingDown size={28}/></div><span style={{ opacity: isSidebarOpen ? 1 : 0 }}>Historico Pagar</span></button>
-                <button onClick={() => router.push('/historico-receber')} style={btnSidebarStyle}><div style={{minWidth:'85px', display:'flex', justifyContent:'center'}}><TrendingUp size={28}/></div><span style={{ opacity: isSidebarOpen ? 1 : 0 }}>Historico Receber</span></button>
-            </nav>
-        </div>
-        <button onClick={handleLogout} style={{ ...btnSidebarStyle, color: '#dc2626' }}><div style={{minWidth:'85px', display:'flex', justifyContent:'center'}}><LogOut size={28}/></div><span style={{ opacity: isSidebarOpen ? 1 : 0 }}>SAIR</span></button>
-      </aside>
+      {/* CORREÇÃO: Passando o userProfile para evitar 404 no menu */}
+      <MenuLateral 
+        isSidebarOpen={isSidebarOpen} 
+        setIsSidebarOpen={setIsSidebarOpen} 
+        path={path} 
+        router={router} 
+        handleLogout={handleLogout} 
+        userProfile={userProfile}
+      />
 
       <main style={{ marginLeft: isSidebarOpen ? '320px' : '85px', flex: 1, padding: '50px', transition: '0.4s' }}>
         <header style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'50px' }}>
             <div>
-              {/* TROCADO NOME PARA FLUXO BOLETOS */}
-              <h1 style={{ color: '#0f172a', margin: 0, fontSize:'42px', letterSpacing:'-1.5px', fontWeight:'900' }}>Fluxo de Boletos</h1>
+              <h1 style={{ color: '#0f172a', margin: 0, fontSize:'42px', letterSpacing:'-1.5px', fontWeight:'900' }}>Fluxo Pós-Vendas</h1>
               <div style={{ width: '80px', height: '4px', background: '#000', marginTop: '15px' }}></div>
             </div>
-            <div style={{display:'flex', gap:'20px', alignItems:'center'}}>
-                <div style={{position:'relative'}}>
-                  <Bell size={30} onClick={() => alert(notificacoes.join('\n\n') || "Sem novas notificações")} style={{cursor:'pointer'}} />
-                  {notificacoes.length > 0 && <div style={{position:'absolute', top:-5, right:-5, background:'red', color:'#fff', borderRadius:'50%', width:18, height:18, fontSize:10, display:'flex', alignItems:'center', justifyContent:'center'}}>{notificacoes.length}</div>}
+            <div style={{display:'flex', gap:'35px', alignItems:'center'}}>
+                <input type="text" placeholder="Pesquisar..." value={pesquisa} onChange={(e) => setPesquisa(e.target.value)} style={{ padding: '18px 20px 18px 50px', width: '400px', borderRadius: '15px', border: '1px solid #cbd5e1', outline: 'none', background: '#fff' }} />
+                <div style={{ position: 'relative' }}>
+                  <button onClick={() => setShowNovoMenu(!showNovoMenu)} style={{ background:'#0f172a', color:'#fff', border:'none', padding:'20px 40px', borderRadius:'15px', fontWeight:'900', cursor:'pointer', fontSize:'16px' }}>
+                    NOVO CHAMADO
+                  </button>
+                  {showNovoMenu && (
+                    <div onMouseLeave={() => setShowNovoMenu(false)} style={{ position:'absolute', top:'85px', right: 0, background:'#fff', borderRadius:'20px', boxShadow: '0 30px 60px rgba(0,0,0,0.2)', zIndex:2000, width:'320px', border:'1px solid #e2e8f0', overflow:'hidden' }}>
+                      <div onClick={() => router.push('/novo-chamado-nf')} style={{ padding:'25px', cursor:'pointer', color: '#000', borderBottom:'1px solid #f1f5f9' }}>CHAMADO DE BOLETO</div>
+                      <div onClick={() => router.push('/novo-pagar-receber')} style={{ padding:'25px', cursor:'pointer', color: '#000', borderBottom:'1px solid #f1f5f9' }}>CONTAS PAGAR / RECEBER</div>
+                      <div onClick={() => router.push('/novo-chamado-rh')} style={{ padding:'25px', cursor:'pointer', color: '#2563eb' }}>CHAMADO RH</div>
+                    </div>
+                  )}
                 </div>
-                <input type="text" placeholder="Pesquisar..." value={pesquisa} onChange={(e) => setPesquisa(e.target.value)} style={{ padding: '18px 20px 18px 50px', width: '400px', borderRadius: '15px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '15px', fontFamily: 'Montserrat', background: '#fff' }} />
             </div>
         </header>
 
-        <div style={{ display: 'flex', gap: '25px', overflowX: 'auto', alignItems: 'flex-start', paddingBottom:'30px' }}>
+        <div style={{ display: 'flex', gap: '25px', overflowX: 'auto', paddingBottom:'30px' }}>
           {colunas.map(col => (
             <div key={col.id} style={{ minWidth: '380px', flex: 1 }}>
-              <h3 style={{ background: '#000', color: '#fff', padding: '20px', borderRadius: '10px', marginBottom: '25px', fontSize: '18px', textAlign: 'center', letterSpacing: '2px', fontWeight:'500' }}>{col.titulo}</h3>
+              <h3 style={{ background: '#000', color: '#fff', padding: '20px', borderRadius: '10px', marginBottom: '25px', fontSize: '18px', textAlign: 'center' }}>{col.titulo}</h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                {chamadosFiltrados.filter(c => c.status === col.id).map(t => {
-                   const isAguardandoCobrado = t.status === 'aguardando_vencimento' && t.tarefa === 'Aguardando Vencimento (Cobrado)';
-                   const deveFicarVermelho = t.status === 'vencido' || isAguardandoCobrado;
-                   let diasAtraso = 0;
-                   if (t.status === 'vencido' && t.data_entrada_vencido) {
-                     diasAtraso = Math.floor((new Date() - new Date(t.data_entrada_vencido)) / (1000 * 60 * 60 * 24));
-                   }
-
-                   return (
-                    <div key={t.id_virtual || t.id} onClick={() => setTarefaSelecionada({ ...t, gTipo: 'boleto' })} className="task-card" style={{ background: deveFicarVermelho ? '#fee2e2' : 'rgba(255,255,255,0.92)', border: deveFicarVermelho ? '1px solid #ef4444' : '1px solid #cbd5e1', boxShadow: '0 10px 15px rgba(0,0,0,0.05)' }}>
-                      <div className="card-header-internal" style={{ background: deveFicarVermelho ? '#ef4444' : '#1e293b', padding: '25px', color: '#fff' }}>
-                        {/* DESTAQUE NOME DO CLIENTE SEM NEGRITO */}
-                        <span style={{ fontSize: t.isChild ? '20px' : '28px', fontWeight:'400' }}>{t.nom_cliente?.toUpperCase()}</span>
-                      </div>
-                      <div style={{ padding: '25px' }}>
-                        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-                          {/* DESTAQUE METODO PAGAMENTO SEM NEGRITO */}
-                          <span className="payment-badge" style={{fontWeight: '400'}}>{t.forma_pagamento?.toUpperCase()}</span>
-                          {t.isChild && <span style={{fontSize:'10px', background:'#3b82f6', color:'#fff', padding:'4px 8px', borderRadius:'5px'}}>PARCELA</span>}
-                        </div>
-                        
-                        {/* DATA DE VENCIMENTO EM GRANDE QUANDO ESTÁ EM "AGUARDANDO" */}
-                        {t.status === 'aguardando_vencimento' && (
-                          <div style={{marginTop:'20px', textAlign:'center'}}>
-                             <div style={{fontSize:'10px', opacity:0.6}}>VENCIMENTO</div>
-                             <div style={{fontSize:'36px', fontWeight:'900', color:'#0f172a'}}>{formatarData(t.vencimento_boleto)}</div>
-                          </div>
-                        )}
-
-                        <div style={{marginTop:'15px', fontSize:'22px', fontWeight:'500'}}>R$ {t.valor_exibicao}</div>
-                        
-                        {/* CONTADOR DE RECOBRANÇAS OCULTO NAS FASES INICIAIS */}
-                        {t.status !== 'gerar_boleto' && t.status !== 'enviar_cliente' && t.status !== 'aguardando_vencimento' && (
-                           <div style={{marginTop:'10px', color: t.status === 'pago' ? '#0f172a' : '#ef4444', fontSize:'13px', fontWeight:'600'}}>
-                             {t.recombrancas_qtd_individual > 0 ? `RECOBRADO ${t.recombrancas_qtd_individual} VEZES` : 'AGUARDANDO COBRANÇA'}
-                           </div>
-                        )}
-
-                        {t.status === 'vencido' && (
-                          <div style={{marginTop:'5px', color:'#ef4444', fontSize:'13px', fontWeight:'600'}}>
-                            ATRASADO HÁ {diasAtraso} DIAS
-                          </div>
-                        )}
-                        <div style={{marginTop:'10px', fontSize:'12px', opacity:0.7}}>{t.tarefa}</div>
-                      </div>
+                {chamadosFiltrados.filter(c => c.status === col.id).map(t => (
+                  <div key={t.id_virtual || t.id} onClick={() => setTarefaSelecionada({ ...t, gTipo: 'boleto' })} className="task-card">
+                    <div className="card-header-internal" style={{ background: t.status === 'vencido' || (t.status === 'aguardando_vencimento' && t.tarefa.includes('Cobrado')) ? '#ef4444' : '#1e293b', padding: '25px', color: '#fff' }}>
+                      <span style={{ fontSize: t.isChild ? '20px' : '28px', fontWeight:'400' }}>{t.nom_cliente?.toUpperCase()}</span>
                     </div>
-                   )
-                })}
+                    <div style={{ padding: '25px' }}>
+                      <span className="payment-badge">{t.forma_pagamento?.toUpperCase()}</span>
+                      <div style={{marginTop:'15px', fontSize:'22px', fontWeight:'500'}}>R$ {t.valor_exibicao}</div>
+                      <div style={{marginTop:'10px', fontSize:'12px', opacity:0.7}}>{t.tarefa}</div>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           ))}
@@ -453,124 +263,45 @@ export default function KanbanPage() {
 
       {tarefaSelecionada && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.4)', backdropFilter: 'blur(10px)', zIndex: 5000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-          <div style={{ background: '#fff', width: '1600px', maxWidth: '98%', maxHeight: '95vh', borderRadius: '35px', display: 'flex', flexDirection: 'row', overflow: 'hidden', border: '1px solid #cbd5e1', boxShadow: '0 50px 100px rgba(0,0,0,0.2)' }}>
-            
+          <div style={{ background: '#fff', width: '1600px', maxWidth: '98%', maxHeight: '95vh', borderRadius: '35px', display: 'flex', flexDirection: 'row', overflow: 'hidden', border: '1px solid #cbd5e1' }}>
             <div style={{ flex: '1.2', padding: '60px', overflowY: 'auto', maxHeight: '95vh' }}>
-              <button onClick={() => {setTarefaSelecionada(null); setFileBoleto(null)}} className="btn-back"><ArrowLeft size={16}/> VOLTAR</button>
-              
-              <div style={{ marginBottom: '50px' }}>
-                <span style={{ fontSize: '12px', color: '#000', letterSpacing: '2px', fontWeight:'500' }}>NOME DO CLIENTE {tarefaSelecionada.isChild && '(PARCELA)'}</span>
-                <h2 style={{ fontSize: '56px', color: '#0f172a', margin: '5px 0', lineHeight: 1, fontWeight:'400' }}>{tarefaSelecionada.nom_cliente?.toUpperCase()}</h2>
-                <div className="payment-badge-large" style={{fontWeight: '400'}}>{tarefaSelecionada.forma_pagamento?.toUpperCase() || 'MÉTODO NÃO INFORMADO'}</div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', border: '1px solid #e2e8f0', borderRadius: '15px', overflow: 'hidden' }}>
-                 <div className="info-block-grid"><label>ID PROCESSO</label><span>#{tarefaSelecionada.id}</span></div>
-                 <div className="info-block-grid"><label>{tarefaSelecionada.isChild ? 'VALOR PARCELA' : 'VALOR TOTAL'}</label><span>R$ {tarefaSelecionada.valor_exibicao}</span></div>
+              <button onClick={() => setTarefaSelecionada(null)} className="btn-back"><ArrowLeft size={16}/> VOLTAR</button>
+              <h2 style={{ fontSize: '56px', color: '#0f172a', margin: '5px 0', fontWeight:'400' }}>{tarefaSelecionada.nom_cliente?.toUpperCase()}</h2>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', border: '1px solid #e2e8f0', borderRadius: '15px', overflow: 'hidden', marginTop:'30px' }}>
+                 <div className="info-block-grid"><label>VALOR TOTAL</label><span>R$ {tarefaSelecionada.valor_exibicao}</span></div>
                  <div className="info-block-grid"><label>VENCIMENTO</label><span>{formatarData(tarefaSelecionada.vencimento_boleto)}</span></div>
-                 <div className="info-block-grid"><label>NF SERVIÇO</label><span>{tarefaSelecionada.num_nf_servico || '-'}</span></div>
-                 <div className="info-block-grid"><label>NF PEÇA</label><span>{tarefaSelecionada.num_nf_peca || '-'}</span></div>
-                 <div className="info-block-grid"><label>QTD PARCELAS</label><span>{tarefaSelecionada.qtd_parcelas || '1'}x</span></div>
               </div>
 
               <div style={{marginTop:'40px', display:'flex', gap:'20px', flexWrap:'wrap'}}>
-                {/* APENAS FINANCEIRO PODE MOVER PARA VENCIDO / ANEXAR JUROS */}
-                {userProfile?.funcao === 'Financeiro' && tarefaSelecionada.status === 'pago' && (
-                  <div style={{width:'100%', background:'#fff5f5', padding:'40px', borderRadius:'25px', border:'1.5px dashed #ef4444'}}>
-                    <h4 style={{color:'#ef4444', marginBottom:'20px', fontWeight:'900'}}>REEMISSÃO POR FALTA DE PAGAMENTO</h4>
-                    <div style={{display:'flex', flexDirection:'column', gap:'20px'}}>
-                      <div style={{background:'#fff', padding:'30px', borderRadius:'20px', border:'2px dashed #ef4444', textAlign:'center'}}>
-                         <label style={{cursor:'pointer', display:'flex', flexDirection:'column', alignItems:'center', gap:'10px'}}>
-                            <Upload size={32} color="#ef4444" />
-                            <span style={{color:'#ef4444', fontWeight:'600'}}>
-                               {tarefaSelecionada.anexo_boleto_juros ? 'TROCAR BOLETO COM JUROS' : 'ANEXAR NOVO BOLETO COM JUROS'}
-                            </span>
-                            <input type="file" hidden onChange={(e) => handleUpdateFile(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'anexo_boleto_juros', e.target.files[0])} />
-                         </label>
-                         {tarefaSelecionada.anexo_boleto_juros && (
-                            <a href={tarefaSelecionada.anexo_boleto_juros} target="_blank" style={{marginTop:'15px', display:'flex', alignItems:'center', justifyContent:'center', gap:'8px', color:'#ef4444', fontSize:'12px', textDecoration:'underline'}}>
-                               <Eye size={16}/> VISUALIZAR ATUAL
-                            </a>
-                         )}
-                      </div>
-                      <button onClick={() => {
-                        handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'status', 'vencido');
-                        handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'tarefa', 'Cobrar Cliente');
-                        alert("Movido para Vencido!"); window.location.reload();
-                      }} style={{background:'#ef4444', color:'#fff', border:'none', padding:'20px', borderRadius:'15px', cursor:'pointer', fontWeight:'900', fontSize:'16px'}}>Mover Card Para Vencido e Gerar Tarefa Pos vendas: Cobrar Cliente</button>
-                    </div>
-                  </div>
-                )}
-
-                {/* APENAS FINANCEIRO PODE CONFIRMAR PAGAMENTO OU GERAR TAREFA DE COBRANÇA */}
-                {userProfile?.funcao === 'Financeiro' && tarefaSelecionada.status === 'vencido' && (
-                  <div style={{display:'flex', gap:'20px', width:'100%'}}>
-                    <button onClick={() => handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'status', 'pago').then(() => window.location.reload())} style={{flex: 1, background:'#0f172a', color:'#fff', border:'none', padding:'20px', borderRadius:'15px', cursor:'pointer', fontWeight:'900'}}>Confirmar Pagamento: Mover para Pago</button>
-                    <button onClick={() => {
-                      handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'tarefa', 'Cobrar Cliente');
-                      alert("Tarefa de cobrança gerada para o Pós-Vendas!"); window.location.reload();
-                    }} style={{flex: 1, background:'#ef4444', color:'#fff', border:'none', padding:'20px', borderRadius:'15px', cursor:'pointer', fontWeight:'900'}}>Gerar Tarefa Pos Vendas: Cobrar Cliente</button>
-                  </div>
-                )}
-
+                {/* AÇÕES EXCLUSIVAS PÓS-VENDAS */}
                 {tarefaSelecionada.tarefa.includes('COBRAR') && (
                    <button onClick={() => {
                      handleIncrementRecobranca(tarefaSelecionada.id_virtual || tarefaSelecionada.id, tarefaSelecionada.recombrancas_qtd_individual);
-                     handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'status', 'vencido');
                      handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'tarefa', 'Aguardando Verificação Financeiro (Cobrado)');
                      alert("Cobrança registrada!"); window.location.reload();
                    }} style={{width:'100%', background:'#22c55e', color:'#fff', border:'none', padding:'20px', borderRadius:'15px', cursor:'pointer', fontWeight:'900'}}>Cliente Cobrado (Registrar Recobrança)</button>
                 )}
-
-                {userProfile?.funcao !== 'Financeiro' && tarefaSelecionada.status === 'enviar_cliente' && (
-                   <button onClick={() => { handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'status', 'aguardando_vencimento'); handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'tarefa', 'Aguardando Vencimento'); alert("Boleto enviado!"); window.location.reload(); }} style={{background:'#22c55e', color:'#fff', border:'none', padding:'15px 30px', borderRadius:'12px', cursor:'pointer', fontWeight:'900', fontSize:'14px'}}>Boleto enviado: Mover para Aguardando</button>
+                {tarefaSelecionada.status === 'enviar_cliente' && (
+                   <button onClick={() => { handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'status', 'aguardando_vencimento'); handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'tarefa', 'Aguardando Vencimento'); alert("Boleto enviado!"); window.location.reload(); }} style={{width:'100%', background:'#22c55e', color:'#fff', border:'none', padding:'20px', borderRadius:'15px', cursor:'pointer', fontWeight:'900'}}>Confirmar Envio ao Cliente</button>
                 )}
               </div>
-
-              <div style={{ marginTop: '40px', display: 'flex', gap: '15px' }}>
-                {tarefaSelecionada.anexo_nf_servico && <a href={tarefaSelecionada.anexo_nf_servico} target="_blank" className="btn-anexo-doc"><FileText size={20}/> NF SERVIÇO</a>}
-                {tarefaSelecionada.anexo_nf_peca && <a href={tarefaSelecionada.anexo_nf_peca} target="_blank" className="btn-anexo-doc"><FileText size={20}/> NF PEÇA</a>}
-                {tarefaSelecionada.anexo_boleto && <a href={tarefaSelecionada.anexo_boleto} target="_blank" className="btn-anexo-doc" style={{borderColor:'#3b82f6', color:'#3b82f6'}}><Download size={20}/> BAIXAR BOLETO</a>}
-                {tarefaSelecionada.anexo_boleto_juros && <a href={tarefaSelecionada.anexo_boleto_juros} target="_blank" className="btn-anexo-doc" style={{borderColor:'#ef4444', color:'#ef4444'}}><Download size={20}/> BOLETO COM JUROS</a>}
-              </div>
-
-              {/* APENAS FINANCEIRO E APENAS NA FASE GERAR BOLETO */}
-              {userProfile?.funcao === 'Financeiro' && tarefaSelecionada.status === 'gerar_boleto' && (
-                <div style={{ marginTop: '50px', padding: '40px', background: '#f0f9ff', borderRadius: '30px', border: '1px solid #bae6fd' }}>
-                    <span style={{ fontSize: '11px', color: '#0369a1', letterSpacing: '2px', display:'block', marginBottom: '20px', fontWeight:'500' }}>AÇÃO DO FINANCEIRO</span>
-                    <label style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:'15px', background:'#fff', padding:'25px', borderRadius:'20px', border:'2px dashed #3b82f6', cursor:'pointer', marginBottom:'25px' }}>
-                        <Upload size={32} color="#3b82f6" />
-                        <div style={{textAlign:'left'}}><span style={{fontSize:'16px', color:'#1d4ed8', display:'block', fontWeight:'500'}}>{fileBoleto ? fileBoleto.name : 'CLIQUE PARA ANEXAR O BOLETO'}</span><span style={{fontSize:'12px', color:'#60a5fa'}}>Clique para selecionar o arquivo</span></div>
-                        <input type="file" hidden onChange={e => setFileBoleto(e.target.files[0])} />
-                    </label>
-                    <button onClick={() => handleGerarBoletoFaturamento(tarefaSelecionada.id_virtual || tarefaSelecionada.id)} style={{ width: '100%', background: '#0f172a', color: '#fff', padding: '22px', borderRadius: '20px', cursor: 'pointer', fontSize: '16px', display:'flex', alignItems:'center', justifyContent:'center', gap:'12px', fontWeight:'500' }}>
-                        <Send size={20}/> Gerar Tarefa para Pós Vendas: Enviar Boleto
-                    </button>
-                </div>
-              )}
             </div>
-
             <div style={{ flex: '0.8', padding: '40px', background: '#f8fafc', borderLeft: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column' }}>
               {userProfile && <ChatChamado registroId={tarefaSelecionada?.id} tipo="boleto" userProfile={userProfile} />}
             </div>
           </div>
         </div>
       )}
-
-      {userProfile && <ChatFlutuante userProfile={userProfile} />}
-      
       <style jsx global>{`
         * { font-weight: 500 !important; }
-        .task-card { background: rgba(255,255,255,0.95); border: 1px solid #cbd5e1; border-radius: 20px; cursor: pointer; overflow: hidden; width: 100%; box-shadow: 0 10px 15px rgba(0,0,0,0.05); transition: 0.2s; }
-        .task-card:hover { transform: translateY(-5px); box-shadow: 0 15px 25px rgba(0,0,0,0.1); }
+        .task-card { background: rgba(255,255,255,0.95); border: 1px solid #cbd5e1; border-radius: 20px; cursor: pointer; overflow: hidden; width: 100%; transition: 0.2s; }
+        .task-card:hover { transform: translateY(-5px); }
         .card-header-internal { padding: 25px; color: #fff; }
         .payment-badge { background: #000; color: #fff; padding: 5px 12px; border-radius: 8px; font-size: 12px; display: inline-block; }
-        .payment-badge-large { background: #0f172a; color: #fff; padding: 10px 20px; border-radius: 12px; display: inline-block; margin-top: 10px; font-size: 20px; }
         .info-block-grid { padding: 15px; border: 0.5px solid #e2e8f0; background: #fff; }
         .info-block-grid label { display: block; fontSize: 11px; color: #000; letter-spacing: 1px; margin-bottom: 5px; text-transform: uppercase; }
         .info-block-grid span { fontSize: 15px; color: #0f172a; }
-        .btn-anexo-doc { padding: 12px 20px; background: #fff; border: 1px solid #cbd5e1; borderRadius: 12px; color: #0f172a; display: flex; alignItems: center; gap: 10px; font-size: 13px; text-decoration:none; }
-        .btn-back { background: #0f172a; border: none; color: #fff; padding: 12px 24px; borderRadius: 12px; cursor: pointer; fontSize:12px; marginBottom: 30px; display:flex; alignItems:center; gap:8px; font-weight: 900 !important; }
+        .btn-back { background: #0f172a; border: none; color: #fff; padding: 12px 24px; borderRadius: 12px; cursor: pointer; fontSize:12px; marginBottom: 30px; font-weight: 900 !important; }
       `}</style>
     </div>
   )
