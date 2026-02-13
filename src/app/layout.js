@@ -1,8 +1,9 @@
 'use client'
 import { Poppins } from "next/font/google";
 import "./globals.css";
-import { useEffect } from "react";
-import { supabase } from "@/lib/supabase"; // Verifique se o caminho do seu supabase está correto
+import { useEffect, useState } from "react"; 
+import { supabase } from "@/lib/supabase";
+import NotificationSystem from "@/components/NotificationSystem"; 
 
 const poppins = Poppins({ 
   subsets: ["latin"], 
@@ -11,29 +12,33 @@ const poppins = Poppins({
 });
 
 export default function RootLayout({ children }) {
+  const [userProfile, setUserProfile] = useState(null);
+  const [isMounted, setIsMounted] = useState(false); // NOVO: Controle de montagem
 
-  // ESTA LÓGICA BUSCA O TEMA NO BANCO E APLICA NO SITE TODO
   useEffect(() => {
-    const aplicarTema = async () => {
+    setIsMounted(true); // Indica que o componente já está no navegador
+
+    const aplicarTemaEPerfil = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
         const { data } = await supabase
           .from('financeiro_usu')
-          .select('tema')
+          .select('*')
           .eq('id', session.user.id)
           .single();
         
-        if (data?.tema) {
-          // Isso injeta o atributo no HTML que o seu globals.css vai ler
-          document.documentElement.setAttribute('data-theme', data.tema);
+        if (data) {
+          setUserProfile(data);
+          if (data.tema) {
+            document.documentElement.setAttribute('data-theme', data.tema);
+          }
         }
       }
     };
-    aplicarTema();
+    aplicarTemaEPerfil();
 
-    // Opcional: Escutar mudanças em tempo real se o usuário mudar o tema em outra aba
     const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
-      aplicarTema();
+      aplicarTemaEPerfil();
     });
 
     return () => subscription?.unsubscribe();
@@ -45,11 +50,13 @@ export default function RootLayout({ children }) {
         margin: 0, 
         padding: 0, 
         fontFamily: 'var(--font-poppins), sans-serif',
-        // AQUI ESTÁ O SEGREDO: Tiramos a cor fixa e usamos a variável do globals.css
         backgroundColor: 'var(--bg-pagina)', 
         color: 'var(--texto-principal)',
         transition: 'background-color 0.3s ease, color 0.3s ease'
       }}>
+        {/* Só renderiza as notificações se estiver montado no cliente */}
+        {isMounted && <NotificationSystem userProfile={userProfile} />}
+
         {children}
       </body>
     </html>

@@ -5,16 +5,15 @@ import { useRouter } from 'next/navigation'
 // IMPORTAÇÃO DO MENU MODULAR
 import MenuLateral from '@/components/MenuLateral'
 // ÍCONES MODERNOS
-import { ArrowLeft, FileText, Calendar, CreditCard, User, Hash, Info, CheckCircle, Upload, Paperclip, LayoutDashboard, ClipboardList, TrendingDown, TrendingUp, UserCheck, LogOut, Menu } from 'lucide-react'
+import { ArrowLeft, FileText, Calendar, CreditCard, User, Hash, Info, CheckCircle, Upload, Paperclip } from 'lucide-react'
 
-// --- TELA DE CARREGAMENTO PADRONIZADA ---
+// --- 1. TELA DE CARREGAMENTO PADRONIZADA (ESTILO ATUALIZADO) ---
 function LoadingScreen() {
   return (
-    <div style={{ position: 'fixed', inset: 0, background: '#000', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;900&display=swap" rel="stylesheet" />
-        <h1 style={{ color: '#fff', fontFamily: 'Montserrat, sans-serif', fontWeight: '300', fontSize: '28px', letterSpacing: '4px', textTransform: 'uppercase', textAlign: 'center', lineHeight: '1.4' }}>
-            Comunicação Financeiro <br /> 
-            <b style={{ fontWeight: '900', fontSize: '32px' }}>Nova Tratores</b>
+    <div style={{ position: 'fixed', inset: 0, background: '#212124', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <h1 style={{ color: '#f8fafc', fontFamily: 'Montserrat, sans-serif', fontWeight: '300', fontSize: '28px', letterSpacing: '4px', textTransform: 'uppercase', textAlign: 'center', lineHeight: '1.4' }}>
+            Fluxo de Faturamento <br /> 
+            <span style={{ fontWeight: '400', fontSize: '32px', color: '#9e9e9e' }}>Nova Tratores</span>
         </h1>
     </div>
   )
@@ -22,8 +21,7 @@ function LoadingScreen() {
 
 export default function NovoChamadoNF() {
   const [todosUsuarios, setTodosUsuarios] = useState([])
-  const [userProfile, setUserProfile] = useState(null) // NOVO ESTADO PARA O PERFIL
-  const [setor, setSetor] = useState('')
+  const [userProfile, setUserProfile] = useState(null) 
   const [tipoNF, setTipoNF] = useState('')
   const [loading, setLoading] = useState(false)
   const [pageLoading, setPageLoading] = useState(true)
@@ -39,16 +37,17 @@ export default function NovoChamadoNF() {
   const [datasParcelas, setDatasParcelas] = useState(['', '', '', '', ''])
   const [fileServico, setFileServico] = useState(null)
   const [filePeca, setFilePeca] = useState(null)
-  const [filePix, setFilePix] = useState(null)
+  const [fileComprovante, setFileComprovante] = useState(null)
 
   const path = typeof window !== 'undefined' ? window.location.pathname : '/novo-chamado-nf';
+
+  const exigeComprovante = ['Pix', 'Cartão a vista', 'Cartão Parcelado'].includes(formData.forma_pagamento);
 
   useEffect(() => {
     async function load() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) return router.push('/login')
 
-      // BUSCA O PERFIL DO USUÁRIO LOGADO PARA O MENU FUNCIONAR
       const { data: profile } = await supabase.from('financeiro_usu').select('*').eq('id', session.user.id).single()
       setUserProfile(profile)
 
@@ -81,85 +80,99 @@ export default function NovoChamadoNF() {
     try {
       const urlS = (tipoNF === 'servico' || tipoNF === 'ambas') ? await uploadFile(fileServico, 'servicos') : null
       const urlP = (tipoNF === 'pecas' || tipoNF === 'ambas') ? await uploadFile(filePeca, 'pecas') : null
-      const urlPix = (formData.forma_pagamento === 'Pix') ? await uploadFile(filePix, 'comprovantes') : null
+      const urlComp = exigeComprovante ? await uploadFile(fileComprovante, 'comprovantes') : null
 
-      const isPix = formData.forma_pagamento === 'Pix'
-      const statusI = isPix ? 'validar_pix' : 'gerar_boleto'
-      const tarefaI = isPix ? 'Validar Recebimento Pix' : 'Gerar Boleto'
+      const statusI = exigeComprovante ? 'validar_pix' : 'gerar_boleto'
+      const tarefaI = exigeComprovante ? `Validar Recebimento ${formData.forma_pagamento}` : 'Gerar Boleto'
       
       const datasFinal = datasParcelas.slice(0, formData.qtd_parcelas).filter(d => d !== '').join(', ')
       const vencimentoFinal = datasParcelas[0] === '' ? null : datasParcelas[0];
 
+      const valorTotal = parseFloat(formData.valor_servico) || 0;
+      const qtd = formData.qtd_parcelas || 1;
+      const valorPorParcela = (valorTotal / qtd).toFixed(2);
+
+      const valoresParcelasObj = {};
+      for (let i = 1; i <= 5; i++) {
+          valoresParcelasObj[`valor_parcela${i}`] = i <= qtd ? valorPorParcela : 0;
+      }
+
       const { error } = await supabase.from('Chamado_NF').insert([{
         ...formData,
+        ...valoresParcelasObj,
         setor: 'Financeiro', 
         status: statusI, 
         tarefa: tarefaI,
         anexo_nf_servico: urlS, 
         anexo_nf_peca: urlP, 
-        comprovante_pagamento: urlPix,
+        comprovante_pagamento: urlComp,
         vencimento_boleto: vencimentoFinal,
         datas_parcelas: datasFinal
       }])
 
       if (error) throw error
-      alert("Sucesso! Chamado gerado no fluxo."); 
-      // Volta para a raiz, que vai te jogar para a Home certa
+      alert("Faturamento registrado com sucesso."); 
       router.push('/')
     } catch (err) { 
       alert("Erro ao salvar: " + err.message) 
     } finally { setLoading(false) }
   }
 
-  const glassInput = { padding: '18px 18px 18px 50px', borderRadius: '15px', border: '1px solid #cbd5e1', background: '#fff', width: '100%', boxSizing: 'border-box', fontFamily: 'Montserrat', fontSize: '15px', outline: 'none' }
-  const labelStyle = { fontSize: '12px', fontWeight: '900', color: '#64748b', marginBottom: '10px', display: 'block', letterSpacing: '1px' }
+  // OBJETOS DE ESTILO PARA MANTER O PADRÃO 50% MAIS CLARO E FONTES MAIORES
+  const inputStyle = {
+    width: '100%',
+    padding: '18px 20px 18px 52px',
+    borderRadius: '14px',
+    border: '1px solid #55555a',
+    outline: 'none',
+    background: '#242427',
+    color: '#ffffff',
+    fontFamily: 'Montserrat, sans-serif',
+    fontSize: '16px',
+    fontWeight: '400',
+    transition: '0.3s ease',
+    boxSizing: 'border-box'
+  }
+
+  const labelStyle = {
+    display: 'block',
+    fontSize: '13px',
+    fontWeight: '400',
+    color: '#9e9e9e',
+    marginBottom: '10px',
+    letterSpacing: '1px',
+    textTransform: 'uppercase'
+  }
 
   if (pageLoading) return <LoadingScreen />
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: '#f1f5f9', fontFamily: 'Montserrat, sans-serif' }}>
-      <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;600;700;900&display=swap" rel="stylesheet" />
+    <div style={{ display: 'flex', minHeight: '100vh', background: '#2a2a2d', fontFamily: 'Montserrat, sans-serif', color: '#f1f5f9' }}>
+      <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400&display=swap" rel="stylesheet" />
       
-      {/* MENU LATERAL MODULAR - PASSANDO userProfile PARA EVITAR 404 */}
-      <MenuLateral 
-        isSidebarOpen={isSidebarOpen} 
-        setIsSidebarOpen={setIsSidebarOpen} 
-        path={path} 
-        router={router} 
-        handleLogout={handleLogout} 
-        userProfile={userProfile}
-      />
+      <MenuLateral isSidebarOpen={isSidebarOpen} setIsSidebarOpen={setIsSidebarOpen} path={path} router={router} handleLogout={handleLogout} userProfile={userProfile} />
 
-      {/* CONTEÚDO PRINCIPAL COM MARGEM DINÂMICA */}
-      <div style={{ 
-        flex: 1, 
-        marginLeft: isSidebarOpen ? '320px' : '85px', 
-        transition: '0.4s ease', 
-        display: 'flex', 
-        flexDirection: 'column', 
-        alignItems: 'center', 
-        padding: '60px 20px' 
-      }}>
+      <div style={{ flex: 1, marginLeft: isSidebarOpen ? '320px' : '85px', transition: '0.4s ease', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '60px 20px' }}>
         
-        <div style={{ width: '100%', maxWidth: '650px', marginBottom: '30px' }}>
-            <button onClick={() => router.push('/')} style={{ background: 'none', border: 'none', color: '#64748b', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '14px' }}>
-                <ArrowLeft size={20} /> VOLTAR AO PAINEL
+        <div style={{ width: '100%', maxWidth: '750px', display: 'flex', justifyContent: 'flex-start' }}>
+            <button onClick={() => router.push('/')} style={{ background: 'none', border: 'none', color: '#9e9e9e', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '15px', marginBottom: '25px' }}>
+                <ArrowLeft size={18} /> Voltar ao Painel
             </button>
         </div>
 
-        <div style={{ background: '#fff', padding: '50px', borderRadius: '35px', width: '100%', maxWidth: '650px', boxShadow: '0 30px 60px rgba(15, 23, 42, 0.05)', border: '1px solid #e2e8f0' }}>
+        <div style={{ width: '100%', maxWidth: '750px', background: '#3f3f44', padding: '60px', borderRadius: '35px', border: '0.5px solid #55555a', boxShadow: '0 30px 80px rgba(0,0,0,0.3)' }}>
           
-          <h2 style={{ color: '#0f172a', fontWeight: '900', fontSize: '28px', textAlign: 'center', marginBottom: '45px', letterSpacing: '-1px' }}>Novo Faturamento</h2>
+          <h2 style={{ color: '#ffffff', fontWeight: '300', fontSize: '32px', textAlign: 'center', marginBottom: '50px', letterSpacing: '-1px' }}>Novo Faturamento</h2>
 
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
             
-            {/* SELETOR DE NOTAS */}
+            {/* TIPO DE NOTA */}
             <div>
-              <label style={labelStyle}>O QUE VOCÊ VAI LANÇAR AGORA?</label>
+              <label style={labelStyle}>Categoria de Nota</label>
               <div style={{ position: 'relative' }}>
-                  <FileText size={20} style={{ position: 'absolute', left: '18px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
-                  <select required style={glassInput} onChange={(e) => setTipoNF(e.target.value)}>
-                      <option value="">Selecione o tipo de nota...</option>
+                  <FileText size={20} style={{ position: 'absolute', left: '18px', top: '50%', transform: 'translateY(-50%)', color: '#6b7280', zIndex: 10 }} />
+                  <select required style={{...inputStyle, appearance: 'none', cursor: 'pointer'}} onChange={(e) => setTipoNF(e.target.value)}>
+                      <option value="">Selecione o tipo...</option>
                       <option value="servico">Nota de Serviço</option>
                       <option value="pecas">Nota de Peças</option>
                       <option value="ambas">Ambas (Serviço e Peças)</option>
@@ -167,53 +180,49 @@ export default function NovoChamadoNF() {
               </div>
             </div>
 
-            {/* INPUTS DE NOTA E ARQUIVO */}
+            {/* DOCUMENTOS DINÂMICOS */}
             {tipoNF && (
-              <div style={{ display:'flex', flexDirection:'column', gap:'25px', padding: '25px', background: '#f8fafc', borderRadius: '25px', border: '1px solid #e2e8f0' }}>
+              <div style={{ display:'flex', flexDirection:'column', gap:'25px', padding: '30px', background: '#242427', borderRadius: '20px', border: '1px solid #55555a' }}>
                 {(tipoNF === 'servico' || tipoNF === 'ambas') && (
                   <div>
-                    <label style={labelStyle}>Nº NOTA DE SERVIÇO</label>
-                    <input type="text" placeholder="Número da Nota" required style={{...glassInput, paddingLeft: '20px'}} onChange={(e)=>setFormData({...formData, num_nf_servico: e.target.value})} />
-                    <label style={{...labelStyle, marginTop: '15px'}}>ANEXAR DOCUMENTO NF SERVIÇO</label>
-                    <input type="file" required style={{fontSize: '13px'}} onChange={(e)=>setFileServico(e.target.files[0])} />
+                    <label style={labelStyle}>Nº Nota Serviço</label>
+                    <input type="text" placeholder="Número" required style={{...inputStyle, paddingLeft: '16px'}} onChange={(e)=>setFormData({...formData, num_nf_servico: e.target.value})} />
+                    <input type="file" required style={{fontSize: '13px', marginTop: '12px', color: '#bdbdbd'}} onChange={(e)=>setFileServico(e.target.files[0])} />
                   </div>
                 )}
                 {(tipoNF === 'pecas' || tipoNF === 'ambas') && (
-                  <div style={{ borderTop: tipoNF === 'ambas' ? '1px solid #e2e8f0' : 'none', paddingTop: tipoNF === 'ambas' ? '25px' : 0 }}>
-                    <label style={labelStyle}>Nº NOTA DE PEÇAS</label>
-                    <input type="text" placeholder="Número da Nota" required style={{...glassInput, paddingLeft: '20px'}} onChange={(e)=>setFormData({...formData, num_nf_peca: e.target.value})} />
-                    <label style={{...labelStyle, marginTop: '15px'}}>ANEXAR DOCUMENTO NF PEÇA</label>
-                    <input type="file" required style={{fontSize: '13px'}} onChange={(e)=>setFilePeca(e.target.files[0])} />
+                  <div style={{ borderTop: tipoNF === 'ambas' ? '1px solid #55555a' : 'none', paddingTop: tipoNF === 'ambas' ? '25px' : 0 }}>
+                    <label style={labelStyle}>Nº Nota Peças</label>
+                    <input type="text" placeholder="Número" required style={{...inputStyle, paddingLeft: '16px'}} onChange={(e)=>setFormData({...formData, num_nf_peca: e.target.value})} />
+                    <input type="file" required style={{fontSize: '13px', marginTop: '12px', color: '#bdbdbd'}} onChange={(e)=>setFilePeca(e.target.files[0])} />
                   </div>
                 )}
               </div>
             )}
 
-            {/* CLIENTE E VALOR */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '25px' }}>
               <div>
-                  <label style={labelStyle}>NOME DO CLIENTE</label>
+                  <label style={labelStyle}>Nome do Cliente</label>
                   <div style={{ position: 'relative' }}>
-                      <User size={20} style={{ position: 'absolute', left: '18px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
-                      <input type="text" placeholder="Nome Completo" required style={glassInput} onChange={(e)=>setFormData({...formData, nom_cliente: e.target.value})} />
+                      <User size={20} style={{ position: 'absolute', left: '18px', top: '50%', transform: 'translateY(-50%)', color: '#6b7280', zIndex: 10 }} />
+                      <input type="text" placeholder="Nome completo" required style={inputStyle} onChange={(e)=>setFormData({...formData, nom_cliente: e.target.value})} />
                   </div>
               </div>
               <div>
-                  <label style={labelStyle}>VALOR TOTAL DO CHAMADO</label>
+                  <label style={labelStyle}>Valor Total</label>
                   <div style={{ position: 'relative' }}>
-                      <Hash size={20} style={{ position: 'absolute', left: '18px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
-                      <input type="number" step="0.01" placeholder="0,00" required style={glassInput} onChange={(e)=>setFormData({...formData, valor_servico: e.target.value})} />
+                      <Hash size={20} style={{ position: 'absolute', left: '18px', top: '50%', transform: 'translateY(-50%)', color: '#6b7280', zIndex: 10 }} />
+                      <input type="number" step="0.01" placeholder="0,00" required style={inputStyle} onChange={(e)=>setFormData({...formData, valor_servico: e.target.value})} />
                   </div>
               </div>
             </div>
 
-            {/* FORMA DE PAGAMENTO */}
             <div>
-              <label style={labelStyle}>FORMA DE PAGAMENTO</label>
+              <label style={labelStyle}>Condição de Pagamento</label>
               <div style={{ position: 'relative' }}>
-                  <CreditCard size={20} style={{ position: 'absolute', left: '18px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
-                  <select required style={glassInput} onChange={(e)=>setFormData({...formData, forma_pagamento: e.target.value})}>
-                      <option value="">Selecione a condição...</option>
+                  <CreditCard size={20} style={{ position: 'absolute', left: '18px', top: '50%', transform: 'translateY(-50%)', color: '#6b7280', zIndex: 10 }} />
+                  <select required style={{...inputStyle, appearance: 'none', cursor: 'pointer'}} onChange={(e)=>setFormData({...formData, forma_pagamento: e.target.value})}>
+                      <option value="">Selecione...</option>
                       <option value="Pix">À vista no Pix</option>
                       <option value="Boleto 30 dias">Boleto 30 dias</option>
                       <option value="Boleto Parcelado">Boleto Parcelado</option>
@@ -223,52 +232,47 @@ export default function NovoChamadoNF() {
               </div>
             </div>
 
-            {/* COMPROVANTE PIX */}
-            {formData.forma_pagamento === 'Pix' && (
+            {/* SEÇÃO DE COMPROVANTE */}
+            {exigeComprovante && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                  <label style={{ fontSize: '16px', fontWeight: '900', color: '#1e40af', textAlign: 'center' }}>COMPROVANTE DE PAGAMENTO OBRIGATÓRIO</label>
+                  <label style={{ fontSize: '13px', fontWeight: '400', color: '#93c5fd', textAlign: 'center', textTransform: 'uppercase', letterSpacing: '1px' }}>Comprovante Obrigatório</label>
                   <label style={{ 
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '20px', 
-                      padding: '30px', background: '#eff6ff', border: '2px dashed #3b82f6', 
-                      borderRadius: '20px', cursor: 'pointer', transition: '0.3s' 
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '18px', 
+                      padding: '28px', background: 'rgba(147, 197, 253, 0.05)', border: '1px dashed #55555a', 
+                      borderRadius: '18px', cursor: 'pointer', transition: '0.3s'
                   }}>
-                    <Upload size={32} color="#3b82f6" />
+                    <Upload size={26} color="#93c5fd" />
                     <div style={{ textAlign: 'left' }}>
-                        <span style={{ fontSize: '18px', fontWeight: '800', color: '#1d4ed8', display: 'block' }}>{filePix ? filePix.name : 'CLIQUE PARA ANEXAR O PIX'}</span>
-                        <span style={{ fontSize: '12px', color: '#60a5fa' }}>Formatos aceitos: PDF, JPG, PNG</span>
+                        <span style={{ fontSize: '15px', fontWeight: '400', color: '#ffffff', display: 'block' }}>{fileComprovante ? fileComprovante.name : 'Selecionar Arquivo'}</span>
+                        <span style={{ fontSize: '12px', color: '#9e9e9e' }}>Conferência obrigatória</span>
                     </div>
-                    <input type="file" required style={{ display: 'none' }} onChange={(e)=>setFilePix(e.target.files[0])} />
+                    <input type="file" required style={{ display: 'none' }} onChange={(e)=>setFileComprovante(e.target.files[0])} />
                   </label>
               </div>
             )}
 
-            {/* DATA PARA PIX, BOLETO 30 DIAS OU CARTÃO A VISTA */}
+            {/* DATAS DINÂMICAS */}
             {(formData.forma_pagamento === 'Pix' || formData.forma_pagamento === 'Boleto 30 dias' || formData.forma_pagamento === 'Cartão a vista') && (
               <div>
-                  <label style={labelStyle}>{formData.forma_pagamento === 'Pix' ? 'DATA DO PAGAMENTO' : 'DATA DE VENCIMENTO'}</label>
+                  <label style={labelStyle}>Data de Vencimento / Referência</label>
                   <div style={{ position: 'relative' }}>
-                    <Calendar size={20} style={{ position: 'absolute', left: '18px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
-                    <input type="date" required style={glassInput} onChange={(e) => {
+                    <Calendar size={20} style={{ position: 'absolute', left: '18px', top: '50%', transform: 'translateY(-50%)', color: '#6b7280', zIndex: 10 }} />
+                    <input type="date" required style={inputStyle} onChange={(e) => {
                       const d = [...datasParcelas]; d[0] = e.target.value; setDatasParcelas(d);
                     }} />
                   </div>
               </div>
             )}
 
-            {/* PARCELAMENTO */}
             {(formData.forma_pagamento === 'Boleto Parcelado' || formData.forma_pagamento === 'Cartão Parcelado') && (
-                <div style={{ background: '#f8fafc', padding: '30px', borderRadius: '25px', border: '1px solid #cbd5e1' }}>
-                  <label style={{...labelStyle, fontSize: '14px'}}>DEFINA AS PARCELAS (MÁX. 5)</label>
-                  <input 
-                    type="number" min="1" max="5" placeholder="Qtd" 
-                    style={{...glassInput, paddingLeft: '20px', marginBottom: '20px'}} 
-                    onChange={(e) => setFormData({...formData, qtd_parcelas: Math.min(5, parseInt(e.target.value) || 1)})} 
-                  />
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                <div style={{ background: '#242427', padding: '35px', borderRadius: '20px', border: '1px solid #55555a' }}>
+                  <label style={{...labelStyle, fontSize: '13px'}}>Número de Parcelas (Máximo 5)</label>
+                  <input type="number" min="1" max="5" placeholder="Quantidade" style={{...inputStyle, paddingLeft: '16px', marginBottom: '25px'}} onChange={(e) => setFormData({...formData, qtd_parcelas: Math.min(5, parseInt(e.target.value) || 1)})} />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
                       {Array.from({ length: formData.qtd_parcelas }).map((_, i) => (
-                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                          <span style={{ fontSize: '13px', fontWeight: '900', color: '#0f172a', minWidth: '100px' }}>{i + 1}ª PARCELA:</span>
-                          <input type="date" required style={{...glassInput, padding: '12px 15px'}} onChange={(e) => {
+                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
+                          <span style={{ fontSize: '13px', fontWeight: '400', color: '#bdbdbd', minWidth: '90px' }}>{i + 1}ª PARC.</span>
+                          <input type="date" required style={{...inputStyle, padding: '12px 18px'}} onChange={(e) => {
                               const d = [...datasParcelas]; d[i] = e.target.value; setDatasParcelas(d);
                           }} />
                         </div>
@@ -277,22 +281,34 @@ export default function NovoChamadoNF() {
                 </div>
             )}
 
-            <div>
-              <label style={labelStyle}>OBSERVAÇÕES ADICIONAIS</label>
-              <textarea placeholder="Ex: Cliente solicita envio por WhatsApp..." style={{...glassInput, paddingLeft: '20px', height:'100px', resize: 'none'}} onChange={(e)=>setFormData({...formData, obs: e.target.value})} />
-            </div>
-
             <button disabled={loading} style={{ 
-              background: '#0f172a', color: '#fff', padding: '22px', borderRadius: '18px', 
-              border: 'none', fontWeight: '900', cursor: loading ? 'not-allowed' : 'pointer',
-              fontSize: '16px', letterSpacing: '1px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px'
+                background: loading ? '#55555a' : '#93c5fd20', 
+                color: '#93c5fd', 
+                border: '1px solid #93c5fd', 
+                padding: '22px', 
+                borderRadius: '18px', 
+                fontWeight: '400', 
+                cursor: loading ? 'not-allowed' : 'pointer', 
+                fontSize: '17px', 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center', 
+                gap: '12px',
+                transition: '0.3s',
+                opacity: 0.9
             }}>
-              {loading ? 'GERANDO CHAMADO...' : <><CheckCircle size={22}/> FINALIZAR E ENVIAR AO FLUXO</>}
+              {loading ? 'Processando Registro...' : <><CheckCircle size={20}/> Registrar Faturamento</>}
             </button>
-
           </form>
         </div>
       </div>
+
+      <style jsx global>{`
+        * { font-weight: 400 !important; }
+        input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.9); }
+        select { appearance: none; }
+        button:hover { opacity: 1 !important; transform: translateY(-1px); transition: 0.2s; }
+      `}</style>
     </div>
   )
 }

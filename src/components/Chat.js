@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Paperclip, Eye, FileIcon, ImageIcon, Send, X, CheckCheck, MessageSquare } from 'lucide-react'
+import { Paperclip, FileIcon, Send, X, CheckCheck, MessageSquare } from 'lucide-react'
 
 export default function Chat({ userProfile }) {
   const [isOpen, setIsOpen] = useState(false)
@@ -12,14 +12,13 @@ export default function Chat({ userProfile }) {
 
   // 1. CARREGAR MENSAGENS E ATIVAR REALTIME
   useEffect(() => {
-    // Se não tiver perfil, não faz nada para não dar erro
     if (!userProfile?.id) return
 
     const loadMensagens = async () => {
       const { data, error } = await supabase
         .from('mensagens_chat')
         .select('*')
-        .is('chamado_id', null) // Apenas chat global
+        .is('chamado_id', null)
         .order('created_at', { ascending: true })
         .limit(100)
       
@@ -28,38 +27,47 @@ export default function Chat({ userProfile }) {
 
     loadMensagens()
 
-    // ESCUTA TUDO E FILTRA NO CLIENTE (MAIS SEGURO)
-    const channel = supabase.channel('chat_global_room')
+    // CANAL REALTIME
+    const channel = supabase.channel(`chat_global_${userProfile.id}`)
       .on('postgres_changes', { 
         event: 'INSERT', 
         schema: 'public', 
         table: 'mensagens_chat'
       }, (payload) => {
-        // Só adiciona se for chat global (chamado_id nulo)
-        if (!payload.new.chamado_id) {
-          setMensagens(prev => {
-            // Verifica se a mensagem já não está lá (evita duplicar com o optimistic update)
-            const existe = prev.find(m => m.id === payload.new.id || (m.texto === payload.new.texto && m.tempId));
-            if (existe) return prev;
-            return [...prev, payload.new];
-          });
+        
+        // FILTRO MANUAL: Só processa se for mensagem geral (chamado_id nulo)
+        if (payload.new.chamado_id !== null) return;
+
+        // Notificação de som
+        if (String(payload.new.usuario_id) !== String(userProfile.id)) {
+          const somEscolhido = userProfile?.som_notificacao || 'som-notificacao-1.mp3'
+          new Audio(`/${somEscolhido}`).play().catch(() => {})
         }
+
+        setMensagens(prev => {
+          const jaExiste = prev.some(m => 
+            String(m.id) === String(payload.new.id) || 
+            (m.tempId && m.texto === payload.new.texto && String(m.usuario_id) === String(payload.new.usuario_id))
+          );
+
+          if (jaExiste) {
+            return prev.map(m => 
+              (m.tempId && m.texto === payload.new.texto) ? payload.new : m
+            );
+          }
+          return [...prev, payload.new];
+        });
       })
-      .on('postgres_changes', { 
-        event: 'UPDATE', 
-        schema: 'public', 
-        table: 'mensagens_chat' 
-      }, (payload) => {
-        setMensagens(prev => prev.map(m => m.id === payload.new.id ? payload.new : m));
+      .subscribe((status) => {
+        console.log("🔔 Status Realtime:", status)
       })
-      .subscribe()
 
     return () => {
       supabase.removeChannel(channel)
     }
   }, [userProfile?.id])
 
-  // 2. AUTO-SCROLL SEMPRE QUE A MENSAGEM MUDA
+  // 2. AUTO-SCROLL
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
@@ -68,15 +76,14 @@ export default function Chat({ userProfile }) {
 
   // 3. ENVIAR MENSAGEM
   const enviarMsg = async (e) => {
-    e.preventDefault() 
+    if (e) e.preventDefault() 
     if (!novaMsg.trim() || !userProfile?.id) return
 
     const textoEnvio = novaMsg
-    setNovaMsg('') // Limpa o campo na hora para dar sensação de velocidade
+    setNovaMsg('') 
 
-    // MENSAGEM OTIMISTA (Aparece na tela antes de ir pro banco)
     const msgOtimista = {
-      id: Math.random(), // id temporário
+      id: `temp-${Date.now()}`,
       tempId: true,
       texto: textoEnvio,
       usuario_id: userProfile.id,
@@ -97,28 +104,20 @@ export default function Chat({ userProfile }) {
     }])
 
     if (error) {
-      console.error("Erro ao enviar:", error)
-      // Se deu erro, remove a mensagem otimista da tela
+      console.error("Erro no envio:", error)
       setMensagens(prev => prev.filter(m => m.id !== msgOtimista.id))
-      alert("Falha ao enviar mensagem.")
     }
   }
 
-  // 4. UPLOAD DE ARQUIVOS
+  // 4. UPLOAD
   const handleUpload = async (e) => {
     const file = e.target.files[0]
     if (!file || !userProfile?.id) return
-    
     setUploading(true)
     try {
-      const fileExt = file.name.split('.').pop()
-      const fileName = `${Date.now()}.${fileExt}`
-      
-      const { error: uploadError } = await supabase.storage
-        .from('chat-midia')
-        .upload(fileName, file)
-
-      if (uploadError) throw uploadError
+      const fileName = `${Date.now()}-${file.name.replace(/\s/g, '_')}`
+      const { error: upErr } = await supabase.storage.from('chat-midia').upload(fileName, file)
+      if (upErr) throw upErr
 
       const { data: { publicUrl } } = supabase.storage.from('chat-midia').getPublicUrl(fileName)
 
@@ -128,58 +127,100 @@ export default function Chat({ userProfile }) {
         usuario_id: userProfile.id,
         usuario_nome: userProfile.nome,
         chamado_id: null,
-        data_hora: new Date().toISOString(),
-        visualizado_por: [userProfile.id]
+        data_hora: new Date().toISOString()
       }])
     } catch (err) {
-      alert("Erro no upload: " + err.message)
+      alert("Erro upload: " + err.message)
     } finally {
       setUploading(false)
     }
   }
 
   return (
-    <div style={{ position: 'fixed', bottom: '30px', right: '30px', zIndex: 9999, fontFamily: 'Montserrat' }}>
+    <div style={{ position: 'fixed', bottom: '30px', right: '30px', zIndex: 9999, fontFamily: 'Montserrat, sans-serif' }}>
+      
       {isOpen && (
-        <div style={{ position: 'absolute', bottom: '85px', right: 0, width: '380px', height: '550px', background: 'white', borderRadius: '25px', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 50px rgba(0,0,0,0.2)', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+        <div style={{ 
+          position: 'absolute', 
+          bottom: '100px', 
+          right: 0, 
+          width: '520px', // Aumentado
+          height: '750px', // Aumentado
+          background: '#ffffff', 
+          borderRadius: '45px', // Mais arredondado
+          display: 'flex', 
+          flexDirection: 'column', 
+          boxShadow: '0 50px 100px rgba(15, 23, 42, 0.35)', 
+          border: '1px solid #e2e8f0', 
+          overflow: 'hidden',
+          animation: 'zoomIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)'
+        }}>
           
-          <div style={{ padding: '20px', background: '#0f172a', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontWeight: '900', fontSize: '13px', letterSpacing: '1px' }}>CHAT GERAL NOVA</span>
-            <X size={20} onClick={() => setIsOpen(false)} style={{ cursor: 'pointer', opacity: 0.7 }} />
+          {/* HEADER COM GRADIENTE */}
+          <div style={{ 
+            padding: '35px', 
+            background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', 
+            color: 'white', 
+            display: 'flex', 
+            justifyContent: 'space-between', 
+            alignItems: 'center',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
+          }}>
+            <div>
+              <span style={{ fontWeight: '900', fontSize: '17px', letterSpacing: '1.5px', display: 'block', textTransform: 'uppercase' }}>Comunicação Interna</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+                <div style={{ width: '8px', height: '8px', background: '#22c55e', borderRadius: '50%', boxShadow: '0 0 10px #22c55e' }}></div>
+                <span style={{ fontSize: '12px', opacity: 0.8, fontWeight: '600', letterSpacing: '0.5px' }}>SISTEMA ONLINE</span>
+              </div>
+            </div>
+            <div 
+              onClick={() => setIsOpen(false)} 
+              style={{ background: 'rgba(255,255,255,0.15)', padding: '12px', borderRadius: '18px', cursor: 'pointer', transition: '0.3s' }}
+              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.25)'}
+              onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.15)'}
+            >
+              <X size={24} style={{ opacity: 0.9 }} />
+            </div>
           </div>
 
-          <div ref={scrollRef} style={{ flex: 1, padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px', background: '#f8fafc' }}>
+          {/* ÁREA DE MENSAGENS AMPLIADA */}
+          <div ref={scrollRef} style={{ flex: 1, padding: '30px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '22px', background: '#f1f5f9' }}>
             {mensagens.map(m => {
-              const souEu = m.usuario_id === userProfile?.id
+              const souEu = String(m.usuario_id) === String(userProfile?.id)
               const hora = m.data_hora ? new Date(m.data_hora).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ""
               return (
                 <div key={m.id} style={{ alignSelf: souEu ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>
                   <div style={{ 
-                    background: souEu ? '#0f172a' : 'white', 
+                    background: souEu ? 'linear-gradient(135deg, #2563eb 0%, #0f172a 100%)' : '#ffffff', 
                     color: souEu ? 'white' : '#1e293b', 
-                    padding: '12px 16px', 
-                    borderRadius: souEu ? '18px 18px 2px 18px' : '18px 18px 18px 2px',
-                    boxShadow: '0 2px 5px rgba(0,0,0,0.05)',
-                    border: souEu ? 'none' : '1px solid #e2e8f0'
+                    padding: '18px 24px', 
+                    borderRadius: souEu ? '30px 30px 4px 30px' : '30px 30px 30px 4px',
+                    boxShadow: souEu ? '0 15px 30px rgba(37, 99, 235, 0.2)' : '0 10px 25px rgba(0,0,0,0.05)',
+                    border: souEu ? 'none' : '1px solid #e2e8f0',
+                    position: 'relative'
                   }}>
-                    {!souEu && <b style={{ fontSize: '9px', display: 'block', opacity: 0.5, marginBottom: '4px', textTransform: 'uppercase' }}>{m.usuario_nome}</b>}
+                    {!souEu && (
+                      <b style={{ fontSize: '12px', display: 'block', color: '#3b82f6', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.8px' }}>
+                        {m.usuario_nome}
+                      </b>
+                    )}
                     
                     {m.midia_url && (
-                      <div style={{ marginBottom: '8px' }}>
+                      <div style={{ marginBottom: '15px' }}>
                         {m.midia_url.match(/\.(jpeg|jpg|gif|png|webp)$/i) 
-                          ? <img src={m.midia_url} alt="imagem" style={{ width: '100%', borderRadius: '10px', cursor: 'pointer' }} onClick={() => window.open(m.midia_url)} />
-                          : <a href={m.midia_url} target="_blank" rel="noreferrer" style={{ fontSize: '11px', color: souEu ? '#38bdf8' : '#2563eb', display: 'flex', alignItems: 'center', gap: '5px', textDecoration: 'none', background: 'rgba(0,0,0,0.05)', padding: '8px', borderRadius: '8px' }}>
-                              <FileIcon size={16} /> Ver Documento
+                          ? <img src={m.midia_url} alt="imagem" style={{ width: '100%', borderRadius: '20px', cursor: 'pointer', transition: '0.4s', boxShadow: '0 5px 15px rgba(0,0,0,0.1)' }} onClick={() => window.open(m.midia_url)} />
+                          : <a href={m.midia_url} target="_blank" rel="noreferrer" style={{ fontSize: '14px', color: souEu ? '#7dd3fc' : '#2563eb', display: 'flex', alignItems: 'center', gap: '10px', textDecoration: 'none', fontWeight: '700', padding: '10px', background: 'rgba(0,0,0,0.05)', borderRadius: '12px' }}>
+                              <FileIcon size={20} /> VER ARQUIVO
                             </a>
                         }
                       </div>
                     )}
 
-                    <span style={{ fontSize: '14px', lineHeight: '1.4' }}>{m.texto}</span>
+                    <span style={{ fontSize: '15px', lineHeight: '1.7', fontWeight: '500' }}>{m.texto}</span>
                     
-                    <div style={{ textAlign: 'right', fontSize: '9px', opacity: 0.5, marginTop: '6px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
+                    <div style={{ textAlign: 'right', fontSize: '11px', opacity: 0.7, marginTop: '10px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
                       {hora}
-                      {souEu && <CheckCheck size={14} color={m.visualizado_por?.length > 1 ? "#38bdf8" : "#94a3b8"} />}
+                      {souEu && <CheckCheck size={18} color={m.visualizado_por?.length > 1 ? "#38bdf8" : "#94a3b8"} />}
                     </div>
                   </div>
                 </div>
@@ -187,31 +228,95 @@ export default function Chat({ userProfile }) {
             })}
           </div>
 
-          <form onSubmit={enviarMsg} style={{ padding: '15px', display: 'flex', gap: '10px', borderTop: '1px solid #e2e8f0', background: 'white', alignItems: 'center' }}>
-            <label style={{ cursor: 'pointer', padding: '8px', borderRadius: '50%', background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Paperclip size={20} color="#64748b" />
+          {/* RODAPÉ / INPUT ESTILIZADO */}
+          <form onSubmit={enviarMsg} style={{ padding: '30px', display: 'flex', gap: '20px', borderTop: '1px solid #e2e8f0', background: 'white', alignItems: 'center' }}>
+            <label style={{ cursor: 'pointer', padding: '15px', borderRadius: '22px', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: '0.3s', border: '1px solid #e2e8f0' }} onMouseEnter={(e)=>e.currentTarget.style.background='#f1f5f9'}>
+              <Paperclip size={24} color="#64748b" />
               <input type="file" style={{ display: 'none' }} onChange={handleUpload} disabled={uploading} />
             </label>
             
             <input 
               value={novaMsg} 
               onChange={e => setNovaMsg(e.target.value)} 
-              placeholder={uploading ? "Enviando..." : "Digite uma mensagem..."} 
-              style={{ flex: 1, border: '1px solid #e2e8f0', borderRadius: '15px', padding: '12px 15px', fontSize: '14px', outline: 'none', background: '#f8fafc' }} 
+              placeholder={uploading ? "Fazendo upload..." : "Digite uma mensagem..."} 
+              style={{ 
+                flex: 1, 
+                border: '1.5px solid #e2e8f0', 
+                borderRadius: '25px', 
+                padding: '20px 28px', 
+                fontSize: '15px', 
+                outline: 'none', 
+                background: '#f8fafc',
+                transition: '0.3s',
+                fontWeight: '500'
+              }} 
+              onFocus={(e) => e.target.style.borderColor = '#0f172a'}
+              onBlur={(e) => e.target.style.borderColor = '#e2e8f0'}
             />
             
-            <button type="submit" style={{ background: '#0f172a', color: 'white', border: 'none', borderRadius: '15px', width: '45px', height: '45px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-              <Send size={18} />
+            <button 
+              type="submit" 
+              disabled={!novaMsg.trim()} 
+              style={{ 
+                background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', 
+                color: 'white', 
+                border: 'none', 
+                borderRadius: '25px', 
+                width: '65px', 
+                height: '65px', 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center', 
+                cursor: 'pointer',
+                boxShadow: '0 15px 30px rgba(15, 23, 42, 0.3)',
+                transition: '0.4s'
+              }}
+              onMouseEnter={(e) => {
+                if(!novaMsg.trim()) return;
+                e.currentTarget.style.transform = 'scale(1.05) rotate(5deg)';
+              }}
+              onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1) rotate(0deg)'}
+            >
+              <Send size={28} />
             </button>
           </form>
         </div>
       )}
 
+      {/* BOTÃO TOGGLE PRINCIPAL */}
       <button 
         onClick={() => setIsOpen(!isOpen)} 
-        style={{ width: '70px', height: '70px', borderRadius: '22px', background: '#0f172a', color: 'white', border: 'none', cursor: 'pointer', boxShadow: '0 10px 30px rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        {isOpen ? <X size={32}/> : <MessageSquare size={32}/>}
+        style={{ 
+          width: '85px', 
+          height: '85px', 
+          borderRadius: '30px', 
+          background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', 
+          color: 'white', 
+          border: 'none', 
+          cursor: 'pointer', 
+          boxShadow: '0 25px 50px rgba(15, 23, 42, 0.4)', 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'center',
+          transition: '0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+          position: 'relative'
+        }}
+        onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.1) translateY(-8px)'}
+        onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1) translateY(0)'}
+      >
+        {isOpen ? <X size={40}/> : <MessageSquare size={40}/>}
+        
+        {!isOpen && mensagens.length > 0 && (
+           <div style={{ position: 'absolute', top: '-5px', right: '-5px', background: '#ef4444', width: '25px', height: '25px', borderRadius: '50%', border: '4px solid #f1f5f9' }}></div>
+        )}
       </button>
+
+      <style jsx>{`
+        @keyframes zoomIn {
+          from { opacity: 0; transform: scale(0.9) translateY(40px); }
+          to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+      `}</style>
     </div>
   )
 }
