@@ -142,7 +142,11 @@ export default function Kanban() {
        cardsProcessados.push({
         ...c, id_virtual: `${c.id}_p${numParc}`, nom_cliente: `${c.nom_cliente} (P${numParc})`,
         vencimento_boleto: dataParc, valor_exibicao: c[`valor_parcela${numParc}`] || (c.valor_servico / c.qtd_parcelas).toFixed(2),
-        status: st, isChild: true, pNum: numParc, gTipo: 'boleto'
+        status: st, isChild: true, pNum: numParc, gTipo: 'boleto',
+        anexo_boleto_final: c[`anexo_boleto_p${numParc}`],
+        anexo_nf_servico_final: c[`anexo_nf_servico_p${numParc}`],
+        anexo_nf_peca_final: c[`anexo_nf_peca_p${numParc}`],
+        comprovante_pagamento_final: c[`comprovante_pagamento_p${numParc}`]
        });
       }
      } else {
@@ -153,7 +157,16 @@ export default function Kanban() {
       if (st === 'aguardando_vencimento' && venc && venc < hoje) {
        st = 'vencido';
       }
-      cardsProcessados.push({ ...c, valor_exibicao: c.valor_servico, status: st, gTipo: 'boleto' });
+      cardsProcessados.push({ 
+        ...c, 
+        valor_exibicao: c.valor_servico, 
+        status: st, 
+        gTipo: 'boleto',
+        anexo_boleto_final: c.anexo_boleto,
+        anexo_nf_servico_final: c.anexo_nf_servico,
+        anexo_nf_peca_final: c.anexo_nf_peca,
+        comprovante_pagamento_final: c.comprovante_pagamento
+      });
      }
     }
     setChamados(cardsProcessados);
@@ -183,19 +196,51 @@ export default function Kanban() {
     carregarDados();
  };
 
- const handleGerarBoletoFaturamentoFinal = async (id) => {
-  if (!fileBoleto) return alert("Anexe o arquivo.");
-  const idReal = String(id).includes('_p') ? id.split('_p')[0] : id;
-  const path = `boletos/${Date.now()}-${fileBoleto.name}`;
-  await supabase.storage.from('anexos').upload(path, fileBoleto);
-  const { data } = supabase.storage.from('anexos').getPublicUrl(path);
-  
-  const updateData = String(id).includes('_p') ? 
-    { [`status_p${id.split('_p')[1]}`]: 'enviar_cliente', anexo_boleto: data.publicUrl } : 
-    { status: 'enviar_cliente', anexo_boleto: data.publicUrl };
+ const handleUpdateFileDirect = async (id, field, file) => {
+    if(!file) return;
+    try {
+      const isChild = String(id).includes('_p');
+      const idReal = isChild ? id.split('_p')[0] : id;
+      const path = `anexos/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+      const { error: uploadError } = await supabase.storage.from('anexos').upload(path, file);
+      if (uploadError) throw uploadError;
+      const { data: linkData } = supabase.storage.from('anexos').getPublicUrl(path);
+      
+      const pNum = isChild ? id.split('_p')[1] : null;
+      let col = field;
+      
+      if (isChild && ['anexo_boleto', 'comprovante_pagamento'].includes(field)) {
+          col = `${field}_p${pNum}`;
+      } else if (isChild && !['num_nf_servico', 'num_nf_peca', 'obs'].includes(field)) {
+          col = `${field}_p${pNum}`;
+      }
+      
+      await supabase.from('Chamado_NF').update({ [col]: linkData.publicUrl }).eq('id', idReal);
+      alert("Arquivo atualizado!");
+      carregarDados();
+      if(tarefaSelecionada) setTarefaSelecionada(prev => ({ ...prev, [field + '_final']: linkData.publicUrl }));
+    } catch (err) { alert("Erro: " + err.message); }
+ };
 
-  await supabase.from('Chamado_NF').update(updateData).eq('id', idReal);
-  setTarefaSelecionada(null); carregarDados();
+ const handleConfirmarEnvioPV = async (t) => {
+    const isChild = !!t.id_virtual;
+    const idReal = t.id;
+    const pNum = isChild ? t.id_virtual.split('_p')[1] : null;
+    
+    let updateData = isChild ? { 
+        [`status_p${pNum}`]: 'aguardando_vencimento',
+        [`tarefa_p${pNum}`]: 'Aguardando Vencimento'
+    } : { 
+        status: 'aguardando_vencimento',
+        tarefa: 'Aguardando Vencimento'
+    };
+
+    const { error } = await supabase.from('Chamado_NF').update(updateData).eq('id', idReal);
+    if (!error) {
+        alert("Card movido para Aguardando Vencimento!");
+        setTarefaSelecionada(null);
+        carregarDados();
+    }
  };
 
  // LÓGICA DE FILTRAGEM TRIPLA
@@ -217,7 +262,6 @@ export default function Kanban() {
     <header style={{ padding: '50px 50px 30px 50px' }}>
      <h1 style={{ fontWeight: '300', fontSize:'52px', color:'#f8fafc', letterSpacing:'-2px', marginBottom: '30px' }}>Fluxo Financeiro</h1>
      
-     {/* ÁREA DE FILTROS ALINHADA À ESQUERDA */}
      <div style={{ display:'flex', gap:'20px', flexWrap:'wrap', justifyContent: 'flex-start' }}>
         <div style={{ position: 'relative', width: '350px' }}>
             <Search size={20} style={iconFilterStyle} />
@@ -235,13 +279,11 @@ export default function Kanban() {
      </div>
     </header>
 
-    {/* CONTAINER DO KANBAN COM BARRA DE ROLAGEM HORIZONTAL PERSISTENTE */}
     <div style={{ flex: 1, display: 'flex', gap: '25px', overflowX: 'auto', overflowY: 'hidden', padding: '0 50px 40px 50px', boxSizing: 'border-box' }}>
      {colunas.map(col => (
       <div key={col.id} style={{ minWidth: '420px', flex: 1, display: 'flex', flexDirection: 'column' }}>
        <h3 style={{ background: '#313134', color: '#9e9e9e', padding: '20px', borderRadius: '16px', marginBottom: '25px', textAlign: 'center', fontWeight:'400', fontSize:'16px', letterSpacing:'1px', border: '1px solid #55555a', flexShrink: 0 }}>{col.titulo}</h3>
        
-       {/* ÁREA DE CARDS COM SCROLL VERTICAL INDEPENDENTE */}
        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '20px', overflowY: 'auto', paddingRight: '5px' }}>
         {chamadosFiltrados.filter(c => c.status === col.id).map(t => (
          <div key={t.id_virtual || t.id} onClick={() => setTarefaSelecionada(t)} className="kanban-card">
@@ -273,7 +315,7 @@ export default function Kanban() {
         
         <div style={{display:'flex', gap:'30px', marginBottom:'45px'}}>
           <div style={fieldBoxModal}><label style={labelModalStyle}>Condição</label><p style={pModalStyle}>{tarefaSelecionada.forma_pagamento?.toUpperCase()}</p></div>
-          <div style={fieldBoxModal}><label style={labelModalStyle}>Valor Aberto</label><p style={{...pModalStyle, fontSize:'36px'}}>R$ {tarefaSelecionada.valor_exibicao}</p></div>
+          <div style={fieldBoxModal}><label style={labelModalStyle}>Valor Aberto</label><p style={{...pModalStyle, fontSize:'32px'}}>R$ {tarefaSelecionada.valor_exibicao}</p></div>
           <div style={fieldBoxModal}><label style={labelModalStyle}>Vencimento</label><p style={{...pModalStyle, color: tarefaSelecionada.status === 'vencido' ? '#fca5a5' : '#fff'}}>{formatarDataBR(tarefaSelecionada.vencimento_boleto)}</p></div>
         </div>
 
@@ -283,19 +325,35 @@ export default function Kanban() {
           <div style={{gridColumn:'span 2', ...fieldBoxInner}}><label style={labelModalStyle}>Observações Financeiras</label><textarea style={{...inputStyleModal, height:'130px', resize: 'none'}} defaultValue={tarefaSelecionada.obs} onBlur={e => handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'obs', e.target.value)} /></div>
         </div>
 
+        <div style={{marginTop:'40px'}}>
+            <label style={labelModalStyle}>Anexos e Documentos</label>
+            <div style={{display:'flex', gap:'15px', flexWrap:'wrap', marginTop:'15px'}}>
+                <AttachmentTag label="NF SERVIÇO" fileUrl={tarefaSelecionada.anexo_nf_servico_final} onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'anexo_nf_servico', file)} />
+                <AttachmentTag label="NF PEÇA" fileUrl={tarefaSelecionada.anexo_nf_peca_final} onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'anexo_nf_peca', file)} />
+                {/* BOLETO: APENAS VISUALIZAÇÃO NO PÓS-VENDAS */}
+                <AttachmentTag label="BOLETO" fileUrl={tarefaSelecionada.anexo_boleto_final} disabled={true} />
+                
+                {/* COMPROVANTE: APARECE SOMENTE NO PAGO OU VENCIDO */}
+                {(tarefaSelecionada.status === 'pago' || tarefaSelecionada.status === 'vencido') && (
+                  <AttachmentTag label="COMPROVANTE" fileUrl={tarefaSelecionada.comprovante_pagamento_final} onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'comprovante_pagamento', file)} />
+                )}
+            </div>
+        </div>
+
         <div style={{marginTop:'50px'}}>
-          {tarefaSelecionada.status === 'gerar_boleto' && (
-            <div style={{background:'#242427', padding:'40px', borderRadius:'28px', border:'1px solid #3b82f650'}}>
-               <label style={{...labelModalStyle, color:'#60a5fa', fontSize: '18px'}}>ANEXAR BOLETO FINAL</label>
-               <div style={{display:'flex', gap:'25px', marginTop:'25px', alignItems: 'center'}}>
-                  <input type="file" onChange={e => setFileBoleto(e.target.files[0])} style={{fontSize: '16px', color: '#bdbdbd'}} />
-                  <button onClick={() => handleGerarBoletoFaturamentoFinal(tarefaSelecionada.id_virtual || tarefaSelecionada.id)} style={{background:'#3b82f6', color:'#fff', padding:'16px 35px', border:'none', borderRadius:'14px', cursor:'pointer', fontSize: '16px'}}>Processar Boleto</button>
-               </div>
+          {tarefaSelecionada.status === 'enviar_cliente' && (
+            <div style={{background:'#242427', padding:'40px', borderRadius:'28px', border:'1px solid #22c55e50'}}>
+                <label style={{...labelModalStyle, color:'#4ade80', fontSize: '18px'}}>AÇÃO REQUERIDA</label>
+                <p style={{color: '#9e9e9e', marginBottom: '25px', fontSize: '14px'}}>Confirme abaixo após realizar o envio dos documentos ao cliente.</p>
+                <button onClick={() => handleConfirmarEnvioPV(tarefaSelecionada)} style={{background:'#22c55e', color:'#fff', padding:'20px 45px', border:'none', borderRadius:'14px', cursor:'pointer', fontSize: '18px', display:'flex', alignItems:'center', gap:'15px', transition:'0.3s'}}>
+                    <Send size={22}/> MARCAR COMO ENVIADO AO CLIENTE
+                </button>
             </div>
           )}
         </div>
       </div>
 
+      {/* CHAT FLUTUANTE */}
       <div style={{ flex: '0.8', padding: '40px', background: '#2a2a2d', borderLeft:'1px solid #55555a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
        <div style={{ width: '95%', height: '92%' }}>
         {userProfile && <ChatChamado registroId={tarefaSelecionada?.id} tipo="boleto" userProfile={userProfile} />}
@@ -324,12 +382,35 @@ export default function Kanban() {
  )
 }
 
+// --- COMPONENTE TAG DE ANEXO ---
+function AttachmentTag({ label, fileUrl, onUpload, disabled = false }) {
+    const fileInputRef = useRef(null);
+    return (
+        <div style={{ display: 'flex', alignItems: 'center', background: '#3f3f44', border: '1px solid #55555a', borderRadius: '12px', overflow: 'hidden', minWidth:'260px' }}>
+            <span style={{ padding: '12px 18px', fontSize: '13px', color: fileUrl ? '#4ade80' : '#9e9e9e', borderRight: '1px solid #55555a', flex: 1, whiteSpace: 'nowrap' }}>{label}</span>
+            <div style={{ display: 'flex' }}>
+                {fileUrl && (
+                    <button title="Ver arquivo" onClick={() => window.open(fileUrl, '_blank')} style={miniActionBtn}><Eye size={18} /></button>
+                )}
+                {!disabled && (
+                    <>
+                        <button title="Trocar arquivo" onClick={() => fileInputRef.current.click()} style={miniActionBtn}><RefreshCw size={18} /></button>
+                        <input type="file" ref={fileInputRef} hidden onChange={(e) => onUpload(e.target.files[0])} />
+                    </>
+                )}
+            </div>
+        </div>
+    );
+}
+
+// ESTILOS ADICIONAIS
 const inputFilterStyle = { padding: '16px 20px 16px 52px', width: '100%', borderRadius: '14px', border: '1px solid #55555a', outline: 'none', background:'#3f3f44', fontWeight:'400', color:'#fff', fontSize: '18px', boxSizing: 'border-box' };
 const iconFilterStyle = { position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', color: '#9e9e9e', zIndex: 10 };
 const cardInfoStyle = { display:'flex', alignItems:'center', gap:'12px', color:'#d1d5db', fontSize:'15px', marginBottom:'10px' };
 const miniTagStyle = { background:'#3f3f44', padding:'10px 15px', borderRadius:'12px', fontSize:'12px', color:'#fff', display:'inline-flex', alignItems:'center', gap:'8px', border:'1px solid #55555a' };
-const inputStyleModal = { width: '100%', padding: '20px', border: '1px solid #55555a', borderRadius: '15px', outline: 'none', background:'#242427', color:'#fff', fontSize: '18px' };
+const inputStyleModal = { width: '100%', padding: '20px', border: '1px solid #55555a', borderRadius: '15px', outline: 'none', background:'#242427', color:'#fff', fontSize: '18px', boxSizing: 'border-box' };
 const labelModalStyle = { fontSize:'18px', color:'#9e9e9e', letterSpacing:'0.5px', textTransform:'uppercase', marginBottom:'15px', display:'block' };
 const pModalStyle = { fontSize:'36px', color:'#fff', margin:'0' };
 const fieldBoxModal = { border: '1px solid #55555a', padding: '25px', borderRadius: '22px', background: '#2a2a2d', flex: 1 };
 const fieldBoxInner = { padding: '10px', borderRadius: '14px', background: 'transparent' };
+const miniActionBtn = { background: 'transparent', border: 'none', padding: '12px 15px', color: '#fff', cursor: 'pointer', transition: '0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center' };
