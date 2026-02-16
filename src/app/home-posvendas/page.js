@@ -1,4 +1,3 @@
-
 'use client'
 import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -6,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import MenuLateral from '@/components/MenuLateral'
 import { 
   X, Send, ArrowLeft, RefreshCw, MessageSquare, PlusCircle, CheckCircle, 
-  FileText, Download, Eye, Calendar, CreditCard, User as UserIcon, Tag, Search, DollarSign
+  FileText, Download, Eye, Calendar, CreditCard, User as UserIcon, Tag, Search, DollarSign, Upload
 } from 'lucide-react'
 
 // --- 1. TELA DE CARREGAMENTO PADRONIZADA ---
@@ -102,9 +101,15 @@ export default function HomePosVendas() {
     const { data: bolds } = await supabase.from('Chamado_NF').select('*').neq('status', 'concluido').order('id', {ascending: false});
     let tarefasPv = [];
     (bolds || []).forEach(t => {
-      // Regra para carregar tarefas PV
       if (t.status === 'enviar_cliente' || t.tarefa?.includes('Cobrar')) {
-        tarefasPv.push({ ...t, valor_exibicao: t.valor_servico, cont_cob: t.recombrancas_qtd || 0 });
+        tarefasPv.push({ 
+          ...t, 
+          valor_exibicao: t.valor_servico, 
+          cont_cob: t.recombrancas_qtd || 0,
+          anexo_boleto_final: t.anexo_boleto,
+          anexo_nf_servico_final: t.anexo_nf_servico,
+          anexo_nf_peca_final: t.anexo_nf_peca
+        });
       }
       for (let i = 1; i <= t.qtd_parcelas; i++) { 
         if (t[`status_p${i}`] === 'enviar_cliente' || t[`tarefa_p${i}`]?.includes('Cobrar')) {
@@ -120,7 +125,10 @@ export default function HomePosVendas() {
             tarefa: t[`tarefa_p${i}`],
             cont_cob: t[`recombrancas_qtd_p${i}`] || 0,
             vencimento_boleto: t.datas_parcelas?.split(/[\s,]+/)[i-1] || t.vencimento_boleto,
-            num_parcela: i
+            num_parcela: i,
+            anexo_boleto_final: t[`anexo_boleto_p${i}`],
+            anexo_nf_servico_final: t[`anexo_nf_servico_p${i}`],
+            anexo_nf_peca_final: t[`anexo_nf_peca_p${i}`]
           }); 
         } 
       }
@@ -133,7 +141,6 @@ export default function HomePosVendas() {
     setListaPagar(pag || []); setListaReceber(rec || []); setListaRH(rh || []);
   };
 
-  // --- BLOCO REALTIME CONFIGURADO ---
   useEffect(() => {
     const channel = supabase
       .channel('home_pv_realtime')
@@ -146,11 +153,41 @@ export default function HomePosVendas() {
     return () => { supabase.removeChannel(channel) };
   }, []);
 
+  const handleUpdateFileDirect = async (t, field, file) => {
+    if(!file) return;
+    try {
+      const isChild = !!t.id_virtual;
+      const idReal = t.id;
+      const path = `anexos/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+      const { error: uploadError } = await supabase.storage.from('anexos').upload(path, file);
+      if (uploadError) throw uploadError;
+      const { data: linkData } = supabase.storage.from('anexos').getPublicUrl(path);
+      
+      const pNum = isChild ? t.id_virtual.split('_p')[1] : null;
+      let col = field;
+      
+      // Mapeamento dinâmico para colunas _p1...p5 caso seja parcela
+      if (isChild && !['num_nf_servico', 'num_nf_peca', 'obs'].includes(field)) {
+          col = `${field}_p${pNum}`;
+      }
+      
+      await supabase.from('Chamado_NF').update({ [col]: linkData.publicUrl }).eq('id', idReal);
+      alert("Documento atualizado com sucesso!");
+      carregarDados();
+      // Atualiza o estado local do modal para refletir a mudança
+      if(tarefaSelecionada) {
+          const fieldMap = {
+              'anexo_nf_servico': 'anexo_nf_servico_final',
+              'anexo_nf_peca': 'anexo_nf_peca_final'
+          };
+          setTarefaSelecionada(prev => ({ ...prev, [fieldMap[field]]: linkData.publicUrl }));
+      }
+    } catch (err) { alert("Erro ao enviar: " + err.message); }
+  };
+
   const handleConcluirRecobranca = async (t) => {
     const isParcela = !!t.id_virtual;
     const pNum = t.num_parcela;
-    
-    // Deixa em VENCIDO até o financeiro mudar, apenas atualiza a tarefa
     let updateData = isParcela ? {
         [`status_p${pNum}`]: 'vencido', 
         [`tarefa_p${pNum}`]: 'Cliente Recobrado (Aguardando Financeiro)'
@@ -160,17 +197,12 @@ export default function HomePosVendas() {
       };
 
     const { error } = await supabase.from('Chamado_NF').update(updateData).eq('id', t.id);
-    if (!error) { 
-      alert(`Cobrança registrada com sucesso!`); 
-      setTarefaSelecionada(null); 
-      carregarDados(); 
-    }
+    if (!error) { alert(`Cobrança registrada com sucesso!`); setTarefaSelecionada(null); carregarDados(); }
   };
 
   const handleConfirmarEnvioBoleto = async (t) => {
     const isParcela = !!t.id_virtual;
     const pNum = t.num_parcela;
-    
     let updateData = isParcela ? {
         [`status_p${pNum}`]: 'aguardando_vencimento',
         [`tarefa_p${pNum}`]: 'Aguardando Vencimento'
@@ -311,11 +343,33 @@ export default function HomePosVendas() {
                   </div>
 
                   <div style={{marginTop:'45px'}}>
-                      <label style={labelMStyle}>ARQUIVOS DO CHAMADO</label>
-                      <div style={{display:'flex', gap:'15px', marginTop:'15px'}}>
-                          {tarefaSelecionada.anexo_boleto && <a href={tarefaSelecionada.anexo_boleto} target="_blank" style={btnAnexoStyle}><Download size={18}/> BOLETO ATUALIZADO</a>}
-                          {(tarefaSelecionada.anexo_nf_servico || tarefaSelecionada.anexo_nf) && <a href={tarefaSelecionada.anexo_nf_servico || tarefaSelecionada.anexo_nf} target="_blank" style={btnAnexoStyle}><FileText size={18}/> NOTA FISCAL</a>}
-                          {tarefaSelecionada.comprovante_pagamento && <a href={tarefaSelecionada.comprovante_pagamento} target="_blank" style={btnAnexoStyle}><CheckCircle size={18}/> COMPROVANTE</a>}
+                      <label style={labelMStyle}>ARQUIVOS E DOCUMENTOS</label>
+                      <div style={{display:'flex', gap:'15px', marginTop:'15px', flexWrap: 'wrap'}}>
+                          {/* NF SERVIÇO: PODE ALTERAR */}
+                          <AttachmentTag 
+                            label="NF SERVIÇO" 
+                            fileUrl={tarefaSelecionada.anexo_nf_servico_final} 
+                            onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada, 'anexo_nf_servico', file)} 
+                          />
+                          {/* NF PEÇA: PODE ALTERAR */}
+                          <AttachmentTag 
+                            label="NF PEÇA" 
+                            fileUrl={tarefaSelecionada.anexo_nf_peca_final} 
+                            onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada, 'anexo_nf_peca', file)} 
+                          />
+                          {/* BOLETO: APENAS VISUALIZAÇÃO NO PÓS-VENDAS */}
+                          <AttachmentTag 
+                            label="BOLETO (VISUALIZAR)" 
+                            fileUrl={tarefaSelecionada.anexo_boleto_final} 
+                            disabled={true}
+                          />
+                          {/* COMPROVANTE: APENAS VISUALIZAÇÃO CASO EXISTA */}
+                          {tarefaSelecionada.comprovante_pagamento && (
+                            <div className="btn-file-static">
+                              <span>COMPROVANTE</span>
+                              <a href={tarefaSelecionada.comprovante_pagamento} target="_blank" rel="noreferrer"><Eye size={18}/></a>
+                            </div>
+                          )}
                       </div>
                   </div>
 
@@ -349,10 +403,33 @@ export default function HomePosVendas() {
         * { font-weight: 400 !important; font-family: 'Montserrat', sans-serif; }
         .task-card { transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1); cursor: pointer; border-radius: 20px; overflow: hidden; border: 1px solid #55555a; margin-bottom: 5px; }
         .task-card:hover { transform: translateY(-8px); box-shadow: 0 20px 40px rgba(0,0,0,0.5); border-color: #71717a; }
+        .btn-file-static { display: flex; align-items: center; gap: 15px; padding: 12px 20px; background: #3f3f44; border-radius: 12px; border: 1px solid #55555a; color: #fff; font-size: 13px; }
+        .btn-file-static a { color: #fff; display: flex; text-decoration: none; }
         button:hover { opacity: 1 !important; transform: translateY(-1px); }
       `}</style>
     </div>
   )
+}
+
+// --- COMPONENTE TAG DE ANEXO ---
+function AttachmentTag({ label, fileUrl, onUpload, disabled = false }) {
+    const fileInputRef = useRef(null);
+    return (
+        <div style={{ display: 'flex', alignItems: 'center', background: '#3f3f44', border: '1px solid #55555a', borderRadius: '12px', overflow: 'hidden', minWidth:'260px' }}>
+            <span style={{ padding: '12px 18px', fontSize: '13px', color: fileUrl ? '#4ade80' : '#9e9e9e', borderRight: '1px solid #55555a', flex: 1, whiteSpace: 'nowrap' }}>{label}</span>
+            <div style={{ display: 'flex' }}>
+                {fileUrl && (
+                    <button title="Ver arquivo" onClick={() => window.open(fileUrl, '_blank')} style={miniActionBtn}><Eye size={18} /></button>
+                )}
+                {!disabled && (
+                    <>
+                        <button title="Trocar arquivo" onClick={() => fileInputRef.current.click()} style={miniActionBtn}><RefreshCw size={18} /></button>
+                        <input type="file" ref={fileInputRef} hidden onChange={(e) => onUpload(e.target.files[0])} />
+                    </>
+                )}
+            </div>
+        </div>
+    );
 }
 
 // --- ESTILOS AUXILIARES ---
@@ -362,13 +439,11 @@ const cobroBadgeStyle = { fontSize:'10px', background:'#fca5a520', color:'#fca5a
 const btnNovoStyle = { background:'#3f3f44', color:'#fff', border:'1px solid #55555a', padding:'12px 28px', borderRadius:'14px', cursor:'pointer', display:'flex', alignItems:'center', gap:'12px', fontSize: '15px' };
 const dropdownStyle = { position:'absolute', top:'65px', right: 0, background:'#3f3f44', borderRadius:'22px', boxShadow: '0 30px 60px rgba(0,0,0,0.5)', zIndex:2000, width:'300px', border:'1px solid #55555a', overflow:'hidden' };
 const dropdownItemStyle = { padding:'18px 25px', cursor:'pointer', borderBottom:'1px solid #55555a', fontSize:'15px', color: '#e2e8f0', transition:'0.2s' };
-
 const btnBackStyle = { background: 'transparent', color: '#9e9e9e', border: '1px solid #55555a', padding: '10px 24px', borderRadius: '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '14px' };
 const infoGridStyle = { display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:'25px', marginTop:'45px' };
 const infoBoxStyle = { background:'#2a2a2d', padding:'25px', borderRadius:'22px', border:'1px solid #55555a', display: 'flex', flexDirection: 'column', gap: '10px' };
 const labelMStyle = { fontSize:'16px', color:'#9e9e9e', letterSpacing:'0.5px', textTransform:'uppercase' };
 const valueMStyle = { fontSize: '22px', color: '#fff' };
-
-const btnAnexoStyle = { padding:'15px 25px', background:'#2a2a2d', border:'1px solid #55555a', borderRadius:'15px', fontSize:'14px', textDecoration:'none', color:'#fff', display:'flex', alignItems:'center', gap:'12px' };
 const btnActionGreen = { flex:1, color:'#fff', background:'#22c55e20', border:'1px solid #22c55e', padding:'20px', borderRadius:'18px', cursor:'pointer', display:'flex', alignItems:'center', gap:'15px', fontSize:'16px', justifyContent:'center' };
 const btnActionBlue = { flex:1, color:'#fff', background:'#3b82f620', border:'1px solid #3b82f6', padding:'20px', borderRadius:'18px', cursor:'pointer', display:'flex', alignItems:'center', gap:'15px', fontSize:'16px', justifyContent:'center' };
+const miniActionBtn = { background: 'transparent', border: 'none', padding: '12px 15px', color: '#fff', cursor: 'pointer', transition: '0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center' };
