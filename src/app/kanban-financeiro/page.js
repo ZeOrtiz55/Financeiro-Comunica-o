@@ -12,7 +12,7 @@ import {
  CheckCheck, Eye, LayoutDashboard, ClipboardList, UserCheck, TrendingUp, TrendingDown, Search, Trash2, Settings, RefreshCw, AlertCircle, Tag, Lock, DollarSign
 } from 'lucide-react'
 
-// --- 1. TELA DE CARREGAMENTO ---
+// --- 1. TELA DE CARREGAMENTO (ESTILO ATUALIZADO) ---
 function LoadingScreen() {
  return (
   <div style={{ position: 'fixed', inset: 0, background: '#212124', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -24,7 +24,7 @@ function LoadingScreen() {
  )
 }
 
-// --- 2. FORMATADOR DE DATA ---
+// --- 2. FORMATADOR DE DATA PT-BR ---
 const formatarDataBR = (dataStr) => {
  if (!dataStr || dataStr === 'null' || dataStr === "") return 'N/A';
  try {
@@ -46,7 +46,7 @@ function GeometricBackground() {
  )
 }
 
-// --- 3. CHAT INTERNO ---
+// --- 3. CHAT INTERNO (EFEITO FLUTUANTE) ---
 function ChatChamado({ registroId, tipo, userProfile }) {
  const [mensagens, setMensagens] = useState([]); const [novaMsg, setNovaMsg] = useState(''); const scrollRef = useRef();
  const colunaId = tipo === 'boleto' ? 'chamado_id' : tipo === 'pagar' ? 'pagar_id' : tipo === 'receber' ? 'receber_id' : 'rh_id';
@@ -132,7 +132,7 @@ export default function KanbanFinanceiro() {
        const vencParc = new Date(dataParc); vencParc.setHours(0,0,0,0);
        let st = c[`status_p${numParc}`] || 'gerar_boleto';
        
-       // LÓGICA: SE VENCER, VAI PARA PAGO
+       // LÓGICA: SE VENCER, VAI PARA PAGO (SOLICITADO)
        if (st === 'aguardando_vencimento' && vencParc < hoje) st = 'pago';
 
        cardsProcessados.push({
@@ -150,7 +150,7 @@ export default function KanbanFinanceiro() {
       const venc = c.vencimento_boleto ? new Date(c.vencimento_boleto) : null;
       if (venc) venc.setHours(0,0,0,0);
       
-      // LÓGICA: SE VENCER, VAI PARA PAGO
+      // LÓGICA: SE VENCER, VAI PARA PAGO (SOLICITADO)
       if (st === 'aguardando_vencimento' && venc && venc < hoje) st = 'pago';
 
       cardsProcessados.push({ 
@@ -301,7 +301,6 @@ export default function KanbanFinanceiro() {
 
    <main style={{ marginLeft: isSidebarOpen ? '320px' : '85px', flex: 1, display: 'flex', flexDirection: 'column', transition: '0.4s ease', height: '100vh', overflow: 'hidden' }}>
     <header style={{ padding: '50px 50px 30px 50px' }}>
-     {/* ÁREA DE FILTROS TOTALMENTE À ESQUERDA */}
      <div style={{ display:'flex', gap:'15px', alignItems:'center', justifyContent: 'flex-start', marginBottom: '25px' }}>
         <div style={{ position: 'relative', width: '320px' }}>
             <Search size={18} style={iconFilterStyle} />
@@ -320,7 +319,6 @@ export default function KanbanFinanceiro() {
      <h1 style={{ fontWeight: '300', fontSize:'52px', color:'#f8fafc', letterSpacing:'-2px', margin: 0 }}>Fluxo Financeiro</h1>
     </header>
 
-    {/* CONTAINER COM SCROLL HORIZONTAL SEMPRE VISÍVEL NA BASE */}
     <div style={{ flex: 1, display: 'flex', gap: '25px', overflowX: 'auto', overflowY: 'hidden', padding: '0 50px 40px 50px', boxSizing: 'border-box' }}>
      {colunas.map(col => (
       <div key={col.id} style={{ minWidth: '420px', flex: 1, display: 'flex', flexDirection: 'column' }}>
@@ -391,7 +389,7 @@ export default function KanbanFinanceiro() {
                 <AttachmentTag label="NF PEÇA" fileUrl={tarefaSelecionada.anexo_nf_peca} onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'anexo_nf_peca', file)} disabled={tarefaSelecionada.status === 'concluido'} />
                 <AttachmentTag label="BOLETO" fileUrl={tarefaSelecionada.anexo_boleto} onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'anexo_boleto', file)} disabled={tarefaSelecionada.status === 'concluido'} />
                 
-                {/* COMPROVANTE: APARECE SOMENTE NO VENCIDO */}
+                {/* COMPROVANTE: APARECE SOMENTE NO VENCIDO (SOLICITADO) */}
                 {tarefaSelecionada.status === 'vencido' && (
                   <AttachmentTag label="COMPROVANTE" fileUrl={tarefaSelecionada.comprovante_pagamento} onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'comprovante_pagamento', file)} disabled={false} />
                 )}

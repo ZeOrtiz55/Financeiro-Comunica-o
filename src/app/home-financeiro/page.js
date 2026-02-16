@@ -99,7 +99,6 @@ export default function HomeFinanceiro() {
   
   let tarefasFaturamento = [];
   (bolds || []).forEach(c => {
-    // Definimos os status que devem aparecer como "pendentes" para o Financeiro nesta tela
     const statusPendentes = ['gerar_boleto', 'validar_pix'];
     if (c.qtd_parcelas > 1) {
         for (let i = 1; i <= c.qtd_parcelas; i++) {
@@ -110,7 +109,9 @@ export default function HomeFinanceiro() {
                 tarefasFaturamento.push({ 
                     ...c, id_virtual: `${c.id}_p${i}`, nom_cliente: `${c.nom_cliente} (P${i})`, 
                     valor_exibicao: valorCalculado, status: stParc, num_parcela: i, gTipo: 'boleto',
-                    vencimento_boleto: c.datas_parcelas?.split(/[\s,]+/)[i-1] || c.vencimento_boleto
+                    vencimento_boleto: c.datas_parcelas?.split(/[\s,]+/)[i-1] || c.vencimento_boleto,
+                    anexo_boleto: c[`anexo_boleto_p${i}`],
+                    comprovante_pagamento: c[`comprovante_pagamento_p${i}`]
                 });
             }
         }
@@ -139,7 +140,6 @@ export default function HomeFinanceiro() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'finan_receber' }, () => carregarDados())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'finan_rh' }, () => carregarDados())
       .subscribe();
-
     return () => { supabase.removeChannel(channel) };
  }, []);
 
@@ -156,6 +156,31 @@ export default function HomeFinanceiro() {
     const table = t.gTipo === 'pagar' ? 'finan_pagar' : t.gTipo === 'receber' ? 'finan_receber' : t.gTipo === 'rh' ? 'finan_rh' : 'Chamado_NF';
     const finalField = (t.gTipo === 'boleto' && t.id_virtual) && !['num_nf_servico', 'num_nf_peca', 'obs'].includes(field) ? `${field}_p${t.num_parcela}` : field;
     await supabase.from(table).update({ [finalField]: value }).eq('id', t.id);
+    carregarDados();
+ };
+
+ const handleUpdateFileDirect = async (t, field, file) => {
+    if(!file) return;
+    try {
+      const table = t.gTipo === 'pagar' ? 'finan_pagar' : t.gTipo === 'receber' ? 'finan_receber' : t.gTipo === 'rh' ? 'finan_rh' : 'Chamado_NF';
+      const path = `anexos/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+      const { error: uploadError } = await supabase.storage.from('anexos').upload(path, file);
+      if (uploadError) throw uploadError;
+      const { data: linkData } = supabase.storage.from('anexos').getPublicUrl(path);
+      
+      let col = field;
+      // Trata as colunas dinâmicas de parcelas _p1..p5 para boletos e comprovantes
+      if (t.gTipo === 'boleto' && t.id_virtual && ['anexo_boleto', 'comprovante_pagamento'].includes(field)) {
+          col = `${field}_p${t.num_parcela}`;
+      } else if (t.gTipo === 'boleto' && t.id_virtual && !['num_nf_servico', 'num_nf_peca', 'obs'].includes(field)) {
+          col = `${field}_p${t.num_parcela}`;
+      }
+      
+      await supabase.from(table).update({ [col]: linkData.publicUrl }).eq('id', t.id);
+      alert("Arquivo atualizado!");
+      carregarDados();
+      if(tarefaSelecionada) setTarefaSelecionada(prev => ({ ...prev, [field]: linkData.publicUrl }));
+    } catch (err) { alert("Erro: " + err.message); }
  };
 
  const handleGerarBoletoFinanceiro = async (t) => {
@@ -165,7 +190,11 @@ export default function HomeFinanceiro() {
     await supabase.storage.from('anexos').upload(path, fileBoleto);
     const { data } = supabase.storage.from('anexos').getPublicUrl(path);
     const isParcela = !!t.id_virtual;
-    let updateData = isParcela ? { [`status_p${t.num_parcela}`]: 'enviar_cliente', [`tarefa_p${t.num_parcela}`]: 'Enviar Boleto para o Cliente', anexo_boleto: data.publicUrl } : { status: 'enviar_cliente', tarefa: 'Enviar Boleto para o Cliente', setor: 'Pós-Vendas', anexo_boleto: data.publicUrl };
+    
+    let updateData = isParcela ? 
+        { [`status_p${t.num_parcela}`]: 'enviar_cliente', [`tarefa_p${t.num_parcela}`]: 'Enviar Boleto para o Cliente', [`anexo_boleto_p${t.num_parcela}`]: data.publicUrl } : 
+        { status: 'enviar_cliente', tarefa: 'Enviar Boleto para o Cliente', setor: 'Pós-Vendas', anexo_boleto: data.publicUrl };
+    
     await supabase.from('Chamado_NF').update(updateData).eq('id', t.id);
     alert("Tarefa enviada!"); setTarefaSelecionada(null);
   } catch (err) { alert("Erro: " + err.message); }
@@ -174,17 +203,15 @@ export default function HomeFinanceiro() {
  const handleMoverParaPago = async (t) => {
     try {
         const isParcela = !!t.id_virtual;
-        // Ao mover para pago, o card some desta tela e vai para o Kanban/Histórico
         let updateData = isParcela ? { [`status_p${t.num_parcela}`]: 'pago', [`tarefa_p${t.num_parcela}`]: 'Pagamento Confirmado' } : { status: 'pago', tarefa: 'Pagamento Confirmado' };
         await supabase.from('Chamado_NF').update(updateData).eq('id', t.id);
-        alert("Pagamento confirmado com sucesso!"); setTarefaSelecionada(null);
+        alert("Pagamento confirmado!"); setTarefaSelecionada(null);
     } catch (err) { alert("Erro: " + err.message); }
  };
 
  const handleConcluirGeral = async (t) => {
     const table = t.gTipo === 'pagar' ? 'finan_pagar' : t.gTipo === 'receber' ? 'finan_receber' : t.gTipo === 'rh' ? 'finan_rh' : 'Chamado_NF';
-    let updateData = { status: 'concluido' };
-    await supabase.from(table).update(updateData).eq('id', t.id);
+    await supabase.from(table).update({ status: 'concluido' }).eq('id', t.id);
     alert("Processo concluído!"); setTarefaSelecionada(null);
  };
 
@@ -210,9 +237,7 @@ export default function HomeFinanceiro() {
       </div>
     </header>
 
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '30px', background: 'transparent' }}>
-     
-     {/* COLUNA FATURAMENTO */}
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '30px' }}>
      <div style={colWrapperStyle}>
       <div style={colTitleStyle}>Faturamento</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
@@ -229,7 +254,6 @@ export default function HomeFinanceiro() {
       </div>
      </div>
 
-     {/* COLUNA CONTAS */}
      <div style={colWrapperStyle}>
       <div style={colTitleStyle}>Contas</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
@@ -246,7 +270,6 @@ export default function HomeFinanceiro() {
       </div>
      </div>
 
-     {/* COLUNA RH */}
      <div style={colWrapperStyle}>
       <div style={colTitleStyle}>RH</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
@@ -264,7 +287,6 @@ export default function HomeFinanceiro() {
     </div>
    </main>
 
-   {/* MODAL DETALHES */}
    {tarefaSelecionada && (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0, 0, 0, 0.85)', backdropFilter: 'blur(15px)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
      <div style={{ background: '#3f3f44', width: '1650px', maxWidth: '98%', maxHeight: '95vh', borderRadius: '40px', display: 'flex', overflow:'hidden', boxShadow:'0 50px 100px rgba(0,0,0,0.6)', border: '1px solid #55555a' }}>
@@ -307,17 +329,15 @@ export default function HomeFinanceiro() {
         </div>
 
         <div style={{marginTop:'40px'}}>
-            <label style={labelModalStyle}>ANEXOS E COMPROVANTES</label>
+            <label style={labelModalStyle}>ANEXOS E DOCUMENTOS</label>
             <div style={{display:'flex', gap:'15px', flexWrap:'wrap', marginTop:'15px'}}>
-                {(tarefaSelecionada.anexo_nf || tarefaSelecionada.anexo_nf_servico) && (
-                    <div className="btn-file-mod"><span>NF</span><a href={tarefaSelecionada.anexo_nf || tarefaSelecionada.anexo_nf_servico} target="_blank"><Eye size={18} color="#fff"/></a></div>
-                )}
-                {tarefaSelecionada.anexo_boleto && (
-                    <div className="btn-file-mod"><span>BOLETO</span><a href={tarefaSelecionada.anexo_boleto} target="_blank"><Eye size={18} color="#fff"/></a></div>
-                )}
-                {/* Visualização do comprovante enviado pelo Pós-Vendas */}
-                {tarefaSelecionada.anexo_pix && (
-                    <div className="btn-file-mod" style={{background: '#3b82f630', borderColor: '#3b82f660'}}><span>COMPROVANTE PIX</span><a href={tarefaSelecionada.anexo_pix} target="_blank"><Eye size={18} color="#60a5fa"/></a></div>
+                <AttachmentTag label="NF SERVIÇO" fileUrl={tarefaSelecionada.anexo_nf_servico} onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada, 'anexo_nf_servico', file)} />
+                <AttachmentTag label="NF PEÇA" fileUrl={tarefaSelecionada.anexo_nf_peca} onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada, 'anexo_nf_peca', file)} />
+                <AttachmentTag label="BOLETO" fileUrl={tarefaSelecionada.anexo_boleto} onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada, 'anexo_boleto', file)} />
+                
+                {/* O COMPROVANTE NÃO APARECE SE ESTIVER NA FASE GERAR BOLETO */}
+                {tarefaSelecionada.status !== 'gerar_boleto' && (
+                    <AttachmentTag label="COMPROVANTE" fileUrl={tarefaSelecionada.comprovante_pagamento || tarefaSelecionada.anexo_pix} onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada, 'comprovante_pagamento', file)} />
                 )}
             </div>
         </div>
@@ -325,10 +345,38 @@ export default function HomeFinanceiro() {
         <div style={{marginTop:'50px', display:'flex', gap:'20px'}}>
             {tarefaSelecionada.status === 'gerar_boleto' && (
                 <div style={{flex: 1, background:'#242427', padding:'40px', borderRadius:'28px', border:'1px solid #3b82f640'}}>
-                    <label style={{...labelModalStyle, color:'#60a5fa', fontSize: '18px'}}>ANEXAR BOLETO FINAL</label>
+                    <label style={{...labelModalStyle, color:'#60a5fa', fontSize: '18px'}}>ANEXAR BOLETO</label>
                     <div style={{display:'flex', gap:'25px', marginTop:'25px', alignItems: 'center'}}>
-                        <input type="file" onChange={e => setFileBoleto(e.target.files[0])} style={{fontSize: '16px', color: '#bdbdbd'}} />
-                        <button onClick={() => handleGerarBoletoFinanceiro(tarefaSelecionada)} style={{background:'#3b82f6', color:'#fff', border:'none', padding:'14px 28px', borderRadius:'12px', cursor:'pointer', fontSize: '15px'}}>LANÇAR TAREFA</button>
+                        {/* INPUT DE ARQUIVO ESTILIZADO */}
+                        <div style={{ flex: 1, position: 'relative', overflow: 'hidden', display: 'inline-block' }}>
+                            <button style={{ 
+                                background: '#3f3f44', color: '#fff', border: '1px dashed #55555a', 
+                                padding: '18px 25px', borderRadius: '15px', width: '100%', cursor: 'pointer',
+                                display: 'flex', alignItems: 'center', gap: '12px', transition: '0.2s'
+                            }}>
+                                <Upload size={22} color={fileBoleto ? "#4ade80" : "#9e9e9e"} />
+                                <span style={{ fontSize: '15px', color: fileBoleto ? "#fff" : "#9e9e9e", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                    {fileBoleto ? fileBoleto.name : "Clique para selecionar o boleto..."}
+                                </span>
+                            </button>
+                            <input 
+                                type="file" 
+                                onChange={e => setFileBoleto(e.target.files[0])} 
+                                style={{ position: 'absolute', fontSize: '100px', opacity: 0, right: 0, top: 0, cursor: 'pointer' }} 
+                            />
+                        </div>
+
+                        <div className="tooltip-container">
+                            <button 
+                                onClick={() => handleGerarBoletoFinanceiro(tarefaSelecionada)} 
+                                style={{background:'#3b82f6', color:'#fff', border:'none', padding:'18px 35px', borderRadius:'15px', cursor:'pointer', fontSize: '16px', fontWeight: '500', transition: '0.3s'}}
+                            >
+                                LANÇAR TAREFA
+                            </button>
+                            <div className="tooltip-box">
+                                Anexar Boleto e Gerar tarefa para o Pós Vendas enviar para o cliente
+                            </div>
+                        </div>
                     </div>
                 </div>
             )}
@@ -339,7 +387,6 @@ export default function HomeFinanceiro() {
                 </button>
             )}
             
-            {/* O botão de conclusão geral só aparece para RH e Contas (Pagar/Receber) */}
             {tarefaSelecionada.gTipo !== 'boleto' && (
                 <button onClick={() => handleConcluirGeral(tarefaSelecionada)} style={{flex: 1, background:'#10b98120', color:'#4ade80', border:'1px solid #10b981', padding:'15px', borderRadius:'20px', cursor:'pointer', fontSize: '17px', display:'flex', alignItems:'center', justifyContent:'center', gap:'15px', transition: '0.3s'}}>
                     <CheckCheck size={24}/> CONCLUIR PROCESSO
@@ -353,7 +400,6 @@ export default function HomeFinanceiro() {
         {userProfile && <ChatChamado registroId={tarefaSelecionada.id} tipo={tarefaSelecionada.gTipo} userProfile={userProfile} />}
        </div>
       </div>
-
      </div>
     </div>
    )}
@@ -363,11 +409,36 @@ export default function HomeFinanceiro() {
     .task-card { background: #313134; border: 1px solid #55555a; border-radius: 20px; cursor: pointer; transition: 0.3s ease; overflow: hidden; }
     .task-card:hover { transform: translateY(-8px); box-shadow: 0 20px 40px rgba(0,0,0,0.6); border-color: #71717a; }
     .btn-back-light { background: transparent; color: #9e9e9e; border: 1px solid #55555a; padding: 10px 24px; border-radius: 12px; cursor: pointer; display: flex; align-items: center; gap: 10px; transition: 0.3s; font-size:14px; }
-    .btn-file-mod { padding: 8px 15px; background: #2a2a2d; border: 1px solid #55555a; border-radius: 12px; display: flex; align-items: center; gap: 12px; font-size: 14px; color: #fff; }
     button:hover { opacity: 1 !important; transform: translateY(-1px); }
+
+    .tooltip-container { position: relative; display: flex; }
+    .tooltip-box { 
+        position: absolute; bottom: 110%; left: 50%; transform: translateX(-50%);
+        background: #000; color: #fff; padding: 15px 20px; border-radius: 12px;
+        font-size: 15px; width: 320px; text-align: center; pointer-events: none;
+        opacity: 0; transition: 0.3s; z-index: 100; box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    }
+    .tooltip-container:hover .tooltip-box { opacity: 1; bottom: 120%; }
    `}</style>
   </div>
  )
+}
+
+// --- COMPONENTE INTERNO DE TAG DE ANEXO ---
+function AttachmentTag({ label, fileUrl, onUpload }) {
+    const fileInputRef = useRef(null);
+    return (
+        <div style={{ display: 'flex', alignItems: 'center', background: '#3f3f44', border: '1px solid #55555a', borderRadius: '12px', overflow: 'hidden', minWidth:'220px' }}>
+            <span style={{ padding: '10px 15px', fontSize: '13px', color: fileUrl ? '#4ade80' : '#9e9e9e', borderRight: '1px solid #55555a', flex: 1 }}>{label}</span>
+            <div style={{ display: 'flex' }}>
+                {fileUrl && (
+                    <button title="Ver arquivo" onClick={() => window.open(fileUrl, '_blank')} style={miniActionBtn}><Eye size={18} /></button>
+                )}
+                <button title="Substituir/Anexar" onClick={() => fileInputRef.current.click()} style={miniActionBtn}><RefreshCw size={18} /></button>
+                <input type="file" ref={fileInputRef} hidden onChange={(e) => onUpload(e.target.files[0])} />
+            </div>
+        </div>
+    );
 }
 
 const dropItemStyle = { padding:'15px 20px', cursor:'pointer', color:'#f8fafc', background: '#161920', borderBottom:'1px solid #23272f', fontSize:'14px' };
@@ -379,3 +450,4 @@ const pModalStyle = { fontSize:'24px', color:'#fff', margin:'0' };
 const fieldBoxModal = { border: '1px solid #55555a', padding: '25px', borderRadius: '22px', background: '#2a2a2d', flex: 1 };
 const fieldBoxInner = { padding: '10px', borderRadius: '14px', background: 'transparent' };
 const inputStyleDark = { width: '100%', padding: '20px', border: '1px solid #55555a', borderRadius: '15px', outline: 'none', background:'#242427', color:'#fff', fontSize: '18px', boxSizing: 'border-box' };
+const miniActionBtn = { background: 'transparent', border: 'none', padding: '10px 15px', color: '#fff', cursor: 'pointer', transition: '0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center' };
