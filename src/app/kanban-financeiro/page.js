@@ -12,13 +12,13 @@ import {
  CheckCheck, Eye, LayoutDashboard, ClipboardList, UserCheck, TrendingUp, TrendingDown, Search, Trash2, Settings, RefreshCw, AlertCircle, Tag, Lock, DollarSign
 } from 'lucide-react'
 
-// --- 1. TELA DE CARREGAMENTO (ESTILO ATUALIZADO) ---
+// --- 1. TELA DE CARREGAMENTO (ESTILO CLARO) ---
 function LoadingScreen() {
  return (
-  <div style={{ position: 'fixed', inset: 0, background: '#212124', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+  <div style={{ position: 'fixed', inset: 0, background: '#f8fafc', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400&display=swap" rel="stylesheet" />
-    <h1 style={{ color: '#f8fafc', fontFamily: 'Montserrat, sans-serif', fontWeight: '300', fontSize: '28px', letterSpacing: '4px', textTransform: 'uppercase', textAlign: 'center' }}>
-      Sincronizando Kanban <br /> <span style={{ fontSize: '32px', fontWeight:'400', color: '#9e9e9e' }}>Nova Tratores</span>
+    <h1 style={{ color: '#2f3640', fontFamily: 'Montserrat, sans-serif', fontWeight: '300', fontSize: '32px', letterSpacing: '6px', textTransform: 'uppercase', textAlign: 'center', lineHeight: '1.4' }}>
+      Sincronizando Kanban <br /> <span style={{ fontSize: '40px', fontWeight:'300', color: '#718093' }}>Nova Tratores</span>
     </h1>
   </div>
  )
@@ -40,13 +40,13 @@ const formatarDataBR = (dataStr) => {
 
 function GeometricBackground() {
  return (
-  <div style={{ position: 'fixed', inset: 0, zIndex: -1, overflow: 'hidden', background: '#2a2a2d', pointerEvents: 'none' }}>
-   <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(circle at center, transparent 0%, rgba(42, 42, 45, 0.4) 100%)' }}></div>
+  <div style={{ position: 'fixed', inset: 0, zIndex: -1, overflow: 'hidden', background: '#f1f5f9', pointerEvents: 'none' }}>
+   <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(circle at 0% 0%, rgba(113, 128, 147, 0.08) 0%, transparent 50%), radial-gradient(circle at 100% 100%, rgba(47, 54, 64, 0.05) 0%, transparent 50%)' }}></div>
   </div>
  )
 }
 
-// --- 3. CHAT INTERNO (EFEITO FLUTUANTE) ---
+// --- 3. CHAT INTERNO (MODO CLARO) ---
 function ChatChamado({ registroId, tipo, userProfile }) {
  const [mensagens, setMensagens] = useState([]); const [novaMsg, setNovaMsg] = useState(''); const scrollRef = useRef();
  const colunaId = tipo === 'boleto' ? 'chamado_id' : tipo === 'pagar' ? 'pagar_id' : tipo === 'receber' ? 'receber_id' : 'rh_id';
@@ -71,19 +71,19 @@ function ChatChamado({ registroId, tipo, userProfile }) {
  }
 
  return (
-  <div style={{ display: 'flex', flexDirection: 'column', height: '100%', border: '1px solid #55555a', borderRadius: '24px', overflow: 'hidden', background: '#242427', boxShadow: '0 30px 60px rgba(0,0,0,0.5)' }}>
-   <div style={{ padding: '18px 25px', background: '#3f3f44', borderBottom: '1px solid #55555a', fontSize: '13px', color: '#9e9e9e', letterSpacing: '1px' }}>CONVERSA DO PROCESSO</div>
+  <div style={{ display: 'flex', flexDirection: 'column', height: '100%', border: '1px solid #dcdde1', borderRadius: '24px', overflow: 'hidden', background: '#ffffff', boxShadow: '0 20px 40px rgba(47, 54, 64, 0.05)' }}>
+   <div style={{ padding: '18px 25px', background: '#f5f6fa', borderBottom: '1px solid #dcdde1', fontSize: '13px', color: '#718093', letterSpacing: '2px' }}>CONVERSA DO PROCESSO</div>
    <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '25px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
     {mensagens.map((m) => (
-     <div key={m.id} style={{ alignSelf: String(m.usuario_id) === String(userProfile?.id) ? 'flex-end' : 'flex-start', background: String(m.usuario_id) === String(userProfile?.id) ? '#3b82f625' : '#3f3f44', color: '#fff', padding: '14px 20px', borderRadius: '20px', maxWidth: '85%', border: '1px solid #55555a' }}>
-      <span style={{ fontSize: '9px', opacity: 0.6, display: 'block', marginBottom: '5px', textTransform: 'uppercase' }}>{m.usuario_nome}</span>
-      <span style={{ fontSize: '16px', lineHeight: '1.5' }}>{m.texto}</span>
+     <div key={m.id} style={{ alignSelf: String(m.usuario_id) === String(userProfile?.id) ? 'flex-end' : 'flex-start', background: String(m.usuario_id) === String(userProfile?.id) ? '#f1f5f9' : '#ffffff', color: '#2f3640', padding: '14px 20px', borderRadius: '18px', maxWidth: '85%', border: '1px solid #dcdde1' }}>
+      <span style={{ fontSize: '10px', opacity: 0.7, display: 'block', marginBottom: '5px', textTransform: 'uppercase', color: '#718093' }}>{m.usuario_nome}</span>
+      <span style={{ fontSize: '15px', lineHeight: '1.5' }}>{m.texto}</span>
      </div>
     ))}
    </div>
-   <form onSubmit={enviar} style={{ padding: '20px', background: '#3f3f44', display: 'flex', gap: '12px' }}>
-     <input value={novaMsg} onChange={e => setNovaMsg(e.target.value)} placeholder="Escreva..." style={{ flex: 1, padding: '16px', borderRadius: '14px', border: '1px solid #55555a', background: '#2a2a2d', color: '#fff', outline: 'none', fontSize: '16px' }} />
-     <button style={{ background: '#fff', color: '#000', border: 'none', borderRadius: '14px', width: '50px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Send size={20} /></button>
+   <form onSubmit={enviar} style={{ padding: '20px', background: '#f5f6fa', display: 'flex', gap: '12px', borderTop: '1px solid #dcdde1' }}>
+     <input value={novaMsg} onChange={e => setNovaMsg(e.target.value)} placeholder="Escreva..." style={{ flex: 1, padding: '16px', borderRadius: '14px', border: '1px solid #dcdde1', background: '#ffffff', color: '#2f3640', outline: 'none', fontSize: '16px' }} />
+     <button style={{ background: '#2f3640', color: '#ffffff', border: 'none', borderRadius: '14px', width: '50px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Send size={20} /></button>
    </form>
   </div>
  )
@@ -132,7 +132,6 @@ export default function KanbanFinanceiro() {
        const vencParc = new Date(dataParc); vencParc.setHours(0,0,0,0);
        let st = c[`status_p${numParc}`] || 'gerar_boleto';
        
-       // LÓGICA: SE VENCER, VAI PARA PAGO (SOLICITADO)
        if (st === 'aguardando_vencimento' && vencParc < hoje) st = 'pago';
 
        cardsProcessados.push({
@@ -150,7 +149,6 @@ export default function KanbanFinanceiro() {
       const venc = c.vencimento_boleto ? new Date(c.vencimento_boleto) : null;
       if (venc) venc.setHours(0,0,0,0);
       
-      // LÓGICA: SE VENCER, VAI PARA PAGO (SOLICITADO)
       if (st === 'aguardando_vencimento' && venc && venc < hoje) st = 'pago';
 
       cardsProcessados.push({ 
@@ -295,50 +293,51 @@ export default function KanbanFinanceiro() {
  if (loading) return <LoadingScreen />
 
  return (
-  <div style={{ display: 'flex', height: '100vh', width: '100vw', fontFamily: 'Montserrat, sans-serif', background: '#2a2a2d', overflow: 'hidden' }}>
+  <div style={{ display: 'flex', height: '100vh', width: '100vw', fontFamily: 'Montserrat, sans-serif', background: '#f5f6fa', overflow: 'hidden' }}>
    <GeometricBackground />
    <MenuLateral isSidebarOpen={isSidebarOpen} setIsSidebarOpen={setIsSidebarOpen} path="/kanban-financeiro" router={router} handleLogout={handleLogout} userProfile={userProfile} />
 
    <main style={{ marginLeft: isSidebarOpen ? '320px' : '85px', flex: 1, display: 'flex', flexDirection: 'column', transition: '0.4s ease', height: '100vh', overflow: 'hidden' }}>
-    <header style={{ padding: '50px 50px 30px 50px' }}>
-     <div style={{ display:'flex', gap:'15px', alignItems:'center', justifyContent: 'flex-start', marginBottom: '25px' }}>
+    <header style={{ padding: '60px 50px 30px 50px' }}>
+     <div style={{ display:'flex', gap:'20px', alignItems:'center', justifyContent: 'flex-start', marginBottom: '35px' }}>
         <div style={{ position: 'relative', width: '320px' }}>
             <Search size={18} style={iconFilterStyle} />
             <input type="text" placeholder="Filtrar por Cliente..." value={filtroCliente} onChange={e => setFiltroCliente(e.target.value)} style={inputFilterStyle} />
         </div>
-        <div style={{ position: 'relative', width: '160px' }}>
+        <div style={{ position: 'relative', width: '180px' }}>
             <Hash size={18} style={iconFilterStyle} />
             <input type="text" placeholder="Nº Nota..." value={filtroNF} onChange={e => setFiltroNF(e.target.value)} style={inputFilterStyle} />
         </div>
-        <div style={{ position: 'relative', width: '200px' }}>
+        <div style={{ position: 'relative', width: '220px' }}>
             <Calendar size={18} style={iconFilterStyle} />
             <input type="date" value={filtroData} onChange={e => setFiltroData(e.target.value)} style={inputFilterStyle} />
-            {filtroData && <X size={14} onClick={() => setFiltroData('')} style={{position:'absolute', right: '12px', top: '50%', transform:'translateY(-50%)', cursor:'pointer', color:'#fca5a5'}}/>}
+            {filtroData && <X size={14} onClick={() => setFiltroData('')} style={{position:'absolute', right: '12px', top: '50%', transform:'translateY(-50%)', cursor:'pointer', color:'#718093'}}/>}
         </div>
      </div>
-     <h1 style={{ fontWeight: '300', fontSize:'52px', color:'#f8fafc', letterSpacing:'-2px', margin: 0 }}>Fluxo Financeiro</h1>
+     <h1 style={{ fontWeight: '300', fontSize:'64px', color:'#2f3640', letterSpacing:'-4px', margin: 0 }}>Fluxo Financeiro</h1>
+     <div style={{ width: '120px', height: '2px', background: '#718093', marginTop: '15px' }}></div>
     </header>
 
-    <div style={{ flex: 1, display: 'flex', gap: '25px', overflowX: 'auto', overflowY: 'hidden', padding: '0 50px 40px 50px', boxSizing: 'border-box' }}>
+    <div style={{ flex: 1, display: 'flex', gap: '30px', overflowX: 'auto', overflowY: 'hidden', padding: '0 50px 40px 50px', boxSizing: 'border-box' }}>
      {colunas.map(col => (
       <div key={col.id} style={{ minWidth: '420px', flex: 1, display: 'flex', flexDirection: 'column' }}>
-       <h3 style={{ background: '#313134', color: '#9e9e9e', padding: '20px', borderRadius: '16px', marginBottom: '25px', textAlign: 'center', fontWeight:'400', fontSize:'16px', letterSpacing:'1px', border: '1px solid #55555a', flexShrink: 0 }}>{col.titulo}</h3>
+       <h3 style={colTitleStyle}>{col.titulo}</h3>
        
-       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '20px', overflowY: 'auto', paddingRight: '5px' }}>
+       <div style={colWrapperStyle}>
         {chamadosFiltrados.filter(c => col.id === 'pago' ? (c.status === 'pago' || c.status === 'concluido') : c.status === col.id).map(t => (
          <div key={t.id_virtual || t.id} className="kanban-card" style={{ opacity: t.status === 'concluido' ? 0.6 : 1 }}>
           <div onClick={() => setTarefaSelecionada(t)} style={{ 
-            background: t.status === 'vencido' ? '#fca5a525' : (t.status === 'pago' || t.status === 'concluido' ? '#4ade8025' : '#313134'), 
-            padding: '25px', borderBottom: '1px solid #55555a', cursor: 'pointer'
+            background: t.status === 'vencido' ? 'rgba(239, 68, 68, 0.05)' : (t.status === 'pago' || t.status === 'concluido' ? 'rgba(34, 197, 94, 0.05)' : '#ffffff'), 
+            padding: '25px', borderBottom: '1px solid #dcdde1', cursor: 'pointer'
           }}>
-            <h4 style={{ margin: 0, fontSize: '20px', fontWeight: '400', color: t.status === 'vencido' ? '#fca5a5' : (t.status === 'pago' || t.status === 'concluido' ? '#4ade80' : '#fff') }}>
+            <h4 style={{ margin: 0, fontSize: '22px', fontWeight: '300', color: t.status === 'vencido' ? '#c0392b' : (t.status === 'pago' || t.status === 'concluido' ? '#27ae60' : '#2f3640') }}>
              {t.nom_cliente?.toUpperCase()} {t.status === 'concluido' && "✓"}
             </h4>
           </div>
-          <div onClick={() => setTarefaSelecionada(t)} style={{ padding: '25px', background:'#4e4e52', cursor: 'pointer' }}>
+          <div onClick={() => setTarefaSelecionada(t)} style={{ padding: '25px', background:'transparent', cursor: 'pointer' }}>
              <div style={cardInfoStyle}><CreditCard size={16}/> <span>FORMA:</span> {t.forma_pagamento?.toUpperCase()}</div>
              <div style={cardInfoStyle}><Calendar size={16}/> <span>VENC:</span> {formatarDataBR(t.vencimento_boleto)}</div>
-             <div style={{fontSize:'32px', fontWeight:'400', margin:'15px 0', color:'#fff'}}>R$ {t.valor_exibicao}</div>
+             <div style={{fontSize:'32px', fontWeight:'300', margin:'15px 0', color:'#2f3640'}}>R$ {t.valor_exibicao}</div>
              <div style={highlightIdStyle}>ID: #{t.id}</div>
           </div>
          </div>
@@ -351,121 +350,92 @@ export default function KanbanFinanceiro() {
 
    {/* --- MODAL DETALHES --- */}
    {tarefaSelecionada && (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0, 0, 0, 0.9)', backdropFilter: 'blur(15px)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-     <div style={{ background: '#3f3f44', width: '1650px', maxWidth: '98%', maxHeight: '95vh', borderRadius: '40px', display: 'flex', overflow:'hidden', boxShadow: '0 50px 100px rgba(0,0,0,0.6)', border: '1px solid #55555a' }}>
-      
-      <div style={{ flex: '1.2', padding: '60px', overflowY: 'auto' }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(245, 246, 250, 0.4)', backdropFilter: 'blur(15px)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+     <div style={{ background: '#ffffff', width: '1650px', maxWidth: '98%', maxHeight: '95vh', borderRadius: '0px', display: 'flex', overflow:'hidden', boxShadow: '0 40px 100px rgba(47, 54, 64, 0.1)', border: '1px solid #dcdde1' }}>
+     
+      <div style={{ flex: '1.2', padding: '80px', overflowY: 'auto' }}>
         <button onClick={() => setTarefaSelecionada(null)} className="btn-back"><ArrowLeft size={18}/> VOLTAR AO PAINEL</button>
-        <h2 style={{fontSize:'64px', fontWeight:'300', margin:'25px 0', letterSpacing:'-3px', color:'#fff', lineHeight: '1'}}>{tarefaSelecionada.nom_cliente?.toUpperCase()}</h2>
+        <h2 style={{fontSize:'84px', fontWeight:'300', margin:'40px 0', letterSpacing:'-5px', color:'#2f3640', lineHeight: '0.9'}}>{tarefaSelecionada.nom_cliente?.toUpperCase()}</h2>
         
-        <div style={{display:'flex', gap:'30px', marginBottom:'45px'}}>
+        <div style={{display:'flex', gap:'30px', marginBottom:'50px'}}>
           <div style={fieldBoxModal}><label style={labelModalStyle}>Condição</label><p style={pModalStyle}>{tarefaSelecionada.forma_pagamento?.toUpperCase()}</p></div>
-          <div style={fieldBoxModal}><label style={labelModalStyle}>Valor Aberto</label><p style={{...pModalStyle, fontSize:'32px'}}>R$ {tarefaSelecionada.valor_exibicao}</p></div>
-          <div style={fieldBoxModal}><label style={labelModalStyle}>Vencimento</label><p style={{...pModalStyle, color: tarefaSelecionada.status === 'vencido' ? '#fca5a5' : '#fff'}}>{formatarDataBR(tarefaSelecionada.vencimento_boleto)}</p></div>
+          <div style={fieldBoxModal}><label style={labelModalStyle}>Valor Aberto</label><p style={{...pModalStyle, fontSize:'36px'}}>R$ {tarefaSelecionada.valor_exibicao}</p></div>
+          <div style={fieldBoxModal}><label style={labelModalStyle}>Vencimento</label><p style={{...pModalStyle, color: tarefaSelecionada.status === 'vencido' ? '#c0392b' : '#2f3640'}}>{formatarDataBR(tarefaSelecionada.vencimento_boleto)}</p></div>
           {tarefaSelecionada.status === 'vencido' && (
-            <div style={{...fieldBoxModal, border: '1px solid #fca5a550'}}><label style={{...labelModalStyle, color: '#fca5a5'}}>Recobranças</label><p style={{...pModalStyle, color:'#ef4444', fontSize: '32px'}}>{tarefaSelecionada.recombrancas_qtd}x</p></div>
+            <div style={{...fieldBoxModal, border: '1px solid rgba(192, 57, 43, 0.2)'}}><label style={{...labelModalStyle, color: '#c0392b'}}>Recobranças</label><p style={{...pModalStyle, color:'#c0392b', fontSize: '36px'}}>{tarefaSelecionada.recombrancas_qtd}x</p></div>
           )}
         </div>
 
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'30px', background:'#2a2a2d', padding:'45px', borderRadius:'30px', border:'1px solid #55555a' }}>
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'30px', background:'rgba(245, 246, 250, 0.5)', padding:'50px', borderRadius:'0px', border:'1px solid #dcdde1' }}>
           <div style={fieldBoxInner}>
             <label style={labelModalStyle}>Nota de Serviço</label>
-            <input style={inputStyleModal} disabled={tarefaSelecionada.status === 'concluido'} defaultValue={tarefaSelecionada.num_nf_servico} placeholder="Sem NF de serviços" onBlur={e => handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'num_nf_servico', e.target.value)} />
+            <input style={inputStyleModal} disabled={tarefaSelecionada.status === 'concluido'} defaultValue={tarefaSelecionada.num_nf_servico} placeholder="N/A" onBlur={e => handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'num_nf_servico', e.target.value)} />
           </div>
           <div style={fieldBoxInner}>
             <label style={labelModalStyle}>Nota de Peça</label>
-            <input style={inputStyleModal} disabled={tarefaSelecionada.status === 'concluido'} defaultValue={tarefaSelecionada.num_nf_peca} placeholder="Sem NF de Peças" onBlur={e => handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'num_nf_peca', e.target.value)} />
+            <input style={inputStyleModal} disabled={tarefaSelecionada.status === 'concluido'} defaultValue={tarefaSelecionada.num_nf_peca} placeholder="N/A" onBlur={e => handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'num_nf_peca', e.target.value)} />
           </div>
           <div style={{gridColumn:'span 2', ...fieldBoxInner}}>
             <label style={labelModalStyle}>Observações Financeiras</label>
-            <textarea style={{...inputStyleModal, height:'130px', resize: 'none'}} disabled={tarefaSelecionada.status === 'concluido'} defaultValue={tarefaSelecionada.obs} placeholder="Sem observações registradas" onBlur={e => handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'obs', e.target.value)} />
+            <textarea style={{...inputStyleModal, height:'150px', resize: 'none'}} disabled={tarefaSelecionada.status === 'concluido'} defaultValue={tarefaSelecionada.obs} placeholder="Escreva observações aqui..." onBlur={e => handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'obs', e.target.value)} />
           </div>
         </div>
 
-        <div style={{marginTop:'40px'}}>
-            <label style={labelModalStyle}>Anexos</label>
+        <div style={{marginTop:'50px'}}>
+            <label style={labelModalStyle}>Anexos Digitais</label>
             <div style={{display:'flex', gap:'15px', flexWrap:'wrap', marginTop:'15px'}}>
                 <AttachmentTag label="NF SERVIÇO" fileUrl={tarefaSelecionada.anexo_nf_servico} onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'anexo_nf_servico', file)} disabled={tarefaSelecionada.status === 'concluido'} />
                 <AttachmentTag label="NF PEÇA" fileUrl={tarefaSelecionada.anexo_nf_peca} onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'anexo_nf_peca', file)} disabled={tarefaSelecionada.status === 'concluido'} />
                 <AttachmentTag label="BOLETO" fileUrl={tarefaSelecionada.anexo_boleto} onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'anexo_boleto', file)} disabled={tarefaSelecionada.status === 'concluido'} />
                 
-                {/* COMPROVANTE: APARECE SOMENTE NO VENCIDO (SOLICITADO) */}
                 {tarefaSelecionada.status === 'vencido' && (
                   <AttachmentTag label="COMPROVANTE" fileUrl={tarefaSelecionada.comprovante_pagamento} onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'comprovante_pagamento', file)} disabled={false} />
                 )}
             </div>
         </div>
 
-        {/* --- ÁREA DE AÇÕES --- */}
-        <div style={{marginTop:'50px', display:'flex', gap:'20px'}}>
+        <div style={{marginTop:'60px', display:'flex', gap:'20px'}}>
           {tarefaSelecionada.status === 'gerar_boleto' && (
-            <div style={{flex: 1, background:'#242427', padding:'40px', borderRadius:'28px', border:'1px solid #3b82f650'}}>
-               <label style={{...labelModalStyle, color:'#60a5fa', fontSize: '18px'}}>ANEXAR BOLETO FINAL</label>
-               <div style={{display:'flex', gap:'25px', marginTop:'25px', alignItems: 'center'}}>
-                  <input type="file" onChange={e => setFileBoleto(e.target.files[0])} style={{fontSize: '16px', color: '#bdbdbd'}} />
-                  <button onClick={() => handleGerarBoletoFaturamentoFinal(tarefaSelecionada.id_virtual || tarefaSelecionada.id)} style={{background:'#3b82f6', color:'#fff', padding:'16px 35px', border:'none', borderRadius:'14px', cursor:'pointer', fontSize: '16px'}}>Processar Boleto</button>
-               </div>
+            <div style={{flex: 1, background:'rgba(47, 54, 64, 0.02)', padding:'40px', borderRadius:'0px', border:'1px solid #dcdde1'}}>
+                <label style={{...labelModalStyle, color:'#718093', fontSize: '15px'}}>ANEXAR BOLETO FINAL</label>
+                <div style={{display:'flex', gap:'30px', marginTop:'25px', alignItems: 'center'}}>
+                  <input type="file" onChange={e => setFileBoleto(e.target.files[0])} style={{fontSize: '15px', color: '#718093'}} />
+                  <button onClick={() => handleGerarBoletoFaturamentoFinal(tarefaSelecionada.id_virtual || tarefaSelecionada.id)} style={{background:'#2f3640', color:'#ffffff', padding:'18px 40px', border:'none', borderRadius:'0px', cursor:'pointer', fontSize: '14px', textTransform:'uppercase', letterSpacing:'2px'}}>Processar</button>
+                </div>
             </div>
           )}
 
-          {/* FASE PAGO: FICA COM OS DOIS BOTÕES */}
           {tarefaSelecionada.status === 'pago' && (
             <>
-                <div className="tooltip-container" style={{flex: 1}}>
-                    <button onClick={() => { if(window.confirm("Mover este card para a fase VENCIDO?")) handleActionMoveStatus(tarefaSelecionada, 'vencido') }} style={btnActionRed}>
-                        <AlertCircle size={22}/> MOVER PARA VENCIDO
-                    </button>
-                    <div className="tooltip-box">Mover para a fase vencido.</div>
-                </div>
-
-                <div className="tooltip-container" style={{flex: 1}}>
-                    <button onClick={() => { if(window.confirm("Deseja concluir este card? Ele ficará bloqueado.")) handleActionMoveStatus(tarefaSelecionada, 'concluido') }} style={btnActionGreen}>
-                        <CheckCheck size={22}/> CONCLUIR CARD
-                    </button>
-                    <div className="tooltip-box">Finalizar processo.</div>
-                </div>
+                <button onClick={() => { if(window.confirm("Mover para VENCIDO?")) handleActionMoveStatus(tarefaSelecionada, 'vencido') }} style={btnActionRed}>
+                    <AlertCircle size={20}/> MOVER PARA VENCIDO
+                </button>
+                <button onClick={() => { if(window.confirm("Deseja concluir este card?")) handleActionMoveStatus(tarefaSelecionada, 'concluido') }} style={btnActionGreen}>
+                    <CheckCheck size={20}/> CONCLUIR PROCESSO
+                </button>
             </>
           )}
 
           {tarefaSelecionada.status === 'vencido' && (
             <>
-                <div style={{flex: 1.5, background: '#242427', padding: '30px', borderRadius: '22px', border: '1px solid #fca5a540', display:'flex', flexDirection:'column', gap: '20px'}}>
-                    <div style={{display:'flex', gap:'20px', alignItems: 'center'}}>
-                        <div className="tooltip-container" style={{flex: 1}}>
-                            <button onClick={() => handleActionCobrarCliente(tarefaSelecionada)} style={{...btnActionBlue, background: 'rgba(59, 130, 246, 0.1)'}}>
-                                <DollarSign size={22}/> COBRAR CLIENTE
-                            </button>
-                            <div className="tooltip-box">Gera tarefa para o Pós-Vendas.</div>
-                        </div>
-                        <div style={{flex: 1.2}}>
-                            <AttachmentTag 
-                                label="NOVO BOLETO" 
-                                fileUrl={tarefaSelecionada.anexo_boleto} 
-                                onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'anexo_boleto', file)} 
-                                tooltip="Substitua o boleto vencido."
-                            />
-                        </div>
-                    </div>
-                </div>
-
-                <div className="tooltip-container" style={{flex: 0.8}}>
-                    <button onClick={() => { if(window.confirm("Confirmar Pagamento Realizado?")) handleActionMoveStatus(tarefaSelecionada, 'concluido') }} style={btnActionGreen}>
-                        <CheckCircle size={22}/> PAGAMENTO REALIZADO
-                    </button>
-                    <div className="tooltip-box">Mover para concluído.</div>
-                </div>
+                <button onClick={() => handleActionCobrarCliente(tarefaSelecionada)} style={btnActionBlue}>
+                    <DollarSign size={20}/> NOTIFICAR PÓS-VENDAS
+                </button>
+                <button onClick={() => { if(window.confirm("Confirmar Pagamento?")) handleActionMoveStatus(tarefaSelecionada, 'concluido') }} style={btnActionGreen}>
+                    <CheckCircle size={20}/> CONFIRMAR PAGAMENTO
+                </button>
             </>
           )}
 
           {tarefaSelecionada.status === 'concluido' && (
-             <div style={{flex: 1, background:'rgba(74, 222, 128, 0.1)', padding:'30px', borderRadius:'22px', border:'1px solid #4ade80', textAlign:'center'}}>
-                <span style={{color:'#4ade80', fontSize:'18px', display:'flex', alignItems:'center', justifyContent:'center', gap:'10px'}}><Lock size={20}/> PROCESSO CONCLUÍDO E BLOQUEADO</span>
+             <div style={{flex: 1, background:'rgba(39, 174, 96, 0.05)', padding:'30px', borderRadius:'0px', border:'1px solid #27ae60', textAlign:'center'}}>
+                <span style={{color:'#27ae60', fontSize:'16px', display:'flex', alignItems:'center', justifyContent:'center', gap:'12px', textTransform:'uppercase', letterSpacing:'3px'}}><Lock size={18}/> Processo Finalizado</span>
              </div>
           )}
         </div>
       </div>
 
-      <div style={{ flex: '0.8', padding: '40px', background: '#2a2a2d', borderLeft:'1px solid #55555a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ flex: '0.8', padding: '40px', background: '#ffffff', borderLeft:'1px solid #dcdde1', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
        <div style={{ width: '95%', height: '92%' }}>
         {userProfile && <ChatChamado registroId={tarefaSelecionada?.id} tipo="boleto" userProfile={userProfile} />}
        </div>
@@ -476,62 +446,55 @@ export default function KanbanFinanceiro() {
    )}
 
    <style jsx global>{`
-    * { font-weight: 400 !important; font-family: 'Montserrat', sans-serif; box-sizing: border-box; }
-    .kanban-card { background: #313134; border: 1px solid #55555a; border-radius: 20px; transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1); overflow: hidden; margin-bottom: 5px; flex-shrink: 0; }
-    .kanban-card:hover { transform: translateY(-8px); box-shadow: 0 20px 40px rgba(0,0,0,0.6); border-color: #71717a; }
-    .btn-back { background: transparent; color: #9e9e9e; border: 1px solid #55555a; padding: 12px 28px; border-radius: 14px; cursor: pointer; display: flex; align-items: center; gap: 10px; font-size:14px; transition: 0.2s; }
-    .btn-back:hover { background: #55555a; color: #fff; }
+    * { font-weight: 300 !important; font-family: 'Montserrat', sans-serif; box-sizing: border-box; }
+    .kanban-card { background: #ffffff; border: 1px solid #dcdde1; border-radius: 0px; transition: 0.4s ease; overflow: hidden; margin-bottom: 20px; flex-shrink: 0; }
+    .kanban-card:hover { transform: scale(1.02); box-shadow: 0 15px 30px rgba(47, 54, 64, 0.05); border-color: #718093; }
+    .btn-back { background: transparent; color: #718093; border: 1px solid #dcdde1; padding: 12px 28px; border-radius: 0px; cursor: pointer; display: flex; align-items: center; gap: 10px; font-size:12px; transition: 0.2s; text-transform: uppercase; letter-spacing: 1px; }
+    .btn-back:hover { background: #2f3640; color: #f5f6fa; }
     
-    .tooltip-container { position: relative; display: flex; }
-    .tooltip-box { 
-        position: absolute; bottom: 110%; left: 50%; transform: translateX(-50%);
-        background: #000; color: #fff; padding: 15px 20px; border-radius: 12px;
-        font-size: 15px; width: 320px; text-align: center; pointer-events: none;
-        opacity: 0; transition: 0.3s; z-index: 100; box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-    }
-    .tooltip-container:hover .tooltip-box { opacity: 1; bottom: 120%; }
-
-    ::-webkit-scrollbar { width: 8px; height: 12px; }
-    ::-webkit-scrollbar-track { background: #2a2a2d; }
-    ::-webkit-scrollbar-thumb { background: #3f3f44; border-radius: 10px; border: 2px solid #2a2a2d; }
-    ::-webkit-scrollbar-thumb:hover { background: #55555a; }
+    ::-webkit-scrollbar { width: 6px; height: 10px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #dcdde1; border-radius: 10px; }
+    ::-webkit-scrollbar-thumb:hover { background: #718093; }
    `}</style>
   </div>
  )
 }
 
 // --- COMPONENTE TAG DE ANEXO ---
-function AttachmentTag({ label, fileUrl, onUpload, disabled = false, tooltip = "" }) {
+function AttachmentTag({ label, fileUrl, onUpload, disabled = false }) {
     const fileInputRef = useRef(null);
     return (
-        <div className="tooltip-container" style={{ display: 'flex', alignItems: 'center', background: '#3f3f44', border: '1px solid #55555a', borderRadius: '12px', overflow: 'hidden', width:'100%', marginBottom: '10px' }}>
-            <span style={{ padding: '10px 15px', fontSize: '13px', color: fileUrl ? '#4ade80' : '#9e9e9e', borderRight: '1px solid #55555a', flex: 1 }}>{label}</span>
-            <div style={{ display: 'flex' }}>
+        <div style={{ display: 'flex', alignItems: 'center', background: '#f5f6fa', border: '1px solid #dcdde1', borderRadius: '0px', overflow: 'hidden', minWidth:'280px', marginBottom: '5px' }}>
+            <span style={{ padding: '12px 20px', fontSize: '12px', color: fileUrl ? '#27ae60' : '#718093', borderRight: '1px solid #dcdde1', flex: 1, textTransform:'uppercase', letterSpacing:'1px' }}>{label}</span>
+            <div style={{ display: 'flex', background: '#ffffff' }}>
                 {fileUrl && (
-                    <button title="Ver arquivo" onClick={() => window.open(fileUrl, '_blank')} style={miniActionBtn}><Eye size={18} /></button>
+                    <button title="Ver" onClick={() => window.open(fileUrl, '_blank')} style={miniActionBtn}><Eye size={18} /></button>
                 )}
                 {!disabled && (
                     <>
-                        <button title="Substituir/Anexar" onClick={() => fileInputRef.current.click()} style={miniActionBtn}><RefreshCw size={18} /></button>
-                        <input type="file" ref={fileInputRef} hidden onChange={(e) => onUpload(e.target.files[0])} />
+                        <button title="Substituir" onClick={() => fileInputRef.current.click()} style={miniActionBtn}><RefreshCw size={18} /></button>
+                        <input type="file" hidden ref={fileInputRef} onChange={(e) => onUpload(e.target.files[0])} />
                     </>
                 )}
             </div>
-            {tooltip && <div className="tooltip-box">{tooltip}</div>}
         </div>
     );
 }
 
-const btnActionRed = { width: '100%', background: 'rgba(252, 165, 165, 0.1)', color: '#fca5a5', border: '1px solid #fca5a5', padding: '20px', borderRadius: '18px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', fontSize: '16px', transition: '0.3s' };
-const btnActionGreen = { width: '100%', background: 'rgba(74, 222, 128, 0.1)', color: '#4ade80', border: '1px solid #4ade80', padding: '20px', borderRadius: '18px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', fontSize: '16px', transition: '0.3s' };
-const btnActionBlue = { width: '100%', background: 'rgba(59, 130, 246, 0.1)', color: '#60a5fa', border: '1px solid #60a5fa', padding: '20px', borderRadius: '18px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', fontSize: '16px', transition: '0.3s' };
-const inputFilterStyle = { padding: '12px 15px 12px 45px', width: '100%', borderRadius: '12px', border: '1px solid #55555a', outline: 'none', background:'#3f3f44', fontWeight:'400', color:'#fff', fontSize: '15px', boxSizing: 'border-box' };
-const iconFilterStyle = { position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', color: '#9e9e9e', zIndex: 10 };
-const highlightIdStyle = { fontSize: '18px', color: '#94a3b8', background: '#3f3f44', padding: '6px 15px', borderRadius: '10px', display: 'inline-block', border: '1px solid #55555a', marginTop: '10px' };
-const cardInfoStyle = { display:'flex', alignItems:'center', gap:'12px', color:'#d1d5db', fontSize:'15px', marginBottom:'10px' };
-const inputStyleModal = { width: '100%', padding: '20px', border: '1px solid #55555a', borderRadius: '15px', outline: 'none', background:'#242427', color:'#fff', fontSize: '20px', boxSizing: 'border-box' };
-const labelModalStyle = { fontSize:'18px', color:'#9e9e9e', letterSpacing:'0.5px', textTransform:'uppercase', marginBottom:'15px', display:'block' };
-const pModalStyle = { fontSize:'28px', color:'#fff', margin:'0' };
-const fieldBoxModal = { border: '1px solid #55555a', padding: '25px', borderRadius: '22px', background: '#2a2a2d', flex: 1 };
-const fieldBoxInner = { padding: '10px', borderRadius: '14px', background: 'transparent' };
-const miniActionBtn = { background: 'transparent', border: 'none', padding: '10px 15px', color: '#fff', cursor: 'pointer', transition: '0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center' };
+// --- ESTILOS AUXILIARES (MODO CLARO) ---
+const colWrapperStyle = { flex: 1, display: 'flex', flexDirection: 'column', gap: '0px', overflowY: 'auto', padding: '25px', background: 'rgba(255, 255, 255, 0.1)', border: '1px solid #dcdde1', borderRadius: '0px' };
+const colTitleStyle = { textAlign: 'center', fontSize: '30px', color:'#718093', fontWeight:'300 !important', marginBottom:'30px', textTransform:'uppercase', letterSpacing:'5px', padding: '15px', borderBottom: '1px solid #dcdde1' };
+const btnActionRed = { flex: 1, background: 'transparent', color: '#c0392b', border: '1px solid #c0392b', padding: '22px', borderRadius: '0px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '15px', fontSize: '14px', textTransform:'uppercase', letterSpacing:'2px' };
+const btnActionGreen = { flex: 1, background: 'transparent', color: '#27ae60', border: '1px solid #27ae60', padding: '22px', borderRadius: '0px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '15px', fontSize: '14px', textTransform:'uppercase', letterSpacing:'2px' };
+const btnActionBlue = { flex: 1, background: 'transparent', color: '#2980b9', border: '1px solid #2980b9', padding: '22px', borderRadius: '0px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '15px', fontSize: '14px', textTransform:'uppercase', letterSpacing:'2px' };
+const inputFilterStyle = { padding: '15px 15px 15px 50px', width: '100%', borderRadius: '0px', border: '1px solid #dcdde1', outline: 'none', background:'#ffffff', color:'#2f3640', fontSize: '15px', boxSizing: 'border-box' };
+const iconFilterStyle = { position: 'absolute', left: '18px', top: '50%', transform: 'translateY(-50%)', color: '#718093', zIndex: 10 };
+const highlightIdStyle = { fontSize: '14px', color: '#718093', border: '1px solid #dcdde1', padding: '5px 15px', borderRadius: '0px', display: 'inline-block', marginTop: '10px', letterSpacing:'1px' };
+const cardInfoStyle = { display:'flex', alignItems:'center', gap:'12px', color:'#718093', fontSize:'14px', marginBottom:'10px', letterSpacing: '0.5px' };
+const inputStyleModal = { width: '100%', padding: '22px', border: '1px solid #dcdde1', borderRadius: '0px', outline: 'none', background:'#ffffff', color:'#2f3640', fontSize: '20px', boxSizing: 'border-box' };
+const labelModalStyle = { fontSize:'12px', color:'#718093', letterSpacing:'3px', textTransform:'uppercase', marginBottom:'15px', display:'block' };
+const pModalStyle = { fontSize:'28px', color:'#2f3640', margin:'0' };
+const fieldBoxModal = { border: '1px solid #dcdde1', padding: '30px', borderRadius: '0px', background: 'rgba(245, 246, 250, 0.5)', flex: 1 };
+const fieldBoxInner = { padding: '10px', background: 'transparent' };
+const miniActionBtn = { background: 'transparent', border: 'none', padding: '12px 18px', color: '#718093', cursor: 'pointer', transition: '0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center' };
