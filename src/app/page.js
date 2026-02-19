@@ -1,10 +1,11 @@
 'use client'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react' // Adicionado useState
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 
 export default function RootPage() {
   const router = useRouter()
+  const [mounted, setMounted] = useState(false) // Estado para evitar erro de hidratação
 
   // --- FUNÇÃO DE LOGOUT MANTIDA CONFORME SOLICITADO ---
   const handleLogout = async () => {
@@ -17,6 +18,8 @@ export default function RootPage() {
   };
 
   useEffect(() => {
+    setMounted(true) // Indica que o componente foi montado no cliente
+
     const checkUser = async () => {
       console.log("Iniciando verificação de rota...");
       const { data: { session }, error: authError } = await supabase.auth.getSession()
@@ -53,6 +56,11 @@ export default function RootPage() {
 
     checkUser()
   }, [router])
+
+  // Retorno inicial simples para o Servidor, evitando conflito de classes do Style JSX
+  if (!mounted) {
+    return <div style={{ background: '#18181b', height: '100vh' }} />
+  }
 
   return (
     <div style={{ 
