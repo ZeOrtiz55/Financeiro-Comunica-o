@@ -9,7 +9,7 @@ import {
  Bell, MessageSquare, X, Menu, PlusCircle, FileText, Download, 
  CheckCircle, LogOut, User, ShieldCheck, Upload, Send, 
  Calendar, CreditCard, Hash, History, ArrowLeft, Paperclip, ImageIcon, 
- CheckCheck, Eye, LayoutDashboard, ClipboardList, UserCheck, TrendingUp, TrendingDown, Search, Trash2, Settings, RefreshCw, AlertCircle, Tag, DollarSign
+ CheckCheck, Eye, LayoutDashboard, ClipboardList, UserCheck, TrendingUp, TrendingDown, Search, Trash2, Settings, RefreshCw, AlertCircle, Tag, Lock, DollarSign
 } from 'lucide-react'
 
 // --- 1. TELA DE CARREGAMENTO (ESTILO ATUALIZADO) ---
@@ -75,9 +75,9 @@ function ChatChamado({ registroId, tipo, userProfile }) {
    <div style={{ padding: '18px 25px', background: '#3f3f44', borderBottom: '1px solid #55555a', fontSize: '13px', color: '#9e9e9e', letterSpacing: '1px' }}>CONVERSA DO PROCESSO</div>
    <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '25px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
     {mensagens.map((m) => (
-     <div key={m.id} style={{ alignSelf: String(m.usuario_id) === String(userProfile?.id) ? 'flex-end' : 'flex-start', background: String(m.usuario_id) === String(userProfile?.id) ? '#3b82f625' : '#3f3f44', color: '#fff', padding: '14px 20px', borderRadius: '20px', maxWidth: '85%', border: '1px solid #55555a' }}>
+     <div key={m.id} style={{ alignSelf: String(m.usuario_id) === String(userProfile?.id) ? 'flex-end' : 'flex-start', background: String(m.usuario_id) === String(userProfile?.id) ? '#3b82f625' : '#3f3f44', color: '#fff', padding: '14px 18px', borderRadius: '18px', maxWidth: '85%', border: '1px solid #55555a' }}>
       <span style={{ fontSize: '9px', opacity: 0.6, display: 'block', marginBottom: '5px', textTransform: 'uppercase' }}>{m.usuario_nome}</span>
-      <span style={{ fontSize: '16px', lineHeight: '1.5' }}>{m.texto}</span>
+      <span style={{ fontSize: '15px', lineHeight: '1.4' }}>{m.texto}</span>
      </div>
     ))}
    </div>
@@ -333,8 +333,8 @@ export default function Kanban() {
                 {/* BOLETO: APENAS VISUALIZAÇÃO NO PÓS-VENDAS */}
                 <AttachmentTag label="BOLETO" fileUrl={tarefaSelecionada.anexo_boleto_final} disabled={true} />
                 
-                {/* COMPROVANTE: APARECE SOMENTE NO PAGO OU VENCIDO */}
-                {(tarefaSelecionada.status === 'pago' || tarefaSelecionada.status === 'vencido') && (
+                {/* COMPROVANTE: APARECE EM AGUARDANDO VENCIMENTO, PAGO OU VENCIDO */}
+                {(tarefaSelecionada.status === 'aguardando_vencimento' || tarefaSelecionada.status === 'pago' || tarefaSelecionada.status === 'vencido') && (
                   <AttachmentTag label="COMPROVANTE" fileUrl={tarefaSelecionada.comprovante_pagamento_final} onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'comprovante_pagamento', file)} />
                 )}
             </div>

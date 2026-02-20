@@ -9,17 +9,17 @@ import {
  Bell, MessageSquare, X, Menu, PlusCircle, FileText, Download, 
  CheckCircle, LogOut, User, ShieldCheck, Upload, Send, 
  Calendar, CreditCard, Hash, History, ArrowLeft, Paperclip, ImageIcon, 
- CheckCheck, Eye, LayoutDashboard, ClipboardList, UserCheck, TrendingUp, TrendingDown, Search, Trash2, Edit3, RefreshCw, AlertCircle, Trash, DollarSign
+ CheckCheck, Eye, LayoutDashboard, ClipboardList, UserCheck, TrendingUp, TrendingDown, Search, Trash2, Edit3, RefreshCw, AlertCircle, Trash, DollarSign, Lock, Barcode, ZoomIn, ZoomOut
 } from 'lucide-react'
 
-// --- 1. TELA DE CARREGAMENTO (ESTILO CLARO SOFT) ---
+// --- 1. TELA DE CARREGAMENTO ---
 function LoadingScreen() {
  return (
-  <div style={{ position: 'fixed', inset: 0, background: '#f5f6fa', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+  <div style={{ position: 'fixed', inset: 0, background: '#f8fafc', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400&display=swap" rel="stylesheet" />
-    <h1 style={{ color: '#2f3640', fontFamily: 'Montserrat, sans-serif', fontWeight: '300', fontSize: '32px', letterSpacing: '6px', textTransform: 'uppercase', textAlign: 'center', lineHeight: '1.4' }}>
+    <h1 style={{ color: '#0f172a', fontFamily: 'Montserrat, sans-serif', fontWeight: '300', fontSize: '32px', letterSpacing: '6px', textTransform: 'uppercase', textAlign: 'center', lineHeight: '1.4' }}>
         Painel Financeiro <br /> 
-        <span style={{ fontWeight: '300', fontSize: '40px', color: '#718093' }}>Nova Tratores</span>
+        <span style={{ fontWeight: '400', fontSize: '40px', color: '#0ea5e9' }}>Nova Tratores</span>
     </h1>
   </div>
  )
@@ -39,13 +39,13 @@ const formatarData = (dataStr) => {
 
 function GeometricBackground() {
  return (
-  <div style={{ position: 'fixed', inset: 0, zIndex: -1, overflow: 'hidden', background: '#f5f6fa', pointerEvents: 'none' }}>
-   <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg, rgba(47, 54, 64, 0.02) 0%, rgba(113, 128, 147, 0.02) 100%)' }}></div>
+  <div style={{ position: 'fixed', inset: 0, zIndex: -1, overflow: 'hidden', background: '#f8fafc', pointerEvents: 'none' }}>
+   <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(circle at center, transparent 0%, rgba(226, 232, 240, 0.2) 100%)' }}></div>
   </div>
  )
 }
 
-// --- 3. CHAT INTERNO ---
+// --- 3. CHAT INTERNO (CORES INDIGO) ---
 function ChatChamado({ registroId, tipo, userProfile }) {
  const [mensagens, setMensagens] = useState([]); const [novaMsg, setNovaMsg] = useState(''); const scrollRef = useRef();
  const colunaLink = tipo === 'pagar' ? 'pagar_id' : tipo === 'receber' ? 'receber_id' : tipo === 'rh' ? 'rh_id' : 'chamado_id';
@@ -62,36 +62,39 @@ function ChatChamado({ registroId, tipo, userProfile }) {
  const enviar = async (e) => {
   e.preventDefault(); if (!novaMsg.trim()) return;
   const texto = novaMsg; setNovaMsg('');
+  const cleanId = String(registroId).includes('_p') ? registroId.split('_p')[0] : registroId;
   setMensagens(prev => [...prev, { id: Date.now(), texto, usuario_nome: userProfile.nome, usuario_id: userProfile.id }]);
   const payload = { texto, usuario_nome: userProfile.nome, usuario_id: userProfile.id };
   payload[colunaLink] = registroId;
   await supabase.from('mensagens_chat').insert([payload]);
  }
  return (
-  <div style={{ display: 'flex', flexDirection: 'column', height: '100%', border: '1px solid #dcdde1', borderRadius: '24px', overflow: 'hidden', background: '#ffffff', boxShadow: '0 10px 30px rgba(47, 54, 64, 0.05)' }}>
-   <div style={{ padding: '15px 25px', background: '#2f3640', borderBottom: '1px solid #dcdde1', fontWeight: '400', fontSize: '13px', color:'#f5f6fa', letterSpacing: '2px' }}>CONVERSA DO PROCESSO</div>
+  <div style={{ display: 'flex', flexDirection: 'column', height: '100%', border: '1px solid #4f46e5', borderRadius: '0px', overflow: 'hidden', background: '#ffffff', boxShadow: '0 20px 50px rgba(79, 70, 229, 0.08)' }}>
+   <div style={{ padding: '15px 25px', background: '#4f46e5', borderBottom: '1px solid #4338ca', fontWeight: '500', fontSize: '15px', color:'#ffffff', letterSpacing: '1px' }}>CONVERSA DO PROCESSO</div>
    <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '25px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
     {mensagens.map((m) => (
-     <div key={m.id} style={{ alignSelf: String(m.usuario_id) === String(userProfile?.id) ? 'flex-end' : 'flex-start', background: String(m.usuario_id) === String(userProfile?.id) ? '#f5f6fa' : '#ffffff', color: '#2f3640', padding: '14px 18px', borderRadius: '18px', maxWidth:'85%', border: '1px solid #dcdde1' }}>
-      <span style={{ fontSize: '11px', opacity: 0.7, display: 'block', marginBottom: '5px', textTransform: 'uppercase', fontWeight: '400', color: '#718093' }}>{m.usuario_nome?.toUpperCase()}</span>
-      <span style={{ fontSize: '15px', lineHeight: '1.4', fontWeight: '400' }}>{m.texto}</span>
+     <div key={m.id} style={{ alignSelf: String(m.usuario_id) === String(userProfile?.id) ? 'flex-end' : 'flex-start', background: String(m.usuario_id) === String(userProfile?.id) ? '#6366f115' : '#f8fafc', color: '#1e293b', padding: '14px 18px', borderRadius: '0px', maxWidth:'85%', border: '1px solid #dcdde1' }}>
+      <span style={{ fontSize: '15px', opacity: 0.6, display: 'block', marginBottom: '5px', textTransform: 'uppercase', fontWeight: '700', color: '#4f46e5' }}>{m.usuario_nome?.toUpperCase()}</span>
+      <span style={{ fontSize: '15px', lineHeight: '1.4' }}>{m.texto}</span>
      </div>
     ))}
    </div>
-   <form onSubmit={enviar} style={{ padding: '20px', background: '#ffffff', display: 'flex', gap: '12px', borderTop: '1px solid #dcdde1' }}>
-     <input value={novaMsg} onChange={e => setNovaMsg(e.target.value)} placeholder="Escreva..." style={{ flex: 1, padding: '14px', borderRadius: '12px', border: '1px solid #dcdde1', background: '#ffffff', color: '#2f3640', outline: 'none', fontSize: '15px', fontWeight: '400' }} />
-     <button style={{ background: '#2f3640', color: '#ffffff', border: 'none', borderRadius: '12px', width: '45px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Send size={18} /></button>
+   <form onSubmit={enviar} style={{ padding: '20px', background: '#f8fafc', display: 'flex', gap: '12px', borderTop: '0.5px solid #dcdde1' }}>
+     <input value={novaMsg} onChange={e => setNovaMsg(e.target.value)} placeholder="Escreva..." style={{ flex: 1, padding: '14px', borderRadius: '0px', border: '1px solid #cbd5e1', background: '#ffffff', color: '#1e293b', outline: 'none', fontSize: '15px' }} />
+     <button title="Enviar Mensagem" style={{ background: '#4f46e5', color: '#ffffff', border: 'none', borderRadius: '0px', width: '45px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Send size={18} /></button>
    </form>
   </div>
  )
 }
 
+// --- 4. COMPONENTE KANBAN PRINCIPAL ---
 export default function HomeFinanceiro() {
  const [userProfile, setUserProfile] = useState(null); const [loading, setLoading] = useState(true); const [isSidebarOpen, setIsSidebarOpen] = useState(false);
  const [showNovoMenu, setShowNovoMenu] = useState(false);
  const [tarefaSelecionada, setTarefaSelecionada] = useState(null);
  const [listaBoletos, setListaBoletos] = useState([]); const [listaPagar, setListaPagar] = useState([]); const [listaReceber, setListaReceber] = useState([]); const [listaRH, setListaRH] = useState([]);
  const [fileBoleto, setFileBoleto] = useState(null);
+ const [zoom, setZoom] = useState(1); 
  const router = useRouter();
 
  const carregarDados = async () => {
@@ -99,11 +102,12 @@ export default function HomeFinanceiro() {
   
   let tarefasFaturamento = [];
   (bolds || []).forEach(c => {
-    const statusPendentes = ['gerar_boleto', 'validar_pix'];
+    const statusPendentes = ['gerar_boleto', 'validar_pix', 'aguardando_vencimento'];
     if (c.qtd_parcelas > 1) {
         for (let i = 1; i <= c.qtd_parcelas; i++) {
             const stParc = c[`status_p${i}`] || 'gerar_boleto';
-            if (statusPendentes.includes(stParc)) {
+            const comp = c[`comprovante_pagamento_p${i}`];
+            if (stParc === 'gerar_boleto' || stParc === 'validar_pix' || (stParc === 'aguardando_vencimento' && !!comp)) {
                 const valorBanco = c[`valor_parcela${i}`];
                 const valorCalculado = (valorBanco && valorBanco > 0) ? valorBanco : (c.valor_servico / c.qtd_parcelas).toFixed(2);
                 tarefasFaturamento.push({ 
@@ -111,13 +115,18 @@ export default function HomeFinanceiro() {
                     valor_exibicao: valorCalculado, status: stParc, num_parcela: i, gTipo: 'boleto',
                     vencimento_boleto: c.datas_parcelas?.split(/[\s,]+/)[i-1] || c.vencimento_boleto,
                     anexo_boleto: c[`anexo_boleto_p${i}`],
-                    comprovante_pagamento: c[`comprovante_pagamento_p${i}`]
+                    comprovante_pagamento: comp,
+                    isPagamentoRealizado: stParc === 'aguardando_vencimento' && !!comp
                 });
             }
         }
     } else {
-        if (statusPendentes.includes(c.status)) {
-            tarefasFaturamento.push({ ...c, valor_exibicao: c.valor_servico, num_parcela: null, gTipo: 'boleto' });
+        const compGeral = c.comprovante_pagamento;
+        if (c.status === 'gerar_boleto' || c.status === 'validar_pix' || (c.status === 'aguardando_vencimento' && !!compGeral)) {
+            tarefasFaturamento.push({ 
+                ...c, valor_exibicao: c.valor_servico, num_parcela: null, gTipo: 'boleto',
+                isPagamentoRealizado: c.status === 'aguardando_vencimento' && !!compGeral
+            });
         }
     }
   });
@@ -189,11 +198,9 @@ export default function HomeFinanceiro() {
     await supabase.storage.from('anexos').upload(path, fileBoleto);
     const { data } = supabase.storage.from('anexos').getPublicUrl(path);
     const isParcela = !!t.id_virtual;
-    
     let updateData = isParcela ? 
         { [`status_p${t.num_parcela}`]: 'enviar_cliente', [`tarefa_p${t.num_parcela}`]: 'Enviar Boleto para o Cliente', [`anexo_boleto_p${t.num_parcela}`]: data.publicUrl } : 
         { status: 'enviar_cliente', tarefa: 'Enviar Boleto para o Cliente', setor: 'Pós-Vendas', anexo_boleto: data.publicUrl };
-    
     await supabase.from('Chamado_NF').update(updateData).eq('id', t.id);
     alert("Tarefa enviada!"); setTarefaSelecionada(null);
   } catch (err) { alert("Erro: " + err.message); }
@@ -217,37 +224,57 @@ export default function HomeFinanceiro() {
  if (loading) return <LoadingScreen />
 
  return (
-  <div style={{ display: 'flex', minHeight: '100vh', fontFamily: 'Montserrat, sans-serif', background: '#f5f6fa' }}>
+  <div style={{ display: 'flex', minHeight: '100vh', fontFamily: 'Montserrat, sans-serif', background: '#f8fafc' }}>
    <GeometricBackground />
    <MenuLateral isSidebarOpen={isSidebarOpen} setIsSidebarOpen={setIsSidebarOpen} path="/home-financeiro" router={router} handleLogout={() => supabase.auth.signOut().then(() => router.push('/login'))} userProfile={userProfile} />
 
    <main style={{ marginLeft: isSidebarOpen ? '320px' : '85px', flex: 1, padding: '60px', transition: '0.4s ease' }}>
-    <header style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'60px' }}>
-      <div><h1 style={{ fontWeight: '300', color: '#2f3640', margin: 0, fontSize:'64px', letterSpacing:'-3px' }}>Painel Financeiro</h1><div style={{ width: '120px', height: '2px', background: '#2f3640', marginTop: '15px' }}></div></div>
-      <div style={{ position: 'relative' }}>
-       <button onClick={() => setShowNovoMenu(!showNovoMenu)} style={{ background:'#2f3640', color:'#ffffff', border:'none', padding:'16px 32px', borderRadius:'0px', fontWeight:'400', cursor:'pointer', fontSize:'14px', boxShadow: '0 4px 10px rgba(47, 54, 64, 0.2)', letterSpacing: '2px', textTransform: 'uppercase' }}>NOVO CHAMADO</button>
-       {showNovoMenu && (
-        <div onMouseLeave={() => setShowNovoMenu(false)} style={dropItemStyle_Container}>
-         <div onClick={() => router.push('/novo-chamado-nf')} style={dropItemStyle}>Chamado de Boleto</div>
-         <div onClick={() => router.push('/novo-pagar-receber')} style={dropItemStyle}>Chamado Pagar/Receber</div>
-         <div onClick={() => router.push('/novo-chamado-rh')} style={{ ...dropItemStyle, borderBottom:'none', color:'#718093' }}>Chamado de RH</div>
-        </div>
-       )}
+    <header style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'50px' }}>
+      <div><h1 style={{ fontWeight: '300', color: '#0f172a', margin: 0, fontSize:'42px', letterSpacing:'-2px' }}>Painel Financeiro</h1><div style={{ width: '80px', height: '4px', background: '#0ea5e9', marginTop: '12px' }}></div></div>
+      
+      {/* ZOOM E NOVO CHAMADO */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+       <div style={{ display: 'flex', alignItems: 'center', background: '#fff', border: '1px solid #dcdde1', borderRadius: '0px', padding: '5px 15px', gap: '10px' }}>
+          <button onClick={() => setZoom(prev => Math.max(0.5, prev - 0.1))} style={zoomBtnStyle} title="Diminuir zoom"><ZoomOut size={18} /></button>
+          <span style={{ fontSize: '15px', fontWeight: '700', color: '#000', minWidth: '45px', textAlign: 'center' }}>{Math.round(zoom * 100)}%</span>
+          <button onClick={() => setZoom(prev => Math.min(1.5, prev + 0.1))} style={zoomBtnStyle} title="Aumentar zoom"><ZoomIn size={18} /></button>
+       </div>
+       <div style={{ position: 'relative' }}>
+        <button title="Clique para abrir as opções de novos chamados" onClick={() => setShowNovoMenu(!showNovoMenu)} style={{ background:'#ffffff', color:'#1e293b', border:'1.5px solid #dcdde1', padding:'12px 24px', borderRadius:'0px', fontWeight:'500', cursor:'pointer', fontSize:'15px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>NOVO CHAMADO</button>
+        {showNovoMenu && (
+         <div onMouseLeave={() => setShowNovoMenu(false)} style={dropItemStyle_Container}>
+          <div onClick={() => router.push('/novo-chamado-nf')} style={dropItemStyle}>Chamado de Boleto</div>
+          <div onClick={() => router.push('/novo-pagar-receber')} style={dropItemStyle}>Chamado Pagar/Receber</div>
+          <div onClick={() => router.push('/novo-chamado-rh')} style={{ ...dropItemStyle, borderBottom:'none', color:'#0ea5e9' }}>Chamado de RH</div>
+         </div>
+        )}
+       </div>
       </div>
     </header>
 
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '40px' }}>
+    {/* CONTAINER COM ZOOM APLICADO E GRADES */}
+    <div style={{ 
+        display: 'grid', 
+        gridTemplateColumns: '1fr 1fr 1fr', 
+        gap: '30px', 
+        transform: `scale(${zoom})`, 
+        transformOrigin: 'top left',
+        width: `${100 / zoom}%`
+    }}>
      {/* COLUNA FATURAMENTO */}
      <div style={colWrapperStyle}>
       <div style={colTitleStyle}>Faturamento</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0px', borderTop: '0.5px solid #dcdde1' }}>
         {listaBoletos.map(t => (
-         <div key={t.id_virtual || t.id} onClick={() => setTarefaSelecionada(t)} className="task-card">
-          <div style={{ background: '#ffffff', padding: '24px', color: '#2f3640', borderBottom: '1px solid #dcdde1' }}><h4 style={{ margin: 0, fontSize: '22px', fontWeight:'300', letterSpacing: '0px' }}>{t.nom_cliente?.toUpperCase()}</h4></div>
+         <div key={t.id_virtual || t.id} onClick={() => setTarefaSelecionada(t)} className="task-card-grid">
+          <div style={{ background: '#f1f5f9', padding: '24px', borderBottom: '0.5px solid #dcdde1' }}>
+            <h4 style={{ margin: 0, fontSize: '18px', fontWeight:'700', color: '#1e293b' }}>{t.nom_cliente?.toUpperCase()}</h4>
+            {t.isPagamentoRealizado && <div style={{marginTop: '10px', color: '#16a34a', fontSize: '15px', fontWeight: '800'}}>PAGAMENTO REALIZADO</div>}
+          </div>
           <div style={{ padding: '24px', background: '#ffffff' }}>
            <div style={miniTagStyle}><CreditCard size={14}/> {t.forma_pagamento?.toUpperCase()}</div>
-           <div style={{fontSize:'32px', color:'#2f3640', margin: '15px 0 5px 0', fontWeight: '300'}}>R$ {t.valor_exibicao}</div>
-           <div style={{fontSize:'12px', color: '#718093', textTransform:'uppercase', letterSpacing:'2px', fontWeight: '400'}}>{t.status === 'validar_pix' ? 'VALIDAÇÃO PIX' : `Venc: ${formatarData(t.vencimento_boleto)}`}</div>
+           <div style={{fontSize:'26px', color:'#0f172a', margin: '15px 0 5px 0', fontWeight: '600'}}>R$ {t.valor_exibicao}</div>
+           <div style={{fontSize:'15px', color: '#64748b', textTransform:'uppercase', letterSpacing:'1px'}}>{t.status === 'validar_pix' ? 'VALIDAÇÃO PIX' : `Venc: ${formatarData(t.vencimento_boleto)}`}</div>
           </div>
          </div>
         ))}
@@ -257,15 +284,17 @@ export default function HomeFinanceiro() {
      {/* COLUNA CONTAS */}
      <div style={colWrapperStyle}>
       <div style={colTitleStyle}>Contas</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0px', borderTop: '0.5px solid #dcdde1' }}>
         {listaPagar.map(t => (
-         <div key={t.id} onClick={() => setTarefaSelecionada(t)} className="task-card">
-          <div style={{padding:'24px', background: '#ffffff', border: '1px solid #dcdde1', borderLeft: '4px solid #718093', borderRadius: '0px'}}><h4 style={{fontSize:'11px', color:'#718093', fontWeight:'400', letterSpacing: '2px'}}>A PAGAR</h4><div style={{fontSize:'22px', color:'#2f3640', marginTop:'5px', fontWeight: '300'}}>{t.fornecedor?.toUpperCase()}</div><div style={{fontSize:'26px', color:'#2f3640', marginTop:'10px', fontWeight: '300'}}>R$ {t.valor}</div></div>
+         <div key={t.id} onClick={() => setTarefaSelecionada(t)} className="task-card-grid">
+          <div style={{padding:'24px', background: '#f1f5f9', borderLeft: '6px solid #ef4444', borderBottom: '0.5px solid #dcdde1'}}><h4 style={{fontSize:'15px', color:'#64748b', fontWeight:'700'}}>A PAGAR</h4><div style={{fontSize:'22px', color:'#1e293b', marginTop:'5px', fontWeight: '700'}}>{t.fornecedor?.toUpperCase()}</div><div style={{fontSize:'24px', color:'#0f172a', marginTop:'10px', fontWeight: '600'}}>R$ {t.valor}</div></div>
+          <div style={{padding:'24px', background:'#ffffff', color: '#64748b', fontSize:'15px', borderBottom: '0.5px solid #dcdde1'}}>Registro de despesa</div>
          </div>
         ))}
         {listaReceber.map(t => (
-         <div key={t.id} onClick={() => setTarefaSelecionada(t)} className="task-card">
-          <div style={{padding:'24px', background: '#ffffff', border: '1px solid #dcdde1', borderLeft: '4px solid #2f3640', borderRadius: '0px'}}><h4 style={{fontSize:'11px', color:'#2f3640', fontWeight:'400', letterSpacing: '2px'}}>A RECEBER</h4><div style={{fontSize:'22px', color:'#2f3640', marginTop:'5px', fontWeight: '300'}}>{t.cliente?.toUpperCase()}</div><div style={{fontSize:'26px', color:'#2f3640', marginTop:'10px', fontWeight: '300'}}>R$ {t.valor}</div></div>
+         <div key={t.id} onClick={() => setTarefaSelecionada(t)} className="task-card-grid">
+          <div style={{padding:'24px', background: '#f1f5f9', borderLeft: '6px solid #0ea5e9', borderBottom: '0.5px solid #dcdde1'}}><h4 style={{fontSize:'15px', color:'#64748b', fontWeight:'700'}}>A RECEBER</h4><div style={{fontSize:'22px', color:'#1e293b', marginTop:'5px', fontWeight: '700'}}>{t.cliente?.toUpperCase()}</div><div style={{fontSize:'24px', color:'#0f172a', marginTop:'10px', fontWeight: '600'}}>R$ {t.valor}</div></div>
+          <div style={{padding:'24px', background:'#ffffff', color: '#64748b', fontSize:'15px', borderBottom: '0.5px solid #dcdde1'}}>Registro de entrada</div>
          </div>
         ))}
       </div>
@@ -274,13 +303,15 @@ export default function HomeFinanceiro() {
      {/* COLUNA RH */}
      <div style={colWrapperStyle}>
       <div style={colTitleStyle}>RH</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0px', borderTop: '0.5px solid #dcdde1' }}>
         {listaRH.map(t => (
-         <div key={t.id} onClick={() => setTarefaSelecionada(t)} className="task-card">
-          <div style={{padding:'24px', background: '#ffffff', border: '1px solid #dcdde1', borderLeft: '4px solid #718093', borderRadius: '0px'}}>
-            <h4 style={{fontSize:'22px', color:'#2f3640', fontWeight:'300'}}>{t.funcionario?.toUpperCase()}</h4>
-            <div style={{fontSize:'12px', color:'#718093', marginTop:'10px', textTransform:'uppercase', letterSpacing:'2px', fontWeight: '400'}}>{t.setor}</div>
-            <div style={{fontSize:'14px', color:'#718093', marginTop:'5px', fontWeight: '300'}}>{t.titulo}</div>
+         <div key={t.id} onClick={() => setTarefaSelecionada(t)} className="task-card-grid">
+          <div style={{padding:'24px', background: '#f1f5f9', borderLeft: '6px solid #8b5cf6', borderBottom: '0.5px solid #dcdde1'}}>
+            <h4 style={{fontSize:'20px', color:'#1e293b', fontWeight:'700'}}>{t.funcionario?.toUpperCase()}</h4>
+            <div style={{fontSize:'15px', color:'#0ea5e9', marginTop:'10px', textTransform:'uppercase', letterSpacing:'1px', fontWeight: '500'}}>{t.setor}</div>
+          </div>
+          <div style={{padding:'24px', background:'#ffffff', borderBottom: '0.5px solid #dcdde1'}}>
+             <div style={{fontSize:'15px', color:'#64748b', fontWeight:'500'}}>{t.titulo}</div>
           </div>
          </div>
         ))}
@@ -290,42 +321,48 @@ export default function HomeFinanceiro() {
    </main>
 
    {tarefaSelecionada && (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(47, 54, 64, 0.4)', backdropFilter: 'blur(10px)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-     <div style={{ background: '#ffffff', width: '1650px', maxWidth: '98%', maxHeight: '95vh', borderRadius: '0px', display: 'flex', overflow:'hidden', boxShadow:'0 40px 100px rgba(0,0,0,0.1)', border: '1px solid #dcdde1' }}>
-     
-      <div style={{ flex: '1.2', padding: '80px', overflowY: 'auto', color: '#2f3640' }}>
-        <button onClick={() => setTarefaSelecionada(null)} className="btn-back-light"><ArrowLeft size={16}/> VOLTAR AO PAINEL</button>
-        <h2 style={{fontSize:'84px', color:'#2f3640', fontWeight:'300', lineHeight:'1.0', margin:'40px 0 50px', letterSpacing: '-5px'}}>{tarefaSelecionada.nom_cliente || tarefaSelecionada.fornecedor || tarefaSelecionada.funcionario || tarefaSelecionada.cliente}</h2>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.4)', backdropFilter: 'blur(10px)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+     <div style={{ background: '#ffffff', width: '1650px', maxWidth: '98%', maxHeight: '95vh', borderRadius: '0px', display: 'flex', overflow:'hidden', boxShadow:'0 50px 100px rgba(0,0,0,0.1)', border: '1px solid #dcdde1' }}>
+      
+      <div style={{ flex: '1.2', padding: '60px', overflowY: 'auto', color: '#1e293b' }}>
+        <button title="Fechar detalhes" onClick={() => setTarefaSelecionada(null)} className="btn-back-light"><ArrowLeft size={16}/> VOLTAR AO PAINEL</button>
+        <h2 style={{fontSize:'62px', color:'#0f172a', fontWeight:'300', lineHeight:'1.1', margin:'25px 0 45px'}}>{tarefaSelecionada.nom_cliente || tarefaSelecionada.fornecedor || tarefaSelecionada.funcionario || tarefaSelecionada.cliente}</h2>
         
         <div style={{display:'flex', gap:'30px', marginBottom:'45px'}}>
           <div style={fieldBoxModal}><label style={labelModalStyle}>TIPO PROCESSO</label><p style={pModalStyle}>{tarefaSelecionada.gTipo?.toUpperCase()}</p></div>
           {tarefaSelecionada.gTipo !== 'rh' && (
             <>
-              <div style={fieldBoxModal}><label style={labelModalStyle}>VALOR TOTAL</label><p style={{...pModalStyle, fontSize:'40px', fontWeight: '300', color: '#2f3640'}}>R$ {tarefaSelecionada.valor_exibicao || tarefaSelecionada.valor}</p></div>
-              <div style={fieldBoxModal}><label style={labelModalStyle}>VENCIMENTO</label><p style={{...pModalStyle, color:'#718093', fontWeight: '300'}}>{formatarData(tarefaSelecionada.vencimento_boleto || tarefaSelecionada.data_vencimento)}</p></div>
+              <div style={fieldBoxModal}><label style={labelModalStyle}>VALOR TOTAL</label><p style={{...pModalStyle, fontSize:'36px', fontWeight: '600'}}>R$ {tarefaSelecionada.valor_exibicao || tarefaSelecionada.valor}</p></div>
+              <div style={fieldBoxModal}><label style={labelModalStyle}>VENCIMENTO</label><p style={{...pModalStyle, color:'#ef4444', fontWeight: '600'}}>{formatarData(tarefaSelecionada.vencimento_boleto || tarefaSelecionada.data_vencimento)}</p></div>
             </>
           )}
         </div>
 
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(2, 1fr)', gap:'30px', border:'1px solid #dcdde1', padding:'45px', borderRadius:'0px', background:'#ffffff' }}>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(2, 1fr)', gap:'30px', border:'0.5px solid #dcdde1', padding:'45px', borderRadius:'0px', background:'#f8fafc' }}>
           {tarefaSelecionada.gTipo === 'rh' ? (
             <>
-              <div style={fieldBoxInner}><label style={labelModalStyle}>FUNCIONÁRIO</label><p style={{fontSize:'18px', fontWeight: '300'}}>{tarefaSelecionada.funcionario?.toUpperCase()}</p></div>
-              <div style={fieldBoxInner}><label style={labelModalStyle}>SETOR</label><p style={{fontSize:'18px', color:'#718093', fontWeight: '300'}}>{tarefaSelecionada.setor?.toUpperCase()}</p></div>
-              <div style={{...fieldBoxInner, gridColumn:'span 2'}}><label style={labelModalStyle}>TÍTULO DO CHAMADO</label><p style={{fontSize:'18px', fontWeight: '300'}}>{tarefaSelecionada.titulo}</p></div>
-              <div style={{...fieldBoxInner, gridColumn:'span 2'}}><label style={labelModalStyle}>DESCRIÇÃO COMPLETA</label><p style={{fontSize:'18px', lineHeight:'1.6', color:'#2f3640', fontWeight: '300'}}>{tarefaSelecionada.descricao}</p></div>
+              <div style={fieldBoxInner}><label style={labelModalStyle}>FUNCIONÁRIO</label><p style={{fontSize:'15px', fontWeight: '600'}}>{tarefaSelecionada.funcionario?.toUpperCase()}</p></div>
+              <div style={fieldBoxInner}><label style={labelModalStyle}>SETOR</label><p style={{fontSize:'15px', color:'#0ea5e9', fontWeight: '600'}}>{tarefaSelecionada.setor?.toUpperCase()}</p></div>
+              <div style={{...fieldBoxInner, gridColumn:'span 2'}}><label style={labelModalStyle}>TÍTULO DO CHAMADO</label><p style={{fontSize:'15px', fontWeight: '500'}}>{tarefaSelecionada.titulo}</p></div>
+              <div style={{...fieldBoxInner, gridColumn:'span 2'}}><label style={labelModalStyle}>DESCRIÇÃO COMPLETA</label><p style={{fontSize:'15px', lineHeight:'1.6', color:'#475569'}}>{tarefaSelecionada.descricao}</p></div>
             </>
           ) : (
             <>
-              <div style={fieldBoxInner}><label style={labelModalStyle}>ID REGISTRO</label><p style={{fontSize:'18px', color: '#2f3640', fontWeight: '300'}}>#{tarefaSelecionada.id}</p></div>
-              <div style={fieldBoxInner}><label style={labelModalStyle}>MÉTODO / CONDIÇÃO</label><p style={{fontSize:'18px', color: '#2f3640', fontWeight: '300'}}>{tarefaSelecionada.forma_pagamento || tarefaSelecionada.motivo || 'N/A'}</p></div>
+              <div style={fieldBoxInner}><label style={labelModalStyle}>ID REGISTRO</label><p style={{fontSize:'15px', color: '#0f172a', fontWeight: '600'}}>#{tarefaSelecionada.id}</p></div>
+              <div style={fieldBoxInner}><label style={labelModalStyle}>MÉTODO / CONDIÇÃO</label><p style={{fontSize:'15px', color: '#0f172a', fontWeight: '600'}}>{tarefaSelecionada.forma_pagamento || tarefaSelecionada.motivo || 'N/A'}</p></div>
               {tarefaSelecionada.gTipo === 'boleto' && (
                 <>
                     <div style={fieldBoxInner}><label style={labelModalStyle}>NF SERVIÇO</label><input style={inputStyleLight} defaultValue={tarefaSelecionada.num_nf_servico} onBlur={e => handleUpdateField(tarefaSelecionada, 'num_nf_servico', e.target.value)} /></div>
                     <div style={fieldBoxInner}><label style={labelModalStyle}>NF PEÇA</label><input style={inputStyleLight} defaultValue={tarefaSelecionada.num_nf_peca} onBlur={e => handleUpdateField(tarefaSelecionada, 'num_nf_peca', e.target.value)} /></div>
                 </>
               )}
-              <div style={{gridColumn:'span 2', ...fieldBoxInner}}><label style={labelModalStyle}>OBSERVAÇÕES DO PROCESSO</label><textarea style={{...inputStyleLight, height:'120px', resize: 'none'}} defaultValue={tarefaSelecionada.obs || tarefaSelecionada.motivo} onBlur={e => handleUpdateField(tarefaSelecionada, tarefaSelecionada.gTipo === 'boleto' ? 'obs' : 'motivo', e.target.value)} /></div>
+              {/* CAMPO OBSERVAÇÃO CONDICIONAL */}
+              {(tarefaSelecionada.obs || tarefaSelecionada.motivo) && (
+                <div style={{gridColumn:'span 2', ...fieldBoxInner}}>
+                    <label style={labelModalStyle}>OBSERVAÇÕES DO PROCESSO</label>
+                    <textarea title="Notas internas" style={{...inputStyleLight, height:'120px', resize: 'none'}} defaultValue={tarefaSelecionada.obs || tarefaSelecionada.motivo} onBlur={e => handleUpdateField(tarefaSelecionada, tarefaSelecionada.gTipo === 'boleto' ? 'obs' : 'motivo', e.target.value)} />
+                </div>
+              )}
             </>
           )}
         </div>
@@ -333,59 +370,49 @@ export default function HomeFinanceiro() {
         <div style={{marginTop:'40px'}}>
             <label style={labelModalStyle}>ANEXOS E DOCUMENTOS</label>
             <div style={{display:'flex', gap:'15px', flexWrap:'wrap', marginTop:'15px'}}>
-                <AttachmentTag label="NF SERVIÇO" fileUrl={tarefaSelecionada.anexo_nf_servico} onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada, 'anexo_nf_servico', file)} />
-                <AttachmentTag label="NF PEÇA" fileUrl={tarefaSelecionada.anexo_nf_peca} onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada, 'anexo_nf_peca', file)} />
-                <AttachmentTag label="BOLETO" fileUrl={tarefaSelecionada.anexo_boleto} onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada, 'anexo_boleto', file)} />
+                <AttachmentTag icon={<FileText size={18} />} label="NF SERVIÇO" fileUrl={tarefaSelecionada.anexo_nf_servico} onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada, 'anexo_nf_servico', file)} />
+                <AttachmentTag icon={<ClipboardList size={18} />} label="NF PEÇA" fileUrl={tarefaSelecionada.anexo_nf_peca} onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada, 'anexo_nf_peca', file)} />
+                <AttachmentTag icon={<Barcode size={18} />} label="BOLETO" fileUrl={tarefaSelecionada.anexo_boleto} onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada, 'anexo_boleto', file)} />
                 
-                {tarefaSelecionada.status !== 'gerar_boleto' && (
-                    <AttachmentTag label="COMPROVANTE" fileUrl={tarefaSelecionada.comprovante_pagamento || tarefaSelecionada.anexo_pix} onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada, 'comprovante_pagamento', file)} />
+                {/* COMPROVANTE CONDICIONAL */}
+                {(tarefaSelecionada.comprovante_pagamento || tarefaSelecionada.anexo_pix || tarefaSelecionada.status === 'aguardando_vencimento') && (
+                    <AttachmentTag icon={<CheckCircle size={18} />} label="COMPROVANTE" fileUrl={tarefaSelecionada.comprovante_pagamento || tarefaSelecionada.anexo_pix} onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada, 'comprovante_pagamento', file)} />
                 )}
             </div>
         </div>
 
         <div style={{marginTop:'50px', display:'flex', gap:'20px'}}>
             {tarefaSelecionada.status === 'gerar_boleto' && (
-                <div style={{flex: 1, background:'#f5f6fa', padding:'40px', borderRadius:'0px', border:'1px solid #dcdde1'}}>
-                    <label style={{...labelModalStyle, color:'#2f3640', fontSize: '13px', fontWeight: '400'}}>ANEXAR NOVO BOLETO</label>
+                <div style={{flex: 1, background:'#f8fafc', padding:'40px', borderRadius:'0px', border:'0.5px solid #0ea5e9'}}>
+                    <label style={{...labelModalStyle, color:'#0ea5e9', fontSize: '15px'}}>ANEXAR NOVO BOLETO</label>
                     <div style={{display:'flex', gap:'25px', marginTop:'20px', alignItems: 'center'}}>
                         <div style={{ flex: 1, position: 'relative', overflow: 'hidden', display: 'inline-block' }}>
-                            <button style={{ 
-                                background: '#ffffff', color: '#2f3640', border: '1px dashed #dcdde1', 
-                                padding: '18px 25px', borderRadius: '0px', width: '100%', cursor: 'pointer',
-                                display: 'flex', alignItems: 'center', gap: '15px', transition: '0.2s',
-                                fontSize: '15px', fontWeight: '300'
-                            }}>
-                                <Upload size={24} color="#2f3640" />
-                                <span style={{ color: '#718093' }}>
-                                    {fileBoleto ? fileBoleto.name : "Clique para selecionar o arquivo"}
-                                </span>
+                            <button style={{ background: '#ffffff', color: '#1e293b', border: '1.5px dashed #000', padding: '18px 25px', borderRadius: '0px', width: '100%', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '15px', fontSize: '15px', fontWeight: '700' }}>
+                                <Upload size={24} color="#000" />
+                                <span style={{ color: '#000' }}>{fileBoleto ? fileBoleto.name : "Clique para selecionar o arquivo"}</span>
                             </button>
                             <input type="file" onChange={e => setFileBoleto(e.target.files[0])} style={{ position: 'absolute', fontSize: '100px', opacity: 0, right: 0, top: 0, cursor: 'pointer' }} />
                         </div>
-
-                        <div className="tooltip-container">
-                            <button onClick={() => handleGerarBoletoFinanceiro(tarefaSelecionada)} style={btnPrimaryStyle}>LANÇAR TAREFA</button>
-                            <div className="tooltip-box">Anexar Boleto e Gerar tarefa para o Pós Vendas enviar para o cliente</div>
-                        </div>
+                        <button onClick={() => handleGerarBoletoFinanceiro(tarefaSelecionada)} style={btnPrimaryStyle}>LANÇAR TAREFA</button>
                     </div>
                 </div>
             )}
 
-            {tarefaSelecionada.status === 'validar_pix' && (
-                <button onClick={() => handleMoverParaPago(tarefaSelecionada)} style={{flex: 1, background:'#2f3640', color:'#fff', border:'none', padding:'25px', borderRadius:'0px', cursor:'pointer', fontSize: '16px', display:'flex', alignItems:'center', justifyContent:'center', gap:'15px', fontWeight:'400', letterSpacing: '2px', textTransform: 'uppercase'}}>
-                    <DollarSign size={24}/> CONFIRMAR PIX E MOVER PARA PAGO
+            {(tarefaSelecionada.status === 'validar_pix' || (tarefaSelecionada.status === 'aguardando_vencimento' && !!tarefaSelecionada.comprovante_pagamento)) && (
+                <button title="Confirmar e mover para pago" onClick={() => handleMoverParaPago(tarefaSelecionada)} style={{flex: 1, background:'#22c55e', color:'#ffffff', border:'none', padding:'20px', borderRadius:'0px', cursor:'pointer', fontSize: '17px', display:'flex', alignItems:'center', justifyContent:'center', gap:'15px', fontWeight:'600', boxShadow: '0 4px 14px 0 rgba(34, 197, 94, 0.39)' }}>
+                    <CheckCircle size={24}/> CONCLUIR-MOVER PARA PAGO
                 </button>
             )}
             
             {tarefaSelecionada.gTipo !== 'boleto' && (
-                <button onClick={() => handleConcluirGeral(tarefaSelecionada)} style={{flex: 1, background:'#2f3640', color:'#fff', border:'none', padding:'25px', borderRadius:'0px', cursor:'pointer', fontSize: '16px', display:'flex', alignItems:'center', justifyContent:'center', gap:'15px', fontWeight:'400', letterSpacing: '2px', textTransform: 'uppercase'}}>
+                <button title="Finalizar processo" onClick={() => handleConcluirGeral(tarefaSelecionada)} style={{flex: 1, background:'#22c55e', color:'#ffffff', border:'none', padding:'20px', borderRadius:'0px', cursor:'pointer', fontSize: '17px', display:'flex', alignItems:'center', justifyContent:'center', gap:'15px', fontWeight:'600'}}>
                     <CheckCheck size={24}/> CONCLUIR PROCESSO
                 </button>
             )}
         </div>
       </div>
 
-      <div style={{ flex: '0.8', padding: '40px', background: '#ffffff', borderLeft:'1px solid #dcdde1', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ flex: '0.8', padding: '40px', background: '#f8fafc', borderLeft:'0.5px solid #dcdde1', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
        <div style={{ width: '95%', height: '92%' }}>
         {userProfile && <ChatChamado registroId={tarefaSelecionada.id} tipo={tarefaSelecionada.gTipo} userProfile={userProfile} />}
        </div>
@@ -396,16 +423,16 @@ export default function HomeFinanceiro() {
 
    <style jsx global>{`
     * { font-weight: 400 !important; font-family: 'Montserrat', sans-serif; }
-    .task-card { background: #ffffff; border: 1px solid #dcdde1; border-radius: 0px; cursor: pointer; transition: 0.4s ease; overflow: hidden; }
-    .task-card:hover { transform: scale(1.02); box-shadow: 0 15px 40px rgba(47, 54, 64, 0.08); border-color: #2f3640; }
-    .btn-back-light { background: #ffffff; color: #2f3640; border: 1px solid #dcdde1; padding: 10px 24px; border-radius: 0px; cursor: pointer; display: flex; align-items: center; gap: 10px; transition: 0.3s; font-size:12px; font-weight: 400; letter-spacing: 1px; text-transform: uppercase; }
-    button:active { transform: scale(0.98); }
+    .task-card-grid { background: #ffffff; border: 0.5px solid #dcdde1; cursor: pointer; transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1); overflow: hidden; margin-bottom: 15px; border-radius: 0px; }
+    .task-card-grid:hover { transform: translateY(-4px); box-shadow: 0 10px 20px rgba(0,0,0,0.04); border-color: #0ea5e9; z-index: 10; }
+    .btn-back-light { background: #ffffff; color: #64748b; border: 0.5px solid #dcdde1; padding: 10px 24px; border-radius: 0px; cursor: pointer; display: flex; align-items: center; gap: 10px; transition: 0.3s; font-size:15px; font-weight: 500 !important; }
+    button:hover { opacity: 0.9 !important; }
 
     .tooltip-container { position: relative; display: flex; }
     .tooltip-box { 
         position: absolute; bottom: 115%; left: 50%; transform: translateX(-50%);
-        background: #2f3640; color: #ffffff; padding: 15px 20px; border-radius: 0px;
-        font-size: 13px; width: 300px; text-align: center; pointer-events: none;
+        background: #1e293b; color: #ffffff; padding: 15px 20px; border-radius: 12px;
+        font-size: 15px; width: 350px; text-align: center; pointer-events: none;
         opacity: 0; transition: 0.3s; z-index: 100; box-shadow: 0 10px 30px rgba(0,0,0,0.2);
         line-height: 1.4;
     }
@@ -415,19 +442,21 @@ export default function HomeFinanceiro() {
  )
 }
 
-// --- COMPONENTE INTERNO DE TAG DE ANEXO ---
-function AttachmentTag({ label, fileUrl, onUpload, disabled }) {
+// --- COMPONENTE TAG DE ANEXO ---
+function AttachmentTag({ icon, label, fileUrl, onUpload, disabled }) {
     const fileInputRef = useRef(null);
     return (
-        <div style={{ display: 'flex', alignItems: 'center', background: '#ffffff', border: '1px solid #dcdde1', borderRadius: '0px', overflow: 'hidden', minWidth:'240px' }}>
-            <span style={{ padding: '12px 18px', fontSize: '12px', color: '#2f3640', borderRight: '1px solid #dcdde1', flex: 1, fontWeight: '400', letterSpacing: '1px' }}>{label}</span>
-            <div style={{ display: 'flex', background: '#f5f6fa' }}>
-                {fileUrl && (
-                    <button title="Ver arquivo" onClick={() => window.open(fileUrl, '_blank')} style={miniActionBtn}><Eye size={18} color="#2f3640" /></button>
-                )}
+        <div style={{ display: 'flex', alignItems: 'center', background: '#f1f5f9', border: '0.5px solid #dcdde1', borderRadius: '0px', overflow: 'hidden', minWidth:'280px' }}>
+            <div style={{ padding: '0 15px', color: '#000' }}>{icon}</div>
+            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, padding: '10px 5px' }}>
+                <span style={{ fontSize: '15px', color: '#000', fontWeight: '800' }}>{label}</span>
+                <span style={{ fontSize: '13px', color: fileUrl ? '#16a34a' : '#ef4444', fontWeight: '600' }}>{fileUrl ? 'DISPONÍVEL' : 'PENDENTE'}</span>
+            </div>
+            <div style={{ display: 'flex', borderLeft: '0.5px solid #dcdde1' }}>
+                {fileUrl && <button title="Abrir arquivo" onClick={() => window.open(fileUrl, '_blank')} style={miniActionBtn}><Eye size={18} color="#000" /></button>}
                 {!disabled && (
                     <>
-                        <button title="Substituir/Anexar" onClick={() => fileInputRef.current.click()} style={miniActionBtn}><RefreshCw size={18} color="#718093" /></button>
+                        <button title="Substituir" onClick={() => fileInputRef.current.click()} style={miniActionBtn}><RefreshCw size={18} color="#000" /></button>
                         <input type="file" ref={fileInputRef} hidden onChange={(e) => onUpload(e.target.files[0])} />
                     </>
                 )}
@@ -436,15 +465,16 @@ function AttachmentTag({ label, fileUrl, onUpload, disabled }) {
     );
 }
 
-const dropItemStyle_Container = { position:'absolute', top:'65px', right: 0, background:'#ffffff', borderRadius:'0px', boxShadow: '0 20px 50px rgba(0,0,0,0.1)', zIndex:2000, width:'280px', border:'1px solid #2f3640', overflow:'hidden' };
-const dropItemStyle = { padding:'15px 25px', cursor:'pointer', color:'#2f3640', background: '#ffffff', borderBottom:'1px solid #f5f6fa', fontSize:'13px', fontWeight: '400', textTransform: 'uppercase', letterSpacing: '1px' };
-const colWrapperStyle = { padding: '30px', background: 'rgba(255, 255, 255, 0.1)', borderRadius: '0px', border: '1px solid #dcdde1' };
-const colTitleStyle = { textAlign: 'center', fontSize: '30px', color:'#2f3640', fontWeight:'300', marginBottom:'45px', textTransform:'uppercase', letterSpacing:'5px' };
-const miniTagStyle = { background: '#f5f6fa', padding: '6px 14px', borderRadius: '0px', color: '#2f3640', fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '8px', border: '1px solid #dcdde1', fontWeight: '400', letterSpacing: '1px' };
-const labelModalStyle = { fontSize:'11px', color:'#718093', letterSpacing:'2px', textTransform:'uppercase', display:'block', marginBottom:'10px', fontWeight: '400' };
-const pModalStyle = { fontSize:'24px', color:'#2f3640', margin:'0', fontWeight: '300' };
-const fieldBoxModal = { border: '1px solid #dcdde1', padding: '25px', borderRadius: '0px', background: '#ffffff', flex: 1 };
-const fieldBoxInner = { padding: '10px', borderRadius: '0px', background: 'transparent' };
-const inputStyleLight = { width: '100%', padding: '18px', border: '1px solid #dcdde1', borderRadius: '0px', outline: 'none', background:'#ffffff', color:'#2f3640', fontSize: '15px', boxSizing: 'border-box', fontWeight: '300' };
-const miniActionBtn = { background: 'transparent', border: 'none', padding: '12px 18px', cursor: 'pointer', transition: '0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center' };
-const btnPrimaryStyle = { background:'#2f3640', color:'#ffffff', border:'none', padding:'20px 45px', borderRadius:'0px', cursor:'pointer', fontSize: '14px', fontWeight: '400', transition: '0.3s', textTransform: 'uppercase', letterSpacing: '2px' };
+const zoomBtnStyle = { background: 'transparent', border: 'none', cursor: 'pointer', color: '#000', display: 'flex', alignItems: 'center', padding: '5px' };
+const dropItemStyle_Container = { position:'absolute', top:'60px', right: 0, background:'#ffffff', borderRadius:'0px', boxShadow: '0 30px 60px rgba(0,0,0,0.1)', zIndex:2000, width:'300px', border:'0.5px solid #dcdde1', overflow:'hidden' };
+const dropItemStyle = { padding:'15px 25px', cursor:'pointer', color:'#1e293b', background: '#ffffff', borderBottom:'0.5px solid #dcdde1', fontSize:'15px', fontWeight: '500' };
+const colWrapperStyle = { padding: '20px', background: 'rgba(255, 255, 255, 0.4)', border: '0.5px solid #dcdde1', display: 'flex', flexDirection: 'column', borderRadius: '0px' };
+const colTitleStyle = { textAlign: 'center', fontSize: '22px', color:'#0f172a', fontWeight:'700', marginBottom:'35px', textTransform:'uppercase', letterSpacing:'2px' };
+const miniTagStyle = { background: '#f1f5f9', padding: '6px 12px', borderRadius: '0px', color: '#000', fontSize: '15px', display: 'inline-flex', alignItems: 'center', gap: '8px', border: '0.5px solid #dcdde1', fontWeight: '500' };
+const labelModalStyle = { fontSize:'15px', color:'#64748b', letterSpacing:'0.5px', textTransform:'uppercase', display:'block', marginBottom:'12px', fontWeight: '600' };
+const pModalStyle = { fontSize:'24px', color:'#0f172a', margin:'0', fontWeight: '500' };
+const fieldBoxModal = { border: '0.5px solid #dcdde1', padding: '25px', borderRadius: '0px', background: '#ffffff', flex: 1 };
+const fieldBoxInner = { padding: '10px', background: 'transparent' };
+const inputStyleLight = { width: '100%', padding: '20px', border: '0.5px solid #dcdde1', borderRadius: '0px', outline: 'none', background:'#ffffff', color:'#1e293b', fontSize: '15px', boxSizing: 'border-box', transition: '0.2s' };
+const miniActionBtn = { background: 'transparent', border: 'none', padding: '10px 15px', cursor: 'pointer', transition: '0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center' };
+const btnPrimaryStyle = { background:'#0ea5e9', color:'#ffffff', border:'none', padding:'18px 45px', borderRadius:'0px', cursor:'pointer', fontSize: '16px', fontWeight: '600 !important', transition: '0.3s', boxShadow: '0 4px 14px 0 rgba(14, 165, 233, 0.39)' };

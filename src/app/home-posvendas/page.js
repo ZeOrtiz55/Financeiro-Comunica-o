@@ -108,7 +108,8 @@ export default function HomePosVendas() {
           cont_cob: t.recombrancas_qtd || 0,
           anexo_boleto_final: t.anexo_boleto,
           anexo_nf_servico_final: t.anexo_nf_servico,
-          anexo_nf_peca_final: t.anexo_nf_peca
+          anexo_nf_peca_final: t.anexo_nf_peca,
+          comprovante_pagamento_final: t.comprovante_pagamento
         });
       }
       for (let i = 1; i <= t.qtd_parcelas; i++) { 
@@ -128,7 +129,8 @@ export default function HomePosVendas() {
             num_parcela: i,
             anexo_boleto_final: t[`anexo_boleto_p${i}`],
             anexo_nf_servico_final: t[`anexo_nf_servico_p${i}`],
-            anexo_nf_peca_final: t[`anexo_nf_peca_p${i}`]
+            anexo_nf_peca_final: t[`anexo_nf_peca_p${i}`],
+            comprovante_pagamento_final: t[`comprovante_pagamento_p${i}`]
           }); 
         } 
       }
@@ -166,21 +168,16 @@ export default function HomePosVendas() {
       const pNum = isChild ? t.id_virtual.split('_p')[1] : null;
       let col = field;
       
-      // Mapeamento dinâmico para colunas _p1...p5 caso seja parcela
       if (isChild && !['num_nf_servico', 'num_nf_peca', 'obs'].includes(field)) {
           col = `${field}_p${pNum}`;
       }
       
       await supabase.from('Chamado_NF').update({ [col]: linkData.publicUrl }).eq('id', idReal);
-      alert("Documento atualizado com sucesso!");
+      alert("Arquivo atualizado!");
       carregarDados();
-      // Atualiza o estado local do modal para refletir a mudança
       if(tarefaSelecionada) {
-          const fieldMap = {
-              'anexo_nf_servico': 'anexo_nf_servico_final',
-              'anexo_nf_peca': 'anexo_nf_peca_final'
-          };
-          setTarefaSelecionada(prev => ({ ...prev, [fieldMap[field]]: linkData.publicUrl }));
+          const suffix = field === 'anexo_nf_servico' ? 'anexo_nf_servico_final' : 'anexo_nf_peca_final';
+          setTarefaSelecionada(prev => ({ ...prev, [suffix]: linkData.publicUrl }));
       }
     } catch (err) { alert("Erro ao enviar: " + err.message); }
   };
@@ -345,29 +342,26 @@ export default function HomePosVendas() {
                   <div style={{marginTop:'45px'}}>
                       <label style={labelMStyle}>ARQUIVOS E DOCUMENTOS</label>
                       <div style={{display:'flex', gap:'15px', marginTop:'15px', flexWrap: 'wrap'}}>
-                          {/* NF SERVIÇO: PODE ALTERAR */}
                           <AttachmentTag 
                             label="NF SERVIÇO" 
                             fileUrl={tarefaSelecionada.anexo_nf_servico_final} 
                             onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada, 'anexo_nf_servico', file)} 
                           />
-                          {/* NF PEÇA: PODE ALTERAR */}
                           <AttachmentTag 
                             label="NF PEÇA" 
                             fileUrl={tarefaSelecionada.anexo_nf_peca_final} 
                             onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada, 'anexo_nf_peca', file)} 
                           />
-                          {/* BOLETO: APENAS VISUALIZAÇÃO NO PÓS-VENDAS */}
                           <AttachmentTag 
                             label="BOLETO (VISUALIZAR)" 
                             fileUrl={tarefaSelecionada.anexo_boleto_final} 
                             disabled={true}
                           />
-                          {/* COMPROVANTE: APENAS VISUALIZAÇÃO CASO EXISTA */}
-                          {tarefaSelecionada.comprovante_pagamento && (
+                          {/* COMPROVANTE SÓ APARECE EM PAGO OU VENCIDO */}
+                          {(tarefaSelecionada.status === 'pago' || tarefaSelecionada.status === 'vencido') && tarefaSelecionada.comprovante_pagamento_final && (
                             <div className="btn-file-static">
                               <span>COMPROVANTE</span>
-                              <a href={tarefaSelecionada.comprovante_pagamento} target="_blank" rel="noreferrer"><Eye size={18}/></a>
+                              <a href={tarefaSelecionada.comprovante_pagamento_final} target="_blank" rel="noreferrer"><Eye size={18}/></a>
                             </div>
                           )}
                       </div>
@@ -381,7 +375,7 @@ export default function HomePosVendas() {
 
               <div style={{display:'flex', gap:'20px', marginTop:'45px'}}>
                 {tarefaSelecionada.status === 'enviar_cliente' && (
-                    <button onClick={() => handleConfirmarEnvioBoleto(tarefaSelecionada)} style={btnActionGreen}><Send size={22}/> BOLETO ENVIADO PARA O CLIENTE</button>
+                    <button onClick={() => handleConfirmarEnvioBoleto(tarefaSelecionada)} style={btnActionGreen}><Send size={22}/> MARCAR COMO ENVIADO AO CLIENTE</button>
                 )}
 
                 {tarefaSelecionada.tarefa?.includes('Cobrar') && (
