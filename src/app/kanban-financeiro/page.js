@@ -12,7 +12,7 @@ Calendar, CreditCard, Hash, History, ArrowLeft, Paperclip, ImageIcon,
 CheckCheck, Eye, LayoutDashboard, ClipboardList, UserCheck, TrendingUp, TrendingDown, Search, Trash2, Settings, RefreshCw, AlertCircle, Tag, Lock, DollarSign, Barcode
 } from 'lucide-react'
 
-// --- 1. TELA DE CARREGAMENTO (ESTILO CLARO SOFT) ---
+// --- 1. TELA DE CARREGAMENTO ---
 function LoadingScreen() {
 return (
   <div style={{ position: 'fixed', inset: 0, background: '#f8fafc', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -24,7 +24,7 @@ return (
 )
 }
 
-// --- 2. FORMATADOR DE DATA PT-BR ---
+// --- 2. FORMATADOR DE DATA ---
 const formatarDataBR = (dataStr) => {
 if (!dataStr || dataStr === 'null' || dataStr === "") return 'N/A';
 try {
@@ -46,7 +46,7 @@ return (
 )
 }
 
-// --- 3. CHAT INTERNO (ESTILO INDIGO/PURPLE) ---
+// --- 3. CHAT INTERNO ---
 function ChatChamado({ registroId, tipo, userProfile }) {
 const [mensagens, setMensagens] = useState([]); const [novaMsg, setNovaMsg] = useState(''); const scrollRef = useRef();
 const colunaId = tipo === 'boleto' ? 'chamado_id' : tipo === 'pagar' ? 'pagar_id' : tipo === 'receber' ? 'receber_id' : 'rh_id';
@@ -121,57 +121,22 @@ const carregarDados = async () => {
   try {
     const { data } = await supabase.from('Chamado_NF').select('*');
     const hoje = new Date(); hoje.setHours(0,0,0,0);
-    let cardsProcessados = [];
+    
+    const processados = (data || []).map(c => {
+      let st = c.status || 'gerar_boleto';
+      const venc = c.vencimento_boleto ? new Date(c.vencimento_boleto) : null;
+      if (venc) venc.setHours(0,0,0,0);
+      
+      if (st === 'aguardando_vencimento' && venc && venc < hoje) st = 'pago';
 
-    for (const c of (data || [])) {
-      if (c.qtd_parcelas && c.qtd_parcelas > 1) {
-        const totalP = Math.min(c.qtd_parcelas, 5);
-        const datasArray = (c.datas_parcelas || "").split(/[\s,]+/).filter(d => d.includes('-'));
-
-        for (let numParc = 1; numParc <= totalP; numParc++) {
-          const dataParc = datasArray[numParc - 1] || c.vencimento_boleto; 
-          const vencParc = dataParc ? new Date(dataParc) : null;
-          if(vencParc) vencParc.setHours(0,0,0,0);
-
-          let st = c[`status_p${numParc}`] || 'gerar_boleto';
-          if (st === 'aguardando_vencimento' && vencParc && vencParc < hoje) st = 'pago';
-
-          const comp = c[`comprovante_pagamento_p${numParc}`];
-
-          cardsProcessados.push({
-            ...c, 
-            id_virtual: `${c.id}_p${numParc}`, 
-            nom_cliente: `${c.nom_cliente} (P${numParc})`,
-            vencimento_boleto: dataParc, 
-            valor_exibicao: c[`valor_parcela${numParc}`] || (c.valor_servico / c.qtd_parcelas).toFixed(2),
-            status: st, 
-            isChild: true, 
-            pNum: numParc, 
-            gTipo: 'boleto', 
-            recombrancas_qtd: c[`recombrancas_qtd_p${numParc}`] || 0,
-            tarefa: c[`tarefa_p${numParc}`],
-            anexo_boleto: c[`anexo_boleto_p${numParc}`],
-            comprovante_pagamento: comp,
-            isPagamentoRealizado: st === 'aguardando_vencimento' && !!comp
-          });
-        }
-      } else {
-        let st = c.status || 'gerar_boleto';
-        const venc = c.vencimento_boleto ? new Date(c.vencimento_boleto) : null;
-        if (venc) venc.setHours(0,0,0,0);
-        if (st === 'aguardando_vencimento' && venc && venc < hoje) st = 'pago';
-
-        cardsProcessados.push({ 
-          ...c, 
-          valor_exibicao: c.valor_servico, 
-          status: st, 
-          gTipo: 'boleto', 
-          recombrancas_qtd: c.recombrancas_qtd || 0,
-          isPagamentoRealizado: st === 'aguardando_vencimento' && !!c.comprovante_pagamento
-        });
-      }
-    }
-    setChamados(cardsProcessados);
+      return { 
+        ...c, 
+        status: st, 
+        valor_exibicao: c.valor_servico,
+        isPagamentoRealizado: (!!c.comprovante_pagamento || !!c.comprovante_pagamento_p1)
+      };
+    });
+    setChamados(processados);
   } catch (err) { console.error("Erro ao carregar dados:", err); }
 }
 
@@ -198,14 +163,7 @@ useEffect(() => {
 
 const handleUpdateField = async (id, field, value) => {
     if (tarefaSelecionada?.status === 'concluido') return;
-    const isChild = String(id).includes('_p');
-    const idReal = isChild ? id.split('_p')[0] : id;
-    const pNum = isChild ? id.split('_p')[1] : null;
-    let col = field;
-    if (isChild && !['num_nf_servico', 'num_nf_peca', 'obs', 'forma_pagamento', 'qtd_parcelas', 'datas_parcelas'].includes(field)) {
-        col = `${field}_p${pNum}`;
-    }
-    await supabase.from('Chamado_NF').update({ [col]: value }).eq('id', idReal);
+    await supabase.from('Chamado_NF').update({ [field]: value }).eq('id', id);
     carregarDados();
     if(tarefaSelecionada) setTarefaSelecionada(prev => ({ ...prev, [field]: value }));
 };
@@ -213,20 +171,12 @@ const handleUpdateField = async (id, field, value) => {
 const handleUpdateFileDirect = async (id, field, file) => {
     if(!file) return;
     try {
-      const isChild = String(id).includes('_p');
-      const idReal = isChild ? id.split('_p')[0] : id;
       const path = `anexos/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
       const { error: uploadError } = await supabase.storage.from('anexos').upload(path, file);
       if (uploadError) throw uploadError;
       const { data: linkData } = supabase.storage.from('anexos').getPublicUrl(path);
-      const pNum = isChild ? id.split('_p')[1] : null;
-      let col = field;
-      if (isChild && ['anexo_boleto', 'comprovante_pagamento'].includes(field)) {
-          col = `${field}_p${pNum}`;
-      } else if (isChild && !['num_nf_servico', 'num_nf_peca', 'obs'].includes(field)) {
-          col = `${field}_p${pNum}`;
-      }
-      await supabase.from('Chamado_NF').update({ [col]: linkData.publicUrl }).eq('id', idReal);
+      
+      await supabase.from('Chamado_NF').update({ [field]: linkData.publicUrl }).eq('id', id);
       alert("Arquivo atualizado!");
       carregarDados();
       if(tarefaSelecionada) setTarefaSelecionada(prev => ({ ...prev, [field]: linkData.publicUrl }));
@@ -234,11 +184,7 @@ const handleUpdateFileDirect = async (id, field, file) => {
 };
 
 const handleActionMoveStatus = async (t, newStatus) => {
-    const isChild = !!t.id_virtual;
-    const idReal = t.id;
-    const pNum = isChild ? t.id_virtual.split('_p')[1] : null;
-    let updateData = isChild ? { [`status_p${pNum}`]: newStatus } : { status: newStatus };
-    const { error } = await supabase.from('Chamado_NF').update(updateData).eq('id', idReal);
+    const { error } = await supabase.from('Chamado_NF').update({ status: newStatus }).eq('id', t.id);
     if (!error) {
         alert(newStatus === 'concluido' ? "Card Concluído!" : "Card movido!");
         carregarDados();
@@ -247,20 +193,12 @@ const handleActionMoveStatus = async (t, newStatus) => {
 };
 
 const handleActionCobrarCliente = async (t) => {
-    const isChild = !!t.id_virtual;
-    const idReal = t.id;
-    const pNum = isChild ? t.id_virtual.split('_p')[1] : null;
-    const currentRec = t.recombrancas_qtd || 0;
-    const newVal = currentRec + 1;
-    let updateData = isChild ? { 
-        [`tarefa_p${pNum}`]: 'Cobrar Cliente (Recobrança)', 
-        [`recombrancas_qtd_p${pNum}`]: newVal 
-    } : { 
+    const newVal = (t.recombrancas_qtd || 0) + 1;
+    const { error } = await supabase.from('Chamado_NF').update({ 
         tarefa: 'Cobrar Cliente (Recobrança)', 
         recombrancas_qtd: newVal,
         setor: 'Pós-Vendas'
-    };
-    const { error } = await supabase.from('Chamado_NF').update(updateData).eq('id', idReal);
+    }).eq('id', t.id);
     if (!error) {
         alert("Recobrança enviada ao Pós-Vendas!");
         setTarefaSelecionada(null);
@@ -270,44 +208,37 @@ const handleActionCobrarCliente = async (t) => {
 
 const handleGerarBoletoFaturamentoFinal = async (id) => {
   if (!fileBoleto) return alert("Anexe o arquivo.");
-  const isChild = String(id).includes('_p');
-  const idReal = isChild ? id.split('_p')[0] : id;
-  const pNum = isChild ? id.split('_p')[1] : null;
   const path = `boletos/${Date.now()}-${fileBoleto.name}`;
   await supabase.storage.from('anexos').upload(path, fileBoleto);
   const { data } = supabase.storage.from('anexos').getPublicUrl(path);
   
-  const updateData = isChild ? 
-    { 
-      [`status_p${pNum}`]: 'enviar_cliente', 
-      [`anexo_boleto_p${pNum}`]: data.publicUrl,
-      [`tarefa_p${pNum}`]: 'Enviar para o Cliente' 
-    } : 
-    { 
+  const updateData = { 
       status: 'enviar_cliente', 
       anexo_boleto: data.publicUrl, 
       tarefa: 'Enviar para o Cliente',
       setor: 'Pós-Vendas'
-    };
+  };
 
-  await supabase.from('Chamado_NF').update(updateData).eq('id', idReal);
+  await supabase.from('Chamado_NF').update(updateData).eq('id', id);
   alert("Boleto anexado e tarefa gerada para o Pós-Vendas!");
   setTarefaSelecionada(null); carregarDados();
 };
 
 const chamadosFiltrados = chamados.filter(c => {
     const matchCliente = c.nom_cliente?.toLowerCase().includes(filtroCliente.toLowerCase());
-    const matchNF = !filtroNF || (c.num_nf_servico?.toString().includes(filtroNF) || c.num_nf_peca?.toString().includes(filtroNF));
+    const matchNF = !filtroNF || (String(c.num_nf_servico).includes(filtroNF) || String(c.num_nf_peca).includes(filtroNF));
     const matchData = filtroData ? c.vencimento_boleto === filtroData : true;
     return matchCliente && matchNF && matchData;
 });
 
 if (loading) return <LoadingScreen />
 
+// --- LÓGICAS CONDICIONAIS ---
 const isPixOuCartaoVista = tarefaSelecionada && ['Á Vista no Pix', 'Cartão a Vista'].includes(tarefaSelecionada.forma_pagamento);
-const isCartaoOuPix = tarefaSelecionada && ['Á Vista no Pix', 'Cartão a Vista', 'Cartão Parcelado'].includes(tarefaSelecionada.forma_pagamento);
 const isParcelamentoOuBoleto30 = tarefaSelecionada && ['Boleto 30 Dias', 'Boleto Parcelado', 'Cartão Parcelado'].includes(tarefaSelecionada.forma_pagamento);
 const isBoleto30 = tarefaSelecionada && tarefaSelecionada.forma_pagamento === 'Boleto 30 Dias';
+
+const valorIndividual = tarefaSelecionada ? (tarefaSelecionada.valor_servico / (tarefaSelecionada.qtd_parcelas || 1)).toFixed(2) : 0;
 
 return (
   <div style={{ display: 'flex', height: '100vh', width: '100vw', fontFamily: 'Montserrat, sans-serif', background: '#f8fafc', overflow: 'hidden' }}>
@@ -341,13 +272,12 @@ return (
       <h3 style={colTitleStyle}>{col.titulo}</h3>
       
       <div style={colWrapperStyle}>
-        {/* LOGICA DE FILTRO DE COLUNA PARA INCLUIR VALIDAR_PIX EM GERAR_BOLETO */}
         {chamadosFiltrados.filter(c => {
             if (col.id === 'pago') return (c.status === 'pago' || c.status === 'concluido');
             if (col.id === 'gerar_boleto') return (c.status === 'gerar_boleto' || c.status === 'validar_pix');
             return c.status === col.id;
-        }).map(t => (
-        <div key={t.id_virtual || t.id} className="kanban-card" style={{ opacity: t.status === 'concluido' ? 0.6 : 1 }}>
+        }).map((t, idx) => (
+        <div key={`${t.id}-${idx}`} className="kanban-card" style={{ opacity: t.status === 'concluido' ? 0.6 : 1 }}>
           <div onClick={() => setTarefaSelecionada(t)} style={{ 
             background: t.status === 'vencido' ? 'rgba(239, 68, 68, 0.05)' : (t.status === 'pago' || t.status === 'concluido' ? 'rgba(34, 197, 94, 0.05)' : '#ffffff'), 
             padding: '25px', borderBottom: '1px solid #dcdde1', cursor: 'pointer'
@@ -356,7 +286,7 @@ return (
             {t.nom_cliente?.toUpperCase()} {t.status === 'concluido' && "✓"}
             </h4>
             {t.isPagamentoRealizado && (
-                <div style={{marginTop: '10px', display:'flex', alignItems:'center', gap:'8px', color: '#27ae60', fontSize: '15px', fontWeight: '600'}} title="O comprovante de pagamento foi anexado">
+                <div style={{marginTop: '10px', display:'flex', alignItems:'center', gap:'8px', color: '#27ae60', fontSize: '15px', fontWeight: '600'}} title="Comprovante de pagamento anexado">
                     <CheckCircle size={16} /> PAGAMENTO REALIZADO
                 </div>
             )}
@@ -382,7 +312,9 @@ return (
       
       <div style={{ flex: '1.2', padding: '60px', overflowY: 'auto' }}>
         <button onClick={() => setTarefaSelecionada(null)} className="btn-back" title="Voltar para a visualização do quadro"><ArrowLeft size={18}/> VOLTAR AO PAINEL</button>
-        <h2 style={{fontSize:'84px', fontWeight:'300', margin:'40px 0', letterSpacing:'-5px', color:'#2f3640', lineHeight: '0.9'}}>{tarefaSelecionada.nom_cliente?.toUpperCase()}</h2>
+        
+        {/* NOME DO CLIENTE REDUZIDO */}
+        <h2 style={{fontSize:'32px', fontWeight:'400', margin:'30px 0', letterSpacing:'-1px', color:'#2f3640', lineHeight: '1.1'}}>{tarefaSelecionada.nom_cliente?.toUpperCase()}</h2>
         
         <div style={{display:'flex', gap:'30px', marginBottom:'50px'}}>
           <div style={fieldBoxModal}>
@@ -393,10 +325,8 @@ return (
               disabled={tarefaSelecionada.status === 'concluido'}
               onChange={e => {
                   const val = e.target.value;
-                  handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'forma_pagamento', val);
-                  if (val === 'Boleto 30 Dias') {
-                      handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'qtd_parcelas', 1);
-                  }
+                  handleUpdateField(tarefaSelecionada.id, 'forma_pagamento', val);
+                  if (val === 'Boleto 30 Dias') handleUpdateField(tarefaSelecionada.id, 'qtd_parcelas', 1);
               }}
             >
               <option value="Á Vista no Pix">Á Vista no Pix</option>
@@ -406,63 +336,99 @@ return (
               <option value="Cartão Parcelado">Cartão Parcelado</option>
             </select>
           </div>
-          <div style={fieldBoxModal}><label style={labelModalStyle}>Valor Aberto</label><p style={{...pModalStyle, fontSize:'36px'}}>R$ {tarefaSelecionada.valor_exibicao}</p></div>
-          
           <div style={fieldBoxModal}>
-            <label style={labelModalStyle}>1ª Parcela</label>
-            <input 
-              type="date"
-              style={{...inputStyleModal, border: 'none', background: 'transparent', padding: '0', fontSize: '24px', color: tarefaSelecionada.status === 'vencido' ? '#c0392b' : '#2f3640'}}
-              defaultValue={tarefaSelecionada.vencimento_boleto}
-              disabled={tarefaSelecionada.status === 'concluido'}
-              onBlur={e => handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'vencimento_boleto', e.target.value)}
-            />
+             <label style={labelModalStyle}>Valor Total</label>
+             <input 
+                type="number"
+                style={{...inputStyleModal, border: 'none', background: 'transparent', padding: '0', fontSize: '32px', fontWeight: '400'}}
+                defaultValue={tarefaSelecionada.valor_servico}
+                onBlur={e => handleUpdateField(tarefaSelecionada.id, 'valor_servico', e.target.value)}
+             />
           </div>
+          
+          {/* EXIBIÇÃO DA DATA DE VENCIMENTO NO MESMO TAMANHO QUE O VALOR TOTAL SE FOR BOLETO 30 DIAS */}
+          {isBoleto30 && (
+            <div style={fieldBoxModal}>
+               <label style={labelModalStyle}>Data de Vencimento</label>
+               <input 
+                  type="date"
+                  style={{...inputStyleModal, border: 'none', background: 'transparent', padding: '0', fontSize: '32px', fontWeight: '400', color: tarefaSelecionada.status === 'vencido' ? '#c0392b' : '#2f3640'}}
+                  defaultValue={tarefaSelecionada.vencimento_boleto}
+                  onBlur={e => handleUpdateField(tarefaSelecionada.id, 'vencimento_boleto', e.target.value)}
+               />
+            </div>
+          )}
         </div>
 
-        {isParcelamentoOuBoleto30 && (
-          <div style={{display:'flex', flexDirection: 'column', gap:'30px', marginBottom:'50px', background: 'rgba(245, 246, 250, 0.5)', padding: '30px', border: '1px solid #dcdde1'}}>
-              <div style={{display: 'flex', gap: '30px'}}>
-                 <div style={{...fieldBoxModal, border: 'none', background: 'transparent', padding: 0}}>
-                    <label style={labelModalStyle}>Qtd. Parcelas (Max 5)</label>
+        {/* --- SEÇÃO DE PARCELAMENTO (SÓ APARECE SE NÃO FOR BOLETO 30 DIAS) --- */}
+        {isParcelamentoOuBoleto30 && !isBoleto30 && (
+          <div style={{display:'flex', flexDirection: 'column', gap:'20px', marginBottom:'50px', background: 'rgba(245, 246, 250, 0.5)', padding: '40px', border: '1px solid #dcdde1'}}>
+              <div style={{display: 'flex', gap: '30px', borderBottom: '1px solid #dcdde1', paddingBottom: '20px', marginBottom: '10px'}}>
+                 <div style={{flex: 1}}>
+                    <label style={labelModalStyle}>Qtd. Parcelas</label>
                     <select 
                       style={{...inputStyleModal, fontSize: '24px'}}
                       value={tarefaSelecionada.qtd_parcelas || 1}
-                      disabled={tarefaSelecionada.status === 'concluido' || isBoleto30}
-                      onChange={e => handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'qtd_parcelas', parseInt(e.target.value))}
+                      disabled={tarefaSelecionada.status === 'concluido'}
+                      onChange={e => handleUpdateField(tarefaSelecionada.id, 'qtd_parcelas', parseInt(e.target.value))}
                     >
                       <option value="1">1 Parcela</option>
-                      {!isBoleto30 && (
-                        <>
-                          <option value="2">2 Parcelas</option>
-                          <option value="3">3 Parcelas</option>
-                          <option value="4">4 Parcelas</option>
-                          <option value="5">5 Parcelas</option>
-                        </>
-                      )}
+                      {[2,3,4,5].map(v => <option key={v} value={v}>{v} Parcelas</option>)}
                     </select>
+                 </div>
+                 <div style={{flex: 1}}>
+                    <label style={labelModalStyle}>Cálculo Unitário</label>
+                    <div style={{...inputStyleModal, background: '#f8fafc', color: '#718093', borderStyle: 'dashed'}}>R$ {valorIndividual}</div>
                  </div>
               </div>
 
-              <div style={{display: 'flex', gap: '15px', flexWrap: 'wrap'}}>
+              <div style={{display: 'flex', flexDirection: 'column', gap: '15px'}}>
+                  {/* PARCELA 1 */}
+                  <div style={{display: 'grid', gridTemplateColumns: '150px 220px 180px 320px', gap: '20px', alignItems: 'center', background: '#ffffff', padding: '15px', border: '1px solid #e2e8f0'}}>
+                      <span style={{...labelModalStyle, marginBottom: 0, fontWeight: '700'}}>1ª PARCELA</span>
+                      <input 
+                        type="date"
+                        style={{...inputStyleModal, fontSize: '16px', padding: '10px'}}
+                        defaultValue={tarefaSelecionada.vencimento_boleto}
+                        disabled={tarefaSelecionada.status === 'concluido'}
+                        onBlur={e => handleUpdateField(tarefaSelecionada.id, 'vencimento_boleto', e.target.value)}
+                      />
+                      <span style={{fontSize: '18px', color: '#2f3640', fontWeight: '500'}}>R$ {valorIndividual}</span>
+                      <AttachmentTag 
+                        icon={<CheckCircle size={16} />} 
+                        label="Comprovante P1" 
+                        fileUrl={tarefaSelecionada.comprovante_pagamento_p1 || tarefaSelecionada.comprovante_pagamento} 
+                        onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada.id, 'comprovante_pagamento_p1', file)} 
+                        disabled={tarefaSelecionada.status === 'concluido'} 
+                      />
+                  </div>
+
+                  {/* PARCELAS 2 A 5 */}
                   {Array.from({ length: Math.min((tarefaSelecionada.qtd_parcelas || 1) - 1, 4) }).map((_, idx) => {
-                      const realIndex = idx + 1;
+                      const num = idx + 2;
                       const currentDatesArr = (tarefaSelecionada.datas_parcelas || "").split(/[\s,]+/).filter(d => d.includes('-'));
                       return (
-                          <div key={idx} style={{flex: '1', minWidth: '200px'}}>
-                            <label style={labelModalStyle}>{realIndex + 1}ª Parcela</label>
+                          <div key={idx} style={{display: 'grid', gridTemplateColumns: '150px 220px 180px 320px', gap: '20px', alignItems: 'center', background: '#ffffff', padding: '15px', border: '1px solid #e2e8f0'}}>
+                            <span style={{...labelModalStyle, marginBottom: 0, fontWeight: '700'}}>{num}ª PARCELA</span>
                             <input 
                               type="date"
-                              style={{...inputStyleModal, fontSize: '18px', padding: '15px'}}
+                              style={{...inputStyleModal, fontSize: '16px', padding: '10px'}}
                               defaultValue={currentDatesArr[idx] || ''}
                               disabled={tarefaSelecionada.status === 'concluido'}
                               onBlur={e => {
                                   let newDatesArr = [...currentDatesArr];
-                                  while(newDatesArr.length < (tarefaSelecionada.qtd_parcelas - 1)) newDatesArr.push("");
+                                  while(newDatesArr.length < 4) newDatesArr.push("");
                                   newDatesArr[idx] = e.target.value;
-                                  const joined = newDatesArr.slice(0, tarefaSelecionada.qtd_parcelas - 1).join(', ');
-                                  handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'datas_parcelas', joined);
+                                  handleUpdateField(tarefaSelecionada.id, 'datas_parcelas', newDatesArr.filter(d => d).join(', '));
                               }}
+                            />
+                            <span style={{fontSize: '18px', color: '#2f3640', fontWeight: '500'}}>R$ {valorIndividual}</span>
+                            <AttachmentTag 
+                              icon={<CheckCircle size={16} />} 
+                              label={`Comprovante P${num}`} 
+                              fileUrl={tarefaSelecionada[`comprovante_pagamento_p${num}`]} 
+                              onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada.id, `comprovante_pagamento_p${num}`, file)} 
+                              disabled={tarefaSelecionada.status === 'concluido'} 
                             />
                           </div>
                       );
@@ -474,45 +440,44 @@ return (
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'30px', background:'rgba(245, 246, 250, 0.5)', padding:'50px', borderRadius:'0px', border:'1px solid #dcdde1' }}>
           <div style={fieldBoxInner}>
             <label style={labelModalStyle}>Nota de Serviço</label>
-            <input style={inputStyleModal} disabled={tarefaSelecionada.status === 'concluido'} defaultValue={tarefaSelecionada.num_nf_servico} placeholder="N/A" onBlur={e => handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'num_nf_servico', e.target.value)} title="Clique para editar o número da NF de Serviço" />
+            <input style={inputStyleModal} disabled={tarefaSelecionada.status === 'concluido'} defaultValue={tarefaSelecionada.num_nf_servico} placeholder="N/A" onBlur={e => handleUpdateField(tarefaSelecionada.id, 'num_nf_servico', e.target.value)} />
           </div>
           <div style={fieldBoxInner}>
             <label style={labelModalStyle}>Nota de Peça</label>
-            <input style={inputStyleModal} disabled={tarefaSelecionada.status === 'concluido'} defaultValue={tarefaSelecionada.num_nf_peca} placeholder="N/A" onBlur={e => handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'num_nf_peca', e.target.value)} title="Clique para editar o número da NF de Peça" />
+            <input style={inputStyleModal} disabled={tarefaSelecionada.status === 'concluido'} defaultValue={tarefaSelecionada.num_nf_peca} placeholder="N/A" onBlur={e => handleUpdateField(tarefaSelecionada.id, 'num_nf_peca', e.target.value)} />
           </div>
           <div style={{gridColumn:'span 2', ...fieldBoxInner}}>
             <label style={labelModalStyle}>Observações Financeiras</label>
-            <textarea style={{...inputStyleModal, height:'150px', resize: 'none'}} disabled={tarefaSelecionada.status === 'concluido'} defaultValue={tarefaSelecionada.obs} placeholder="Escreva observações aqui..." onBlur={e => handleUpdateField(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'obs', e.target.value)} title="Notas e observações internas" />
+            <textarea style={{...inputStyleModal, height:'120px', resize: 'none'}} disabled={tarefaSelecionada.status === 'concluido'} defaultValue={tarefaSelecionada.obs} onBlur={e => handleUpdateField(tarefaSelecionada.id, 'obs', e.target.value)} />
           </div>
         </div>
 
         <div style={{marginTop:'50px'}}>
-            <label style={labelModalStyle}>Anexos e Comprovantes</label>
+            <label style={labelModalStyle}>Arquivos do Chamado</label>
             <div style={{display:'flex', gap:'15px', flexWrap:'wrap', marginTop:'15px'}}>
-                <AttachmentTag icon={<FileText size={18} />} label="NF SERVIÇO" fileUrl={tarefaSelecionada.anexo_nf_servico} onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'anexo_nf_servico', file)} disabled={tarefaSelecionada.status === 'concluido'} />
-                <AttachmentTag icon={<ClipboardList size={18} />} label="NF PEÇA" fileUrl={tarefaSelecionada.anexo_nf_peca} onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'anexo_nf_peca', file)} disabled={tarefaSelecionada.status === 'concluido'} />
+                <AttachmentTag icon={<FileText size={18} />} label="NF SERVIÇO" fileUrl={tarefaSelecionada.anexo_nf_servico} onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada.id, 'anexo_nf_servico', file)} disabled={tarefaSelecionada.status === 'concluido'} />
+                <AttachmentTag icon={<ClipboardList size={18} />} label="NF PEÇA" fileUrl={tarefaSelecionada.anexo_nf_peca} onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada.id, 'anexo_nf_peca', file)} disabled={tarefaSelecionada.status === 'concluido'} />
                 
                 {!isPixOuCartaoVista && (
-                   <AttachmentTag icon={<Barcode size={18} />} label="BOLETO" fileUrl={tarefaSelecionada.anexo_boleto} onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'anexo_boleto', file)} disabled={tarefaSelecionada.status === 'concluido'} />
+                   <AttachmentTag icon={<Barcode size={18} />} label="BOLETO" fileUrl={tarefaSelecionada.anexo_boleto} onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada.id, 'anexo_boleto', file)} disabled={tarefaSelecionada.status === 'concluido'} />
                 )}
                 
-                {(tarefaSelecionada.status === 'vencido' || tarefaSelecionada.status === 'aguardando_vencimento' || isCartaoOuPix) && (
-                  <div style={isPixOuCartaoVista ? { border: '2px solid #27ae60', borderRadius: '8px', padding: '4px', background: 'rgba(39, 174, 96, 0.05)' } : {}}>
-                    <AttachmentTag icon={<CheckCircle size={18} />} label="COMPROVANTE" fileUrl={tarefaSelecionada.comprovante_pagamento} onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada.id_virtual || tarefaSelecionada.id, 'comprovante_pagamento', file)} disabled={false} />
+                {isPixOuCartaoVista && (
+                  <div style={{ border: '2px solid #27ae60', borderRadius: '8px', padding: '4px', background: 'rgba(39, 174, 96, 0.05)' }}>
+                    <AttachmentTag icon={<CheckCircle size={18} />} label="COMPROVANTE GERAL" fileUrl={tarefaSelecionada.comprovante_pagamento} onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada.id, 'comprovante_pagamento', file)} disabled={false} />
                   </div>
                 )}
             </div>
         </div>
 
         <div style={{marginTop:'60px', display:'flex', gap:'20px'}}>
-          {/* BOX DE PROCESSAR BOLETO COM ESTILO VIVO E ARREDONDADO */}
           {(tarefaSelecionada.status === 'gerar_boleto' || tarefaSelecionada.status === 'validar_pix') && !isPixOuCartaoVista && (
             <div style={{flex: 1, background:'rgba(79, 70, 229, 0.03)', padding:'40px', borderRadius:'24px', border:'2px dashed #4f46e5'}}>
                 <label style={{...labelModalStyle, color:'#4f46e5', fontSize: '15px', fontWeight:'700'}}>ANEXAR BOLETO FINAL</label>
                 <div style={{display:'flex', gap:'30px', marginTop:'25px', alignItems: 'center'}}>
                   <input type="file" onChange={e => setFileBoleto(e.target.files[0])} style={{fontSize: '15px', color: '#718093'}} />
                   <button 
-                    onClick={() => handleGerarBoletoFaturamentoFinal(tarefaSelecionada.id_virtual || tarefaSelecionada.id)} 
+                    onClick={() => handleGerarBoletoFaturamentoFinal(tarefaSelecionada.id)} 
                     style={{
                       background:'#4f46e5', 
                       color:'#ffffff', 
@@ -535,18 +500,19 @@ return (
             </div>
           )}
 
-          {((tarefaSelecionada.status === 'aguardando_vencimento' && tarefaSelecionada.comprovante_pagamento) || (tarefaSelecionada.status === 'gerar_boleto' && isPixOuCartaoVista && tarefaSelecionada.comprovante_pagamento)) && (
-            <button onClick={() => handleActionMoveStatus(tarefaSelecionada, 'pago')} style={btnActionGreen} title="Confirmar pagamento e finalizar ciclo">
+          {/* BOTÃO CONCLUIR-MOVER PARA PAGO */}
+          {((tarefaSelecionada.status === 'aguardando_vencimento' && (tarefaSelecionada.comprovante_pagamento || tarefaSelecionada.comprovante_pagamento_p1 || isBoleto30)) || (tarefaSelecionada.status === 'gerar_boleto' && isPixOuCartaoVista && tarefaSelecionada.comprovante_pagamento)) && (
+            <button onClick={() => handleActionMoveStatus(tarefaSelecionada, 'pago')} style={btnActionGreen}>
                 <CheckCheck size={20}/> CONCLUÍDO-MOVER PARA PAGO
             </button>
           )}
 
           {tarefaSelecionada.status === 'pago' && (
             <>
-                <button onClick={() => { if(window.confirm("Mover para VENCIDO?")) handleActionMoveStatus(tarefaSelecionada, 'vencido') }} style={btnActionRed} title="Retornar o card para a fase de inadimplência">
+                <button onClick={() => { if(window.confirm("Mover para VENCIDO?")) handleActionMoveStatus(tarefaSelecionada, 'vencido') }} style={btnActionRed}>
                     <AlertCircle size={20}/> MOVER PARA VENCIDO
                 </button>
-                <button onClick={() => { if(window.confirm("Deseja concluir este card?")) handleActionMoveStatus(tarefaSelecionada, 'concluido') }} style={btnActionGreen} title="Arquivar o card definitivamente">
+                <button onClick={() => { if(window.confirm("Deseja concluir este card?")) handleActionMoveStatus(tarefaSelecionada, 'concluido') }} style={btnActionGreen}>
                     <CheckCheck size={20}/> CONCLUIR PROCESSO
                 </button>
             </>
@@ -554,10 +520,10 @@ return (
 
           {tarefaSelecionada.status === 'vencido' && (
             <>
-                <button onClick={() => handleActionCobrarCliente(tarefaSelecionada)} style={btnActionBlue} title="Enviar notificação de cobrança para o Pós-Vendas">
+                <button onClick={() => handleActionCobrarCliente(tarefaSelecionada)} style={btnActionBlue}>
                     <DollarSign size={20}/> NOTIFICAR PÓS-VENDAS
                 </button>
-                <button onClick={() => { if(window.confirm("Confirmar Pagamento?")) handleActionMoveStatus(tarefaSelecionada, 'concluido') }} style={btnActionGreen} title="Confirmar que o cliente pagou e encerrar card">
+                <button onClick={() => { if(window.confirm("Confirmar Pagamento?")) handleActionMoveStatus(tarefaSelecionada, 'concluido') }} style={btnActionGreen}>
                     <CheckCircle size={20}/> CONFIRMAR PAGAMENTO
                 </button>
             </>
@@ -597,20 +563,19 @@ return (
 )
 }
 
-// --- COMPONENTE TAG DE ANEXO ---
 function AttachmentTag({ icon, label, fileUrl, onUpload, disabled = false }) {
     const fileInputRef = useRef(null);
     return (
         <div style={{ display: 'flex', alignItems: 'center', background: '#f5f6fa', border: '1px solid #dcdde1', borderRadius: '0px', overflow: 'hidden', minWidth:'280px', marginBottom: '5px' }}>
-            <div style={{ padding: '0 15px', color: '#000' }} title={`Ícone representativo de ${label}`}>{icon}</div>
-            <span style={{ padding: '12px 20px', fontSize: '15px', color: fileUrl ? '#27ae60' : '#718093', borderRight: '1px solid #dcdde1', flex: 1, textTransform:'uppercase', letterSpacing:'1px', fontWeight: '600' }}>{label}</span>
+            <div style={{ padding: '0 15px', color: '#000' }}>{icon}</div>
+            <span style={{ padding: '12px 20px', fontSize: '13px', color: fileUrl ? '#27ae60' : '#718093', borderRight: '1px solid #dcdde1', flex: 1, textTransform:'uppercase', letterSpacing:'1px', fontWeight: '600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
             <div style={{ display: 'flex', background: '#ffffff' }}>
                 {fileUrl && (
-                    <button title="Visualizar arquivo em nova aba" onClick={() => window.open(fileUrl, '_blank')} style={miniActionBtn}><Eye size={18} color="#000" /></button>
+                    <button title="Visualizar" onClick={() => window.open(fileUrl, '_blank')} style={miniActionBtn}><Eye size={18} color="#000" /></button>
                 )}
                 {!disabled && (
                     <>
-                        <button title="Substituir ou anexar novo arquivo" onClick={() => fileInputRef.current.click()} style={miniActionBtn}><RefreshCw size={18} color="#000" /></button>
+                        <button title="Substituir" onClick={() => fileInputRef.current.click()} style={miniActionBtn}><RefreshCw size={18} color="#000" /></button>
                         <input type="file" hidden ref={fileInputRef} onChange={(e) => onUpload(e.target.files[0])} />
                     </>
                 )}
