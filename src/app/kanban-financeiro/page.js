@@ -176,10 +176,12 @@ const handleUpdateFileDirect = async (id, field, file) => {
       if (uploadError) throw uploadError;
       const { data: linkData } = supabase.storage.from('anexos').getPublicUrl(path);
       
-      await supabase.from('Chamado_NF').update({ [field]: linkData.publicUrl }).eq('id', id);
+      let updateData = { [field]: linkData.publicUrl };
+      
+      await supabase.from('Chamado_NF').update(updateData).eq('id', id);
       alert("Arquivo atualizado!");
       carregarDados();
-      if(tarefaSelecionada) setTarefaSelecionada(prev => ({ ...prev, [field]: linkData.publicUrl }));
+      if(tarefaSelecionada) setTarefaSelecionada(prev => ({ ...prev, ...updateData }));
     } catch (err) { alert("Erro: " + err.message); }
 };
 
@@ -234,7 +236,7 @@ const chamadosFiltrados = chamados.filter(c => {
 if (loading) return <LoadingScreen />
 
 // --- LÓGICAS CONDICIONAIS ---
-const isPixOuCartaoVista = tarefaSelecionada && ['Á Vista no Pix', 'Cartão a Vista'].includes(tarefaSelecionada.forma_pagamento);
+const isPixOuCartaoVista = tarefaSelecionada && ['Á Vista no Pix', 'Cartão a Vista', 'Cartão Parcelado'].includes(tarefaSelecionada.forma_pagamento);
 const isParcelamentoOuBoleto30 = tarefaSelecionada && ['Boleto 30 Dias', 'Boleto Parcelado', 'Cartão Parcelado'].includes(tarefaSelecionada.forma_pagamento);
 const isBoleto30 = tarefaSelecionada && tarefaSelecionada.forma_pagamento === 'Boleto 30 Dias';
 
@@ -287,7 +289,13 @@ return (
             </h4>
             {t.isPagamentoRealizado && (
                 <div style={{marginTop: '10px', display:'flex', alignItems:'center', gap:'8px', color: '#27ae60', fontSize: '15px', fontWeight: '600'}} title="Comprovante de pagamento anexado">
-                    <CheckCircle size={16} /> PAGAMENTO REALIZADO
+                  <CheckCircle size={16} /> PAGAMENTO REALIZADO
+                </div>
+            )}
+            {/* MARCADOR: BOLETO JÁ ANEXADO NA FASE DE GERAÇÃO */}
+            {t.anexo_boleto && (t.status === 'gerar_boleto' || t.status === 'validar_pix') && (
+                <div style={{marginTop: '10px', display:'flex', alignItems:'center', gap:'8px', color: '#4f46e5', fontSize: '15px', fontWeight: '600'}} title="Boleto já foi anexado mas o card continua nesta fase">
+                  <FileText size={16} /> BOLETO ANEXADO
                 </div>
             )}
           </div>
@@ -313,7 +321,6 @@ return (
       <div style={{ flex: '1.2', padding: '60px', overflowY: 'auto' }}>
         <button onClick={() => setTarefaSelecionada(null)} className="btn-back" title="Voltar para a visualização do quadro"><ArrowLeft size={18}/> VOLTAR AO PAINEL</button>
         
-        {/* NOME DO CLIENTE REDUZIDO */}
         <h2 style={{fontSize:'32px', fontWeight:'400', margin:'30px 0', letterSpacing:'-1px', color:'#2f3640', lineHeight: '1.1'}}>{tarefaSelecionada.nom_cliente?.toUpperCase()}</h2>
         
         <div style={{display:'flex', gap:'30px', marginBottom:'50px'}}>
@@ -337,34 +344,33 @@ return (
             </select>
           </div>
           <div style={fieldBoxModal}>
-             <label style={labelModalStyle}>Valor Total</label>
-             <input 
+            <label style={labelModalStyle}>Valor Total</label>
+            <input 
                 type="number"
                 style={{...inputStyleModal, border: 'none', background: 'transparent', padding: '0', fontSize: '32px', fontWeight: '400'}}
                 defaultValue={tarefaSelecionada.valor_servico}
                 onBlur={e => handleUpdateField(tarefaSelecionada.id, 'valor_servico', e.target.value)}
-             />
+            />
           </div>
           
-          {/* EXIBIÇÃO DA DATA DE VENCIMENTO NO MESMO TAMANHO QUE O VALOR TOTAL SE FOR BOLETO 30 DIAS */}
-          {isBoleto30 && (
+          {tarefaSelecionada.forma_pagamento !== 'Boleto Parcelado' && (
             <div style={fieldBoxModal}>
-               <label style={labelModalStyle}>Data de Vencimento</label>
-               <input 
+              <label style={labelModalStyle}>Data de Vencimento</label>
+              <input 
                   type="date"
                   style={{...inputStyleModal, border: 'none', background: 'transparent', padding: '0', fontSize: '32px', fontWeight: '400', color: tarefaSelecionada.status === 'vencido' ? '#c0392b' : '#2f3640'}}
                   defaultValue={tarefaSelecionada.vencimento_boleto}
                   onBlur={e => handleUpdateField(tarefaSelecionada.id, 'vencimento_boleto', e.target.value)}
-               />
+              />
             </div>
           )}
         </div>
 
-        {/* --- SEÇÃO DE PARCELAMENTO (SÓ APARECE SE NÃO FOR BOLETO 30 DIAS) --- */}
+        {/* --- SEÇÃO DE PARCELAMENTO --- */}
         {isParcelamentoOuBoleto30 && !isBoleto30 && (
           <div style={{display:'flex', flexDirection: 'column', gap:'20px', marginBottom:'50px', background: 'rgba(245, 246, 250, 0.5)', padding: '40px', border: '1px solid #dcdde1'}}>
               <div style={{display: 'flex', gap: '30px', borderBottom: '1px solid #dcdde1', paddingBottom: '20px', marginBottom: '10px'}}>
-                 <div style={{flex: 1}}>
+                <div style={{flex: 1}}>
                     <label style={labelModalStyle}>Qtd. Parcelas</label>
                     <select 
                       style={{...inputStyleModal, fontSize: '24px'}}
@@ -375,65 +381,65 @@ return (
                       <option value="1">1 Parcela</option>
                       {[2,3,4,5].map(v => <option key={v} value={v}>{v} Parcelas</option>)}
                     </select>
-                 </div>
-                 <div style={{flex: 1}}>
+                </div>
+                <div style={{flex: 1}}>
                     <label style={labelModalStyle}>Cálculo Unitário</label>
                     <div style={{...inputStyleModal, background: '#f8fafc', color: '#718093', borderStyle: 'dashed'}}>R$ {valorIndividual}</div>
-                 </div>
+                </div>
               </div>
 
-              <div style={{display: 'flex', flexDirection: 'column', gap: '15px'}}>
-                  {/* PARCELA 1 */}
-                  <div style={{display: 'grid', gridTemplateColumns: '150px 220px 180px 320px', gap: '20px', alignItems: 'center', background: '#ffffff', padding: '15px', border: '1px solid #e2e8f0'}}>
-                      <span style={{...labelModalStyle, marginBottom: 0, fontWeight: '700'}}>1ª PARCELA</span>
-                      <input 
-                        type="date"
-                        style={{...inputStyleModal, fontSize: '16px', padding: '10px'}}
-                        defaultValue={tarefaSelecionada.vencimento_boleto}
-                        disabled={tarefaSelecionada.status === 'concluido'}
-                        onBlur={e => handleUpdateField(tarefaSelecionada.id, 'vencimento_boleto', e.target.value)}
-                      />
-                      <span style={{fontSize: '18px', color: '#2f3640', fontWeight: '500'}}>R$ {valorIndividual}</span>
-                      <AttachmentTag 
-                        icon={<CheckCircle size={16} />} 
-                        label="Comprovante P1" 
-                        fileUrl={tarefaSelecionada.comprovante_pagamento_p1 || tarefaSelecionada.comprovante_pagamento} 
-                        onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada.id, 'comprovante_pagamento_p1', file)} 
-                        disabled={tarefaSelecionada.status === 'concluido'} 
-                      />
-                  </div>
+              {tarefaSelecionada.forma_pagamento === 'Boleto Parcelado' && (
+                <div style={{display: 'flex', flexDirection: 'column', gap: '15px'}}>
+                    <div style={{display: 'grid', gridTemplateColumns: '150px 220px 180px 320px', gap: '20px', alignItems: 'center', background: '#ffffff', padding: '15px', border: '1px solid #e2e8f0'}}>
+                        <span style={{...labelModalStyle, marginBottom: 0, fontWeight: '700'}}>1ª PARCELA</span>
+                        <input 
+                          type="date"
+                          style={{...inputStyleModal, fontSize: '16px', padding: '10px'}}
+                          defaultValue={tarefaSelecionada.vencimento_boleto}
+                          disabled={tarefaSelecionada.status === 'concluido'}
+                          onBlur={e => handleUpdateField(tarefaSelecionada.id, 'vencimento_boleto', e.target.value)}
+                        />
+                        <span style={{fontSize: '18px', color: '#2f3640', fontWeight: '500'}}>R$ {valorIndividual}</span>
+                        <AttachmentTag 
+                          icon={<CheckCircle size={16} />} 
+                          label="Comprovante P1" 
+                          fileUrl={tarefaSelecionada.comprovante_pagamento_p1 || tarefaSelecionada.comprovante_pagamento} 
+                          onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada.id, 'comprovante_pagamento_p1', file)} 
+                          disabled={tarefaSelecionada.status === 'concluido'} 
+                        />
+                    </div>
 
-                  {/* PARCELAS 2 A 5 */}
-                  {Array.from({ length: Math.min((tarefaSelecionada.qtd_parcelas || 1) - 1, 4) }).map((_, idx) => {
-                      const num = idx + 2;
-                      const currentDatesArr = (tarefaSelecionada.datas_parcelas || "").split(/[\s,]+/).filter(d => d.includes('-'));
-                      return (
-                          <div key={idx} style={{display: 'grid', gridTemplateColumns: '150px 220px 180px 320px', gap: '20px', alignItems: 'center', background: '#ffffff', padding: '15px', border: '1px solid #e2e8f0'}}>
-                            <span style={{...labelModalStyle, marginBottom: 0, fontWeight: '700'}}>{num}ª PARCELA</span>
-                            <input 
-                              type="date"
-                              style={{...inputStyleModal, fontSize: '16px', padding: '10px'}}
-                              defaultValue={currentDatesArr[idx] || ''}
-                              disabled={tarefaSelecionada.status === 'concluido'}
-                              onBlur={e => {
-                                  let newDatesArr = [...currentDatesArr];
-                                  while(newDatesArr.length < 4) newDatesArr.push("");
-                                  newDatesArr[idx] = e.target.value;
-                                  handleUpdateField(tarefaSelecionada.id, 'datas_parcelas', newDatesArr.filter(d => d).join(', '));
-                              }}
-                            />
-                            <span style={{fontSize: '18px', color: '#2f3640', fontWeight: '500'}}>R$ {valorIndividual}</span>
-                            <AttachmentTag 
-                              icon={<CheckCircle size={16} />} 
-                              label={`Comprovante P${num}`} 
-                              fileUrl={tarefaSelecionada[`comprovante_pagamento_p${num}`]} 
-                              onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada.id, `comprovante_pagamento_p${num}`, file)} 
-                              disabled={tarefaSelecionada.status === 'concluido'} 
-                            />
-                          </div>
-                      );
-                  })}
-              </div>
+                    {Array.from({ length: Math.min((tarefaSelecionada.qtd_parcelas || 1) - 1, 4) }).map((_, idx) => {
+                        const num = idx + 2;
+                        const currentDatesArr = (tarefaSelecionada.datas_parcelas || "").split(/[\s,]+/).filter(d => d.includes('-'));
+                        return (
+                            <div key={idx} style={{display: 'grid', gridTemplateColumns: '150px 220px 180px 320px', gap: '20px', alignItems: 'center', background: '#ffffff', padding: '15px', border: '1px solid #e2e8f0'}}>
+                              <span style={{...labelModalStyle, marginBottom: 0, fontWeight: '700'}}>{num}ª PARCELA</span>
+                              <input 
+                                type="date"
+                                style={{...inputStyleModal, fontSize: '16px', padding: '10px'}}
+                                defaultValue={currentDatesArr[idx] || ''}
+                                disabled={tarefaSelecionada.status === 'concluido'}
+                                onBlur={e => {
+                                    let newDatesArr = [...currentDatesArr];
+                                    while(newDatesArr.length < 4) newDatesArr.push("");
+                                    newDatesArr[idx] = e.target.value;
+                                    handleUpdateField(tarefaSelecionada.id, 'datas_parcelas', newDatesArr.filter(d => d).join(', '));
+                                }}
+                              />
+                              <span style={{fontSize: '18px', color: '#2f3640', fontWeight: '500'}}>R$ {valorIndividual}</span>
+                              <AttachmentTag 
+                                icon={<CheckCircle size={16} />} 
+                                label={`Comprovante P${num}`} 
+                                fileUrl={tarefaSelecionada[`comprovante_pagamento_p${num}`]} 
+                                onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada.id, `comprovante_pagamento_p${num}`, file)} 
+                                disabled={tarefaSelecionada.status === 'concluido'} 
+                              />
+                            </div>
+                        );
+                    })}
+                </div>
+              )}
           </div>
         )}
 
@@ -458,10 +464,7 @@ return (
                 <AttachmentTag icon={<FileText size={18} />} label="NF SERVIÇO" fileUrl={tarefaSelecionada.anexo_nf_servico} onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada.id, 'anexo_nf_servico', file)} disabled={tarefaSelecionada.status === 'concluido'} />
                 <AttachmentTag icon={<ClipboardList size={18} />} label="NF PEÇA" fileUrl={tarefaSelecionada.anexo_nf_peca} onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada.id, 'anexo_nf_peca', file)} disabled={tarefaSelecionada.status === 'concluido'} />
                 
-                {!isPixOuCartaoVista && (
-                   <AttachmentTag icon={<Barcode size={18} />} label="BOLETO" fileUrl={tarefaSelecionada.anexo_boleto} onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada.id, 'anexo_boleto', file)} disabled={tarefaSelecionada.status === 'concluido'} />
-                )}
-                
+                {/* COMPROVANTE GERAL: APARECE PARA PIX E TODOS OS CARTÕES (À VISTA OU PARCELADO) */}
                 {isPixOuCartaoVista && (
                   <div style={{ border: '2px solid #27ae60', borderRadius: '8px', padding: '4px', background: 'rgba(39, 174, 96, 0.05)' }}>
                     <AttachmentTag icon={<CheckCircle size={18} />} label="COMPROVANTE GERAL" fileUrl={tarefaSelecionada.comprovante_pagamento} onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada.id, 'comprovante_pagamento', file)} disabled={false} />
@@ -471,70 +474,78 @@ return (
         </div>
 
         <div style={{marginTop:'60px', display:'flex', gap:'20px'}}>
-          {(tarefaSelecionada.status === 'gerar_boleto' || tarefaSelecionada.status === 'validar_pix') && !isPixOuCartaoVista && (
-            <div style={{flex: 1, background:'rgba(79, 70, 229, 0.03)', padding:'40px', borderRadius:'24px', border:'2px dashed #4f46e5'}}>
-                <label style={{...labelModalStyle, color:'#4f46e5', fontSize: '15px', fontWeight:'700'}}>ANEXAR BOLETO FINAL</label>
-                <div style={{display:'flex', gap:'30px', marginTop:'25px', alignItems: 'center'}}>
-                  <input type="file" onChange={e => setFileBoleto(e.target.files[0])} style={{fontSize: '15px', color: '#718093'}} />
-                  <button 
-                    onClick={() => handleGerarBoletoFaturamentoFinal(tarefaSelecionada.id)} 
-                    style={{
-                      background:'#4f46e5', 
-                      color:'#ffffff', 
-                      padding:'18px 40px', 
-                      border:'none', 
-                      borderRadius:'50px', 
-                      cursor:'pointer', 
-                      fontSize: '14px', 
-                      textTransform:'uppercase', 
-                      letterSpacing:'2px', 
-                      fontWeight:'700', 
-                      boxShadow: '0 10px 20px rgba(79, 70, 229, 0.2)', 
-                      transition:'0.3s'
-                    }} 
-                    title="Anexar boleto e Gerar Tarefa para Pos vendas: Enviar para o Cliente"
-                  >
-                    Processar
+            {/* BLOCO DE PROCESSAMENTO: ANEXAR BOLETO + GERAR TAREFA (APENAS SE NÃO FOR PIX OU CARTÃO) */}
+            {(tarefaSelecionada.status === 'gerar_boleto' || tarefaSelecionada.status === 'validar_pix') && !isPixOuCartaoVista && (
+              <div style={{flex: 1, background:'rgba(79, 70, 229, 0.03)', padding:'40px', borderRadius:'24px', border:'2px dashed #4f46e5'}}>
+                  <label style={{...labelModalStyle, color:'#4f46e5', fontSize: '15px', fontWeight:'700'}}>ANEXAR BOLETO FINAL E PROCESSAR</label>
+                  <div style={{display:'flex', gap:'30px', marginTop:'25px', alignItems: 'center'}}>
+                    <div style={{flex: 1, position: 'relative'}}>
+                        <input type="file" id="file_boleto_input" onChange={e => setFileBoleto(e.target.files[0])} style={{display:'none'}} />
+                        <label htmlFor="file_boleto_input" style={{
+                            display:'flex', alignItems:'center', gap:'10px', background:'#ffffff', border:'1px solid #dcdde1', padding:'15px 20px', borderRadius:'12px', cursor:'pointer', color:'#718093', fontSize:'14px'
+                        }}>
+                           <Upload size={18} /> {fileBoleto ? fileBoleto.name : "Escolher arquivo..."}
+                        </label>
+                    </div>
+                    <button 
+                      onClick={() => handleGerarBoletoFaturamentoFinal(tarefaSelecionada.id)} 
+                      style={{
+                        background:'#4f46e5', 
+                        color:'#ffffff', 
+                        padding:'18px 40px', 
+                        border:'none', 
+                        borderRadius:'50px', 
+                        cursor:'pointer', 
+                        fontSize: '14px', 
+                        textTransform:'uppercase', 
+                        letterSpacing:'2px', 
+                        fontWeight:'700', 
+                        boxShadow: '0 10px 20px rgba(79, 70, 229, 0.2)', 
+                        transition:'0.3s'
+                      }} 
+                    >
+                      GERAR TAREFA
+                    </button>
+                  </div>
+              </div>
+            )}
+
+            {/* BOTÃO MOVE PARA PAGO */}
+            {((tarefaSelecionada.status === 'aguardando_vencimento' && (tarefaSelecionada.comprovante_pagamento || tarefaSelecionada.comprovante_pagamento_p1 || isBoleto30)) || 
+               (isPixOuCartaoVista && tarefaSelecionada.comprovante_pagamento)) && tarefaSelecionada.status !== 'pago' && tarefaSelecionada.status !== 'concluido' && (
+              <button onClick={() => handleActionMoveStatus(tarefaSelecionada, 'pago')} style={btnActionGreen}>
+                  <CheckCheck size={20}/> MOVE PARA PAGO
+              </button>
+            )}
+
+            {tarefaSelecionada.status === 'pago' && (
+              <>
+                  <button onClick={() => { if(window.confirm("Mover para VENCIDO?")) handleActionMoveStatus(tarefaSelecionada, 'vencido') }} style={btnActionRed}>
+                      <AlertCircle size={20}/> MOVER PARA VENCIDO
                   </button>
-                </div>
-            </div>
-          )}
+                  <button onClick={() => { if(window.confirm("Deseja concluir este card?")) handleActionMoveStatus(tarefaSelecionada, 'concluido') }} style={btnActionGreen}>
+                      <CheckCheck size={20}/> CONCLUIR PROCESSO
+                  </button>
+              </>
+            )}
 
-          {/* BOTÃO CONCLUIR-MOVER PARA PAGO */}
-          {((tarefaSelecionada.status === 'aguardando_vencimento' && (tarefaSelecionada.comprovante_pagamento || tarefaSelecionada.comprovante_pagamento_p1 || isBoleto30)) || (tarefaSelecionada.status === 'gerar_boleto' && isPixOuCartaoVista && tarefaSelecionada.comprovante_pagamento)) && (
-            <button onClick={() => handleActionMoveStatus(tarefaSelecionada, 'pago')} style={btnActionGreen}>
-                <CheckCheck size={20}/> CONCLUÍDO-MOVER PARA PAGO
-            </button>
-          )}
+            {tarefaSelecionada.status === 'vencido' && (
+              <>
+                  <button onClick={() => handleActionCobrarCliente(tarefaSelecionada)} style={btnActionBlue}>
+                      <DollarSign size={20}/> NOTIFICAR PÓS-VENDAS
+                  </button>
+                  <button onClick={() => { if(window.confirm("Confirmar Pagamento?")) handleActionMoveStatus(tarefaSelecionada, 'concluido') }} style={btnActionGreen}>
+                      <CheckCircle size={20}/> CONFIRMAR PAGAMENTO
+                  </button>
+              </>
+            )}
 
-          {tarefaSelecionada.status === 'pago' && (
-            <>
-                <button onClick={() => { if(window.confirm("Mover para VENCIDO?")) handleActionMoveStatus(tarefaSelecionada, 'vencido') }} style={btnActionRed}>
-                    <AlertCircle size={20}/> MOVER PARA VENCIDO
-                </button>
-                <button onClick={() => { if(window.confirm("Deseja concluir este card?")) handleActionMoveStatus(tarefaSelecionada, 'concluido') }} style={btnActionGreen}>
-                    <CheckCheck size={20}/> CONCLUIR PROCESSO
-                </button>
-            </>
-          )}
-
-          {tarefaSelecionada.status === 'vencido' && (
-            <>
-                <button onClick={() => handleActionCobrarCliente(tarefaSelecionada)} style={btnActionBlue}>
-                    <DollarSign size={20}/> NOTIFICAR PÓS-VENDAS
-                </button>
-                <button onClick={() => { if(window.confirm("Confirmar Pagamento?")) handleActionMoveStatus(tarefaSelecionada, 'concluido') }} style={btnActionGreen}>
-                    <CheckCircle size={20}/> CONFIRMAR PAGAMENTO
-                </button>
-            </>
-          )}
-
-          {tarefaSelecionada.status === 'concluido' && (
-            <div style={{flex: 1, background:'rgba(39, 174, 96, 0.05)', padding:'30px', borderRadius:'0px', border:'1px solid #27ae60', textAlign:'center'}}>
-                <span style={{color:'#27ae60', fontSize:'15px', display:'flex', alignItems:'center', justifyContent:'center', gap:'12px', textTransform:'uppercase', letterSpacing:'3px'}}><Lock size={18}/> Processo Finalizado</span>
-            </div>
-          )}
-        </div>
+            {tarefaSelecionada.status === 'concluido' && (
+              <div style={{flex: 1, background:'rgba(39, 174, 96, 0.05)', padding:'30px', borderRadius:'0px', border:'1px solid #27ae60', textAlign:'center'}}>
+                  <span style={{color:'#27ae60', fontSize:'15px', display:'flex', alignItems:'center', justifyContent:'center', gap:'12px', textTransform:'uppercase', letterSpacing:'3px'}}><Lock size={18}/> Processo Finalizado</span>
+              </div>
+            )}
+          </div>
       </div>
 
       <div style={{ flex: '0.8', padding: '40px', background: '#ffffff', borderLeft:'1px solid #dcdde1', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -571,11 +582,11 @@ function AttachmentTag({ icon, label, fileUrl, onUpload, disabled = false }) {
             <span style={{ padding: '12px 20px', fontSize: '13px', color: fileUrl ? '#27ae60' : '#718093', borderRight: '1px solid #dcdde1', flex: 1, textTransform:'uppercase', letterSpacing:'1px', fontWeight: '600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
             <div style={{ display: 'flex', background: '#ffffff' }}>
                 {fileUrl && (
-                    <button title="Visualizar" onClick={() => window.open(fileUrl, '_blank')} style={miniActionBtn}><Eye size={18} color="#000" /></button>
+                    <button title="Visualizar" onClick={() => window.open(fileUrl, '_blank')} style={miniActionBtn}><Eye size={18} color="#4f46e5" /></button>
                 )}
                 {!disabled && (
                     <>
-                        <button title="Substituir" onClick={() => fileInputRef.current.click()} style={miniActionBtn}><RefreshCw size={18} color="#000" /></button>
+                        <button title="Substituir" onClick={() => fileInputRef.current.click()} style={miniActionBtn}><RefreshCw size={18} color="#718093" /></button>
                         <input type="file" hidden ref={fileInputRef} onChange={(e) => onUpload(e.target.files[0])} />
                     </>
                 )}
@@ -599,4 +610,4 @@ const labelModalStyle = { fontSize:'15px', color:'#718093', letterSpacing:'3px',
 const pModalStyle = { fontSize:'28px', color:'#2f3640', margin:'0' };
 const fieldBoxModal = { border: '1px solid #dcdde1', padding: '30px', borderRadius: '0px', background: 'rgba(245, 246, 250, 0.5)', flex: 1 };
 const fieldBoxInner = { padding: '10px', background: 'transparent' };
-const miniActionBtn = { background: 'transparent', border: 'none', padding: '10px 15px', cursor: 'pointer', transition: '0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center' };
+const miniActionBtn = { background: 'transparent', border: 'none', padding: '10px 15px', cursor: 'pointer', transition: '0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '8px', hover: { background: '#f1f5f9' } };

@@ -40,7 +40,8 @@ export default function NovoPagarReceber() {
     valor: '', 
     vencimento: '', 
     motivo: '',
-    numero_NF: '' 
+    numero_NF: '',
+    metodo: '' // Novo campo
   })
   
   const router = useRouter()
@@ -94,6 +95,7 @@ export default function NovoPagarReceber() {
           data_vencimento: formData.vencimento,
           motivo: formData.motivo, 
           numero_NF: formData.numero_NF, 
+          metodo: formData.metodo,
           anexo_nf: nf, 
           anexo_boleto: bol, 
           anexo_requisicao: reqs,
@@ -110,6 +112,7 @@ export default function NovoPagarReceber() {
           data_vencimento: formData.vencimento,
           motivo: formData.motivo, 
           tipo_nota: tipoNota, 
+          metodo: formData.metodo,
           anexo_nf_servico: nfS, 
           anexo_nf_peca: nfP,
           status: 'financeiro' 
@@ -161,6 +164,22 @@ export default function NovoPagarReceber() {
                 </div>
               </div>
 
+              <div>
+                <label style={labelStyle}>Método de Pagamento</label>
+                <div style={{ position: 'relative' }}>
+                  <CreditCard size={20} style={iconInputStyle} />
+                  <select required style={inputStyle} onChange={e=>setFormData({...formData, metodo: e.target.value})}>
+                      <option value="">Selecione...</option>
+                      <option value="Boleto">Boleto</option>
+                      <option value="Pix">Pix</option>
+                      <option value="Cartão de Crédito">Cartão de Crédito</option>
+                      <option value="Cartão de Débito">Cartão de Débito</option>
+                      <option value="Dinheiro">Dinheiro</option>
+                      <option value="Transferência">Transferência</option>
+                  </select>
+                </div>
+              </div>
+
               {tipo === 'pagar' && (
                 <div>
                   <label style={labelStyle}>Número da Nota Fiscal</label>
@@ -190,7 +209,7 @@ export default function NovoPagarReceber() {
 
               <div>
                 <label style={labelStyle}>Descrição ou Motivo</label>
-                <textarea placeholder="Descreva os detalhes deste lançamento..." required style={{...inputStyle, height:'100px', resize:'none', paddingLeft:'20px'}} onChange={e=>setFormData({...formData, motivo: e.target.value})} />
+                <textarea placeholder="Descreva os detalhes deste lançamento..." required style={{...inputStyle, height:'100px', resize: 'none', paddingLeft:'20px'}} onChange={e=>setFormData({...formData, motivo: e.target.value})} />
               </div>
 
               <div style={{ background:'#4a4a4f', padding:'30px', borderRadius:'20px', border:'0.5px solid #626268', display:'flex', flexDirection:'column', gap:'18px' }}>
@@ -254,7 +273,6 @@ export default function NovoPagarReceber() {
   )
 }
 
-// OBJETOS DE ESTILO ATUALIZADOS (CORES MAIS CLARAS E FONTES MAIORES)
 const labelStyle = { fontSize: '13px', color: '#9e9e9e', marginBottom: '10px', display: 'block', letterSpacing: '1px', textTransform: 'uppercase' };
 const inputStyle = { width: '100%', padding: '18px 18px 18px 52px', borderRadius: '14px', border: '0.5px solid #55555a', outline: 'none', fontSize: '16px', background: '#242427', color: '#ffffff', boxSizing: 'border-box', transition: '0.3s' };
 const iconInputStyle = { position: 'absolute', left: '18px', top: '50%', transform: 'translateY(-50%)', color: '#6b7280', zIndex: 10 };

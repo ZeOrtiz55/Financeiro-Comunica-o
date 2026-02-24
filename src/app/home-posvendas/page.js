@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import MenuLateral from '@/components/MenuLateral'
 import { 
   X, Send, ArrowLeft, RefreshCw, MessageSquare, PlusCircle, CheckCircle, 
-  FileText, Download, Eye, Calendar, CreditCard, User as UserIcon, Tag, Search, DollarSign, Upload
+  FileText, Download, Eye, Calendar, CreditCard, User as UserIcon, Tag, Search, DollarSign, Upload, Barcode
 } from 'lucide-react'
 
 // --- 1. TELA DE CARREGAMENTO PADRONIZADA ---
@@ -41,26 +41,28 @@ function GeometricBackground() {
   )
 }
 
-// --- 2. CHAT COM EFEITO FLUTUANTE ---
-function ChatChamado({ chamadoId, userProfile }) {
+// --- 2. CHAT ---
+function ChatChamado({ chamadoId, userProfile, tipo }) {
   const [mensagens, setMensagens] = useState([])
   const [novaMsg, setNovaMsg] = useState('')
   const scrollRef = useRef()
-  const idReal = chamadoId ? (String(chamadoId).includes('_p') ? parseInt(String(chamadoId).split('_p')[0]) : parseInt(String(chamadoId))) : null;
+  const colunaLink = tipo === 'pagar' ? 'pagar_id' : tipo === 'receber' ? 'receber_id' : 'chamado_id';
 
   useEffect(() => {
-    if (!idReal || !userProfile?.id) return
-    supabase.from('mensagens_chat').select('*').eq('chamado_id', idReal).order('created_at', { ascending: true }).then(({ data }) => setMensagens(data || []));
-    const channel = supabase.channel(`chat_pv_${idReal}`).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'mensagens_chat', filter: `chamado_id=eq.${idReal}` }, payload => { 
+    if (!chamadoId || !userProfile?.id) return
+    supabase.from('mensagens_chat').select('*').eq(colunaLink, chamadoId).order('created_at', { ascending: true }).then(({ data }) => setMensagens(data || []));
+    const channel = supabase.channel(`chat_pv_${chamadoId}`).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'mensagens_chat', filter: `${colunaLink}=eq.${chamadoId}` }, payload => { 
       if (String(payload.new.usuario_id) !== String(userProfile.id)) setMensagens(prev => [...prev, payload.new]);
     }).subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [idReal, userProfile?.id])
+  }, [chamadoId, userProfile?.id, colunaLink]);
 
   const enviar = async (e) => {
     e.preventDefault(); if (!novaMsg.trim()) return
     const texto = novaMsg; setNovaMsg('')
-    await supabase.from('mensagens_chat').insert([{ texto, usuario_nome: userProfile.nome, usuario_id: userProfile.id, chamado_id: idReal }])
+    const insertPayload = { texto, usuario_nome: userProfile.nome, usuario_id: userProfile.id };
+    insertPayload[colunaLink] = chamadoId;
+    await supabase.from('mensagens_chat').insert([insertPayload])
     setMensagens(prev => [...prev, { id: Date.now(), texto, usuario_nome: userProfile.nome, usuario_id: userProfile.id }])
   }
 
@@ -97,50 +99,36 @@ export default function HomePosVendas() {
 
   const handleLogout = async () => { await supabase.auth.signOut(); router.push('/login'); };
 
+  // --- CARREGAMENTO UNIFICADO: FIM DOS CARDS FILHOS E FILTRO DE PIX ---
   const carregarDados = async () => {
-    const { data: bolds } = await supabase.from('Chamado_NF').select('*').neq('status', 'concluido').order('id', {ascending: false});
-    let tarefasPv = [];
-    (bolds || []).forEach(t => {
-      if (t.status === 'enviar_cliente' || t.tarefa?.includes('Cobrar')) {
-        tarefasPv.push({ 
-          ...t, 
-          valor_exibicao: t.valor_servico, 
-          cont_cob: t.recombrancas_qtd || 0,
-          anexo_boleto_final: t.anexo_boleto,
-          anexo_nf_servico_final: t.anexo_nf_servico,
-          anexo_nf_peca_final: t.anexo_nf_peca,
-          comprovante_pagamento_final: t.comprovante_pagamento
+    try {
+      const { data: bolds } = await supabase.from('Chamado_NF').select('*').neq('status', 'concluido').order('id', {ascending: false});
+      
+      // FILTRO: Remove PIX e foca em "Enviar para cliente" ou "Cobrança"
+      const tarefasFaturamento = (bolds || [])
+        .filter(t => !t.forma_pagamento?.toLowerCase().includes('pix'))
+        .filter(t => t.status === 'enviar_cliente' || (t.status === 'vencido' && t.tarefa?.includes('Cobrar')))
+        .map(t => {
+          const temComprovante = t.comprovante_pagamento || t.comprovante_pagamento_p1 || t.comprovante_pagamento_p2 || t.comprovante_pagamento_p3 || t.comprovante_pagamento_p4 || t.comprovante_pagamento_p5;
+          return {
+            ...t,
+            valor_exibicao: t.valor_servico,
+            isPagamentoRealizado: !!temComprovante,
+            gTipo: 'boleto'
+          };
         });
-      }
-      for (let i = 1; i <= t.qtd_parcelas; i++) { 
-        if (t[`status_p${i}`] === 'enviar_cliente' || t[`tarefa_p${i}`]?.includes('Cobrar')) {
-          const valorParc = t[`valor_parcela${i}`];
-          const valorFinal = (valorParc && valorParc > 0) ? valorParc : (t.valor_servico / t.qtd_parcelas).toFixed(2);
 
-          tarefasPv.push({ 
-            ...t, 
-            id_virtual: `${t.id}_p${i}`, 
-            nom_cliente: `${t.nom_cliente} (P${i})`, 
-            valor_exibicao: valorFinal, 
-            status: t[`status_p${i}`], 
-            tarefa: t[`tarefa_p${i}`],
-            cont_cob: t[`recombrancas_qtd_p${i}`] || 0,
-            vencimento_boleto: t.datas_parcelas?.split(/[\s,]+/)[i-1] || t.vencimento_boleto,
-            num_parcela: i,
-            anexo_boleto_final: t[`anexo_boleto_p${i}`],
-            anexo_nf_servico_final: t[`anexo_nf_servico_p${i}`],
-            anexo_nf_peca_final: t[`anexo_nf_peca_p${i}`],
-            comprovante_pagamento_final: t[`comprovante_pagamento_p${i}`]
-          }); 
-        } 
-      }
-    });
-    setListaBoletos(tarefasPv);
+      setListaBoletos(tarefasFaturamento);
 
-    const { data: pag } = await supabase.from('finan_pagar').select('*').eq('status', 'pos_vendas');
-    const { data: rec } = await supabase.from('finan_receber').select('*').eq('status', 'pos_vendas');
-    const { data: rh } = await supabase.from('finan_rh').select('*').eq('status', 'pos_vendas');
-    setListaPagar(pag || []); setListaReceber(rec || []); setListaRH(rh || []);
+      const { data: pag } = await supabase.from('finan_pagar').select('*').eq('status', 'pos_vendas');
+      const { data: rec } = await supabase.from('finan_receber').select('*').eq('status', 'pos_vendas');
+      const { data: rh } = await supabase.from('finan_rh').select('*').eq('status', 'pos_vendas');
+      
+      setListaPagar((pag || []).map(p => ({ ...p, gTipo: 'pagar' })));
+      setListaReceber((rec || []).map(r => ({ ...r, gTipo: 'receber' })));
+      setListaRH((rh || []).map(rhItem => ({ ...rhItem, gTipo: 'rh' })));
+
+    } catch (e) { console.error(e); }
   };
 
   useEffect(() => {
@@ -151,65 +139,45 @@ export default function HomePosVendas() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'finan_receber' }, () => carregarDados())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'finan_rh' }, () => carregarDados())
       .subscribe();
-
     return () => { supabase.removeChannel(channel) };
   }, []);
+
+  const handleUpdateField = async (t, field, value) => {
+    const table = t.gTipo === 'pagar' ? 'finan_pagar' : t.gTipo === 'receber' ? 'finan_receber' : t.gTipo === 'rh' ? 'finan_rh' : 'Chamado_NF';
+    await supabase.from(table).update({ [field]: value }).eq('id', t.id);
+    carregarDados();
+    if(tarefaSelecionada) setTarefaSelecionada(prev => ({ ...prev, [field]: value }));
+  };
 
   const handleUpdateFileDirect = async (t, field, file) => {
     if(!file) return;
     try {
-      const isChild = !!t.id_virtual;
-      const idReal = t.id;
+      const table = t.gTipo === 'pagar' ? 'finan_pagar' : t.gTipo === 'receber' ? 'finan_receber' : t.gTipo === 'rh' ? 'finan_rh' : 'Chamado_NF';
       const path = `anexos/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
       const { error: uploadError } = await supabase.storage.from('anexos').upload(path, file);
       if (uploadError) throw uploadError;
       const { data: linkData } = supabase.storage.from('anexos').getPublicUrl(path);
       
-      const pNum = isChild ? t.id_virtual.split('_p')[1] : null;
-      let col = field;
-      
-      if (isChild && !['num_nf_servico', 'num_nf_peca', 'obs'].includes(field)) {
-          col = `${field}_p${pNum}`;
-      }
-      
-      await supabase.from('Chamado_NF').update({ [col]: linkData.publicUrl }).eq('id', idReal);
+      await supabase.from(table).update({ [field]: linkData.publicUrl }).eq('id', t.id);
       alert("Arquivo atualizado!");
       carregarDados();
-      if(tarefaSelecionada) {
-          const suffix = field === 'anexo_nf_servico' ? 'anexo_nf_servico_final' : 'anexo_nf_peca_final';
-          setTarefaSelecionada(prev => ({ ...prev, [suffix]: linkData.publicUrl }));
-      }
+      if(tarefaSelecionada) setTarefaSelecionada(prev => ({ ...prev, [field]: linkData.publicUrl }));
     } catch (err) { alert("Erro ao enviar: " + err.message); }
   };
 
   const handleConcluirRecobranca = async (t) => {
-    const isParcela = !!t.id_virtual;
-    const pNum = t.num_parcela;
-    let updateData = isParcela ? {
-        [`status_p${pNum}`]: 'vencido', 
-        [`tarefa_p${pNum}`]: 'Cliente Recobrado (Aguardando Financeiro)'
-      } : {
-        status: 'vencido',
-        tarefa: 'Cliente Recobrado (Aguardando Financeiro)'
-      };
-
-    const { error } = await supabase.from('Chamado_NF').update(updateData).eq('id', t.id);
-    if (!error) { alert(`Cobrança registrada com sucesso!`); setTarefaSelecionada(null); carregarDados(); }
+    await supabase.from('Chamado_NF').update({ status: 'vencido', tarefa: 'Cliente Recobrado (Aguardando Financeiro)' }).eq('id', t.id);
+    alert(`Cobrança registrada!`); setTarefaSelecionada(null); carregarDados();
   };
 
   const handleConfirmarEnvioBoleto = async (t) => {
-    const isParcela = !!t.id_virtual;
-    const pNum = t.num_parcela;
-    let updateData = isParcela ? {
-        [`status_p${pNum}`]: 'aguardando_vencimento',
-        [`tarefa_p${pNum}`]: 'Aguardando Vencimento'
-      } : {
-        status: 'aguardando_vencimento',
-        tarefa: 'Aguardando Vencimento'
-      };
+    await supabase.from('Chamado_NF').update({ status: 'aguardando_vencimento', tarefa: 'Aguardando Vencimento' }).eq('id', t.id);
+    alert("Boleto enviado!"); setTarefaSelecionada(null); carregarDados();
+  };
 
-    const { error } = await supabase.from('Chamado_NF').update(updateData).eq('id', t.id);
-    if (!error) { alert("Boleto marcado como enviado!"); setTarefaSelecionada(null); carregarDados(); }
+  const handleMoverParaPago = async (t) => {
+    await supabase.from('Chamado_NF').update({ status: 'pago', tarefa: 'Pagamento Confirmado' }).eq('id', t.id);
+    alert("Confirmado!"); setTarefaSelecionada(null); carregarDados();
   };
 
   useEffect(() => {
@@ -226,6 +194,11 @@ export default function HomePosVendas() {
 
   if (loading) return <LoadingScreen />
 
+  // --- LÓGICAS CONDICIONAIS DE INTERFACE DO MODAL ---
+  const isBoleto30 = tarefaSelecionada?.forma_pagamento === 'Boleto 30 dias';
+  const isParcelamento = tarefaSelecionada?.forma_pagamento?.toLowerCase().includes('parcelado');
+  const valorIndividual = tarefaSelecionada ? (tarefaSelecionada.valor_servico / (tarefaSelecionada.qtd_parcelas || 1)).toFixed(2) : 0;
+
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: '#2a2a2d', fontFamily: 'Montserrat, sans-serif' }}>
       <GeometricBackground />
@@ -237,47 +210,41 @@ export default function HomePosVendas() {
             <h1 style={{ fontWeight: '300', color: '#f8fafc', margin: 0, fontSize:'42px', letterSpacing: '-1.5px' }}>Painel Pós-Vendas</h1>
             <div style={{ width: '80px', height: '4px', background: '#9e9e9e', marginTop: '12px' }}></div>
           </div>
-          
-          <div style={{ position: 'relative' }}>
-            <button onClick={() => setShowNovoMenu(!showNovoMenu)} style={btnNovoStyle}><PlusCircle size={20}/> NOVO CHAMADO</button>
-            {showNovoMenu && (
-              <div onMouseLeave={() => setShowNovoMenu(false)} style={dropdownStyle}>
-                <div onClick={() => router.push('/novo-chamado-nf')} style={dropdownItemStyle}>Chamado de Boleto</div>
-                <div onClick={() => router.push('/novo-pagar-receber')} style={dropdownItemStyle}>Contas Pagar / Receber</div>
-                <div onClick={() => router.push('/novo-chamado-rh')} style={{ ...dropdownItemStyle, borderBottom:'none', color: '#93c5fd' }}>Chamado de RH</div>
-              </div>
-            )}
-          </div>
+          <button onClick={() => router.push('/novo-pagar-receber')} style={btnNovoStyle}><PlusCircle size={20}/> NOVO LANÇAMENTO</button>
         </header>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '30px' }}>
+            {/* COLUNA FATURAMENTO (FILTRADA: SEM PIX, APENAS ENVIAR OU COBRAR) */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                 <div style={colHeaderStyle}>TAREFA FATURAMENTO</div>
                 {listaBoletos.map(t => (
-                  <div key={t.id_virtual || t.id} onClick={() => setTarefaSelecionada(t)} className="task-card">
+                  <div key={`boleto-${t.id}`} onClick={() => setTarefaSelecionada(t)} className="task-card">
                     <div style={{ background: t.tarefa?.includes('Cobrar') ? '#fca5a520' : '#313134', padding: '24px', borderBottom: '1px solid #55555a' }}>
                       <div style={{fontSize: '10px', color: t.tarefa?.includes('Cobrar') ? '#fca5a5' : '#9e9e9e', letterSpacing:'1px', marginBottom: '8px', textTransform:'uppercase'}}>{t.tarefa}</div>
                       <span style={{fontSize:'18px', color:'#fff', display:'block', lineHeight: '1.2'}}>{t.nom_cliente?.toUpperCase()}</span>
+                      {t.isPagamentoRealizado && <div style={{marginTop: '10px', color: '#4ade80', fontSize: '11px', fontWeight: '700'}}>✓ PAGAMENTO REALIZADO</div>}
                     </div>
                     <div style={{ padding: '24px', background: '#4e4e52' }}>
                       <div style={{display:'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom:'15px'}}>
                         <div style={cardMetaStyle}><CreditCard size={13}/> {t.forma_pagamento?.toUpperCase()}</div>
                         <div style={cardMetaStyle}><Calendar size={13}/> {formatarDataBR(t.vencimento_boleto)}</div>
                       </div>
-                      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-                        <span style={{fontSize:'26px', color: '#fff'}}>R$ {t.valor_exibicao}</span>
-                        {t.cont_cob > 0 && <span style={cobroBadgeStyle}>COBRADO {t.cont_cob}x</span>}
-                      </div>
+                      <div style={{fontSize:'26px', color: '#fff'}}>R$ {t.valor_exibicao}</div>
                     </div>
                   </div>
                 ))}
             </div>
 
+            {/* COLUNA PAGAR / RECEBER (COLORIDO) */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                <div style={colHeaderStyle}>CONTAS: PAGAR/RECEBER</div>
-                {[...listaPagar, ...listaReceber].map(t => (
-                  <div key={t.id} onClick={() => setTarefaSelecionada(t)} className="task-card">
-                    <div style={{padding: '24px', background: '#313134'}}>
+                <div style={colHeaderStyle}>PAGAR / RECEBER</div>
+                {[...listaPagar, ...listaReceber].map((t) => (
+                  <div key={`${t.fornecedor ? 'p' : 'r'}-${t.id}`} onClick={() => setTarefaSelecionada(t)} className="task-card">
+                    <div style={{
+                      padding: '24px', 
+                      background: t.fornecedor ? '#fef2f210' : '#eff6ff10', 
+                      borderLeft: `6px solid ${t.fornecedor ? '#ef4444' : '#3b82f6'}`
+                    }}>
                         <small style={{color: t.fornecedor ? '#fca5a5' : '#93c5fd', letterSpacing: '1px', textTransform: 'uppercase', fontSize: '11px'}}>{t.fornecedor ? 'A Pagar' : 'A Receber'}</small>
                         <div style={{marginTop:'10px', fontSize:'20px', color: '#fff'}}>{(t.fornecedor || t.cliente)?.toUpperCase()}</div>
                         <div style={{fontSize:'24px', marginTop:'12px', color: '#fff'}}>R$ {t.valor}</div>
@@ -286,18 +253,17 @@ export default function HomePosVendas() {
                 ))}
             </div>
 
+            {/* COLUNA RH */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                 <div style={colHeaderStyle}>CHAMADO RH</div>
                 {listaRH.map(t => (
-                  <div key={t.id} onClick={() => setTarefaSelecionada(t)} className="task-card">
+                  <div key={`rh-${t.id}`} onClick={() => setTarefaSelecionada(t)} className="task-card">
                     <div style={{ background: '#313134', padding: '24px', color: '#fff' }}>
                       <div style={{fontSize: '11px', color: '#93c5fd', letterSpacing: '1px', textTransform:'uppercase'}}>SOLICITAÇÃO INTERNA</div>
                       <span style={{fontSize:'20px', display:'block', marginTop:'10px'}}>{t.funcionario?.toUpperCase()}</span>
                     </div>
                     <div style={{ padding: '24px', background: '#4e4e52' }}>
-                      <div style={{display:'flex', alignItems:'center', gap:'10px', color: '#d1d5db'}}>
-                        <Tag size={16}/> {t.titulo}
-                      </div>
+                      <div style={{display:'flex', alignItems:'center', gap:'10px', color: '#d1d5db'}}><Tag size={16}/> {t.titulo}</div>
                     </div>
                   </div>
                 ))}
@@ -305,88 +271,128 @@ export default function HomePosVendas() {
         </div>
       </main>
 
+      {/* --- MODAL DETALHES --- */}
       {tarefaSelecionada && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0, 0, 0, 0.85)', backdropFilter: 'blur(15px)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ background: '#3f3f44', width: '1650px', maxWidth: '98%', maxHeight: '95vh', borderRadius: '40px', display: 'flex', overflow:'hidden', boxShadow:'0 50px 100px rgba(0,0,0,0.6)', border: '1px solid #55555a' }}>
-            
-            <div style={{ flex: 1.2, padding: '60px', display:'flex', flexDirection:'column', overflowY:'auto' }}>
+          <div style={{ background: '#ffffff', width: '1650px', maxWidth: '98%', maxHeight: '95vh', borderRadius: '40px', display: 'flex', overflow:'hidden', boxShadow:'0 50px 100px rgba(0,0,0,0.6)', border: '1px solid #55555a' }}>
+            <div style={{ flex: 1.2, padding: '60px', display:'flex', flexDirection:'column', overflowY:'auto', color: '#1e293b' }}>
               <button onClick={() => setTarefaSelecionada(null)} style={btnBackStyle}><ArrowLeft size={18}/> VOLTAR AO PAINEL</button>
               
               <div style={{marginTop: '35px'}}>
-                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start'}}>
-                      <div>
-                          <h2 style={{fontSize:'58px', fontWeight:'300', margin:0, letterSpacing: '-2.5px', color:'#fff', lineHeight: '1.1'}}>{tarefaSelecionada.nom_cliente || tarefaSelecionada.fornecedor || tarefaSelecionada.funcionario}</h2>
-                          <span style={{background:'#2a2a2d', padding:'8px 20px', borderRadius:'12px', fontSize:'13px', color:'#9e9e9e', display:'inline-block', marginTop:'15px', border: '1px solid #55555a'}}>ID PROCESSO: #{tarefaSelecionada.id}</span>
-                      </div>
-                      <div style={{textAlign:'right'}}>
-                          <div style={{fontSize:'42px', fontWeight:'400', color:'#fff'}}>R$ {tarefaSelecionada.valor_exibicao || tarefaSelecionada.valor}</div>
-                          <div style={{color:'#fca5a5', fontSize:'20px', marginTop: '10px'}}>VENCIMENTO: {formatarDataBR(tarefaSelecionada.vencimento_boleto || tarefaSelecionada.data_vencimento)}</div>
-                      </div>
+                  <h2 style={{fontSize:'32px', fontWeight:'400', margin:0, letterSpacing: '-1px', color:'#0f172a', lineHeight: '1.1'}}>{tarefaSelecionada.nom_cliente || tarefaSelecionada.fornecedor || tarefaSelecionada.funcionario || tarefaSelecionada.cliente}</h2>
+                  
+                  <div style={{display:'flex', gap:'30px', marginTop:'40px', marginBottom:'45px'}}>
+                      <div style={fieldBoxModal}><label style={labelMStyle}>CONDIÇÃO / MOTIVO</label><p style={pModalStyle}>{tarefaSelecionada.forma_pagamento?.toUpperCase() || tarefaSelecionada.motivo || 'N/A'}</p></div>
+                      {tarefaSelecionada.gTipo !== 'rh' && (
+                        <>
+                          <div style={fieldBoxModal}>
+                            <label style={labelMStyle}>VALOR TOTAL</label>
+                            <input type="number" style={{ ...inputStyleLight, border:'none', padding:0, fontSize:'36px', fontWeight:'700', background:'transparent' }} defaultValue={tarefaSelecionada.valor_exibicao || tarefaSelecionada.valor} onBlur={e => handleUpdateField(tarefaSelecionada, tarefaSelecionada.gTipo === 'boleto' ? 'valor_servico' : 'valor', e.target.value)} />
+                          </div>
+                          {isBoleto30 && (
+                            <div style={fieldBoxModal}>
+                              <label style={labelMStyle}>DATA VENCIMENTO</label>
+                              <input type="date" style={{ ...inputStyleLight, border:'none', padding:0, fontSize:'36px', fontWeight:'700', background:'transparent', color:'#ef4444' }} defaultValue={tarefaSelecionada.vencimento_boleto} onBlur={e => handleUpdateField(tarefaSelecionada, 'vencimento_boleto', e.target.value)} />
+                            </div>
+                          )}
+                          {!isBoleto30 && (
+                            <div style={fieldBoxModal}><label style={labelMStyle}>VENCIMENTO BASE</label><p style={{...pModalStyle, color:'#ef4444'}}>{formatarDataBR(tarefaSelecionada.vencimento_boleto || tarefaSelecionada.data_vencimento)}</p></div>
+                          )}
+                        </>
+                      )}
                   </div>
 
-                  <div style={infoGridStyle}>
-                      <div style={infoBoxStyle}>
-                          <label style={labelMStyle}>CONDIÇÃO</label>
-                          <span style={valueMStyle}>{tarefaSelecionada.forma_pagamento || 'N/A'}</span>
+                  {!isBoleto30 && isParcelamento && (
+                      <div style={{ display:'flex', flexDirection:'column', gap:'20px', background:'#f8fafc', padding:'40px', border:'1px solid #dcdde1', marginBottom:'45px' }}>
+                          <div style={{ display:'flex', gap:'40px', borderBottom:'1px solid #dcdde1', paddingBottom:'20px' }}>
+                              <div><label style={labelMStyle}>QUANTIDADE</label><select style={{ ...inputStyleLight, width:'120px', padding:'10px' }} value={tarefaSelecionada.qtd_parcelas || 1} onChange={e => handleUpdateField(tarefaSelecionada, 'qtd_parcelas', e.target.value)}>{[1,2,3,4,5].map(n => <option key={n} value={n}>{n}x</option>)}</select></div>
+                              <div><label style={labelMStyle}>VALOR PARCELA</label><p style={{fontSize:'22px', fontWeight:'700'}}>R$ {valorIndividual}</p></div>
+                          </div>
+                          <div style={{ display:'flex', flexDirection:'column', gap:'15px' }}>
+                              <div style={cascadeRowStyle}>
+                                  <span style={cascadeLabelStyle}>1ª PARCELA</span>
+                                  <input type="date" style={inputCascadeStyle} defaultValue={tarefaSelecionada.vencimento_boleto} onBlur={e => handleUpdateField(tarefaSelecionada, 'vencimento_boleto', e.target.value)} />
+                                  <span style={cascadeValueStyle}>R$ {valorIndividual}</span>
+                                  <AttachmentTag label="P1" fileUrl={tarefaSelecionada.comprovante_pagamento || tarefaSelecionada.comprovante_pagamento_p1} onUpload={f => handleUpdateFileDirect(tarefaSelecionada, 'comprovante_pagamento_p1', f)} />
+                              </div>
+                              {Array.from({ length: (tarefaSelecionada.qtd_parcelas || 1) - 1 }).map((_, i) => {
+                                  const pNum = i + 2;
+                                  const currentDates = (tarefaSelecionada.datas_parcelas || "").split(/[\s,]+/);
+                                  return (
+                                      <div key={pNum} style={cascadeRowStyle}>
+                                          <span style={cascadeLabelStyle}>{pNum}ª PARCELA</span>
+                                          <input type="date" style={inputCascadeStyle} defaultValue={currentDates[i] || ""} onBlur={e => { let arr = [...currentDates]; arr[i] = e.target.value; handleUpdateField(tarefaSelecionada, 'datas_parcelas', arr.join(', ')); }} />
+                                          <span style={cascadeValueStyle}>R$ {valorIndividual}</span>
+                                          <AttachmentTag label={`P${pNum}`} fileUrl={tarefaSelecionada[`comprovante_pagamento_p${pNum}`]} onUpload={f => handleUpdateFileDirect(tarefaSelecionada, `comprovante_pagamento_p${pNum}`, f)} />
+                                      </div>
+                                  )
+                              })}
+                          </div>
                       </div>
-                      <div style={infoBoxStyle}>
-                          <label style={labelMStyle}>DOCUMENTO (NF)</label>
-                          <span style={valueMStyle}>{tarefaSelecionada.num_nf_servico || tarefaSelecionada.num_nf_peca || 'PENDENTE'}</span>
-                      </div>
-                      <div style={infoBoxStyle}>
-                          <label style={labelMStyle}>STATUS</label>
-                          <span style={{...valueMStyle, color: '#93c5fd'}}>{tarefaSelecionada.status?.toUpperCase()}</span>
-                      </div>
+                  )}
+
+                  <div style={{ display:'grid', gridTemplateColumns:'repeat(2, 1fr)', gap:'30px', border:'0.5px solid #dcdde1', padding:'45px', background:'#f8fafc' }}>
+                    {tarefaSelecionada.gTipo === 'rh' ? (
+                      <>
+                        <div style={fieldBoxInner}><label style={labelMStyle}>TÍTULO</label><p style={{fontSize:'15px', fontWeight: '600'}}>{tarefaSelecionada.titulo}</p></div>
+                        <div style={fieldBoxInner}><label style={labelMStyle}>SETOR</label><p style={{fontSize:'15px', color:'#0ea5e9', fontWeight: '600'}}>{tarefaSelecionada.setor?.toUpperCase()}</p></div>
+                        <div style={{...fieldBoxInner, gridColumn:'span 2'}}><label style={labelMStyle}>DESCRIÇÃO</label><p style={{fontSize:'15px', lineHeight:'1.6'}}>{tarefaSelecionada.descricao}</p></div>
+                      </>
+                    ) : (
+                      <>
+                        <div style={fieldBoxInner}><label style={labelMStyle}>MÉTODO</label><p style={{fontSize:'15px', fontWeight: '600'}}>{tarefaSelecionada.forma_pagamento || 'N/A'}</p></div>
+                        {tarefaSelecionada.gTipo === 'boleto' && (
+                          <>
+                              <div style={fieldBoxInner}><label style={labelMStyle}>NF SERVIÇO</label><input style={inputStyleLight} defaultValue={tarefaSelecionada.num_nf_servico} onBlur={e => handleUpdateField(tarefaSelecionada, 'num_nf_servico', e.target.value)} /></div>
+                              <div style={fieldBoxInner}><label style={labelMStyle}>NF PEÇA</label><input style={inputStyleLight} defaultValue={tarefaSelecionada.num_nf_peca} onBlur={e => handleUpdateField(tarefaSelecionada, 'num_nf_peca', e.target.value)} /></div>
+                          </>
+                        )}
+                        <div style={{gridColumn:'span 2', ...fieldBoxInner}}>
+                            <label style={labelMStyle}>OBSERVAÇÕES</label>
+                            <textarea style={{...inputStyleLight, height:'80px', resize: 'none'}} defaultValue={tarefaSelecionada.obs || tarefaSelecionada.motivo} onBlur={e => handleUpdateField(tarefaSelecionada, tarefaSelecionada.gTipo === 'boleto' ? 'obs' : 'motivo', e.target.value)} />
+                        </div>
+                      </>
+                    )}
                   </div>
 
                   <div style={{marginTop:'45px'}}>
                       <label style={labelMStyle}>ARQUIVOS E DOCUMENTOS</label>
                       <div style={{display:'flex', gap:'15px', marginTop:'15px', flexWrap: 'wrap'}}>
-                          <AttachmentTag 
-                            label="NF SERVIÇO" 
-                            fileUrl={tarefaSelecionada.anexo_nf_servico_final} 
-                            onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada, 'anexo_nf_servico', file)} 
-                          />
-                          <AttachmentTag 
-                            label="NF PEÇA" 
-                            fileUrl={tarefaSelecionada.anexo_nf_peca_final} 
-                            onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada, 'anexo_nf_peca', file)} 
-                          />
-                          <AttachmentTag 
-                            label="BOLETO (VISUALIZAR)" 
-                            fileUrl={tarefaSelecionada.anexo_boleto_final} 
-                            disabled={true}
-                          />
-                          {/* COMPROVANTE SÓ APARECE EM PAGO OU VENCIDO */}
-                          {(tarefaSelecionada.status === 'pago' || tarefaSelecionada.status === 'vencido') && tarefaSelecionada.comprovante_pagamento_final && (
-                            <div className="btn-file-static">
-                              <span>COMPROVANTE</span>
-                              <a href={tarefaSelecionada.comprovante_pagamento_final} target="_blank" rel="noreferrer"><Eye size={18}/></a>
-                            </div>
+                          {tarefaSelecionada.gTipo === 'pagar' ? (
+                             <>
+                               {tarefaSelecionada.anexo_nf && <AttachmentTag label="Anexo" fileUrl={tarefaSelecionada.anexo_nf} onUpload={f => handleUpdateFileDirect(tarefaSelecionada, 'anexo_nf', f)} />}
+                               {tarefaSelecionada.anexo_boleto && <AttachmentTag label="Anexo" fileUrl={tarefaSelecionada.anexo_boleto} onUpload={f => handleUpdateFileDirect(tarefaSelecionada, 'anexo_boleto', f)} />}
+                               {tarefaSelecionada.anexo_requisicao && <AttachmentTag label="Anexo" fileUrl={tarefaSelecionada.anexo_requisicao} onUpload={f => handleUpdateFileDirect(tarefaSelecionada, 'anexo_requisicao', f)} />}
+                             </>
+                          ) : tarefaSelecionada.gTipo === 'receber' ? (
+                             <>
+                               {tarefaSelecionada.anexo_nf_servico && <AttachmentTag label="Anexo" fileUrl={tarefaSelecionada.anexo_nf_servico} onUpload={f => handleUpdateFileDirect(tarefaSelecionada, 'anexo_nf_servico', f)} />}
+                               {tarefaSelecionada.anexo_nf_peca && <AttachmentTag label="Anexo" fileUrl={tarefaSelecionada.anexo_nf_peca} onUpload={f => handleUpdateFileDirect(tarefaSelecionada, 'anexo_nf_peca', f)} />}
+                             </>
+                          ) : (
+                             <>
+                               <AttachmentTag label="NF SERVIÇO" fileUrl={tarefaSelecionada.anexo_nf_servico} onUpload={f => handleUpdateFileDirect(tarefaSelecionada, 'anexo_nf_servico', f)} />
+                               <AttachmentTag label="NF PEÇA" fileUrl={tarefaSelecionada.anexo_nf_peca} onUpload={f => handleUpdateFileDirect(tarefaSelecionada, 'anexo_nf_peca', f)} />
+                               <AttachmentTag label="BOLETO" fileUrl={tarefaSelecionada.anexo_boleto} disabled={true} />
+                             </>
                           )}
                       </div>
                   </div>
 
-                  <div style={{marginTop:'40px', background:'#2a2a2d', padding:'35px', borderRadius:'28px', border:'1px solid #55555a'}}>
-                      <label style={labelMStyle}>DESCRIÇÃO DA TAREFA / OBSERVAÇÕES</label>
-                      <p style={{marginTop:'15px', fontSize:'18px', lineHeight:'1.6', color:'#e2e8f0'}}>{tarefaSelecionada.tarefa || tarefaSelecionada.descricao || tarefaSelecionada.obs || 'Sem observações adicionais.'}</p>
+                  <div style={{display:'flex', gap:'20px', marginTop:'45px'}}>
+                    {tarefaSelecionada.status === 'enviar_cliente' && (
+                        <button onClick={() => handleConfirmarEnvioBoleto(tarefaSelecionada)} style={btnActionGreen}><Send size={22}/> MARCAR COMO ENVIADO AO CLIENTE</button>
+                    )}
+                    {tarefaSelecionada.tarefa?.includes('Cobrar') && (
+                        <button onClick={() => handleConcluirRecobranca(tarefaSelecionada)} style={btnActionBlue}><DollarSign size={22}/> CLIENTE RECOBRADO</button>
+                    )}
                   </div>
-              </div>
-
-              <div style={{display:'flex', gap:'20px', marginTop:'45px'}}>
-                {tarefaSelecionada.status === 'enviar_cliente' && (
-                    <button onClick={() => handleConfirmarEnvioBoleto(tarefaSelecionada)} style={btnActionGreen}><Send size={22}/> MARCAR COMO ENVIADO AO CLIENTE</button>
-                )}
-
-                {tarefaSelecionada.tarefa?.includes('Cobrar') && (
-                    <button onClick={() => handleConcluirRecobranca(tarefaSelecionada)} style={btnActionBlue}><DollarSign size={22}/> CLIENTE RECOBRADO</button>
-                )}
               </div>
             </div>
             
             <div style={{ flex: 0.8, padding: '40px', background: '#2a2a2d', borderLeft:'1px solid #55555a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <div style={{ width: '95%', height: '92%' }}>
-                {userProfile && <ChatChamado chamadoId={tarefaSelecionada.id} userProfile={userProfile} />}
+                {userProfile && <ChatChamado chamadoId={tarefaSelecionada.id} userProfile={userProfile} tipo={tarefaSelecionada.gTipo} />}
               </div>
             </div>
           </div>
@@ -397,27 +403,24 @@ export default function HomePosVendas() {
         * { font-weight: 400 !important; font-family: 'Montserrat', sans-serif; }
         .task-card { transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1); cursor: pointer; border-radius: 20px; overflow: hidden; border: 1px solid #55555a; margin-bottom: 5px; }
         .task-card:hover { transform: translateY(-8px); box-shadow: 0 20px 40px rgba(0,0,0,0.5); border-color: #71717a; }
-        .btn-file-static { display: flex; align-items: center; gap: 15px; padding: 12px 20px; background: #3f3f44; border-radius: 12px; border: 1px solid #55555a; color: #fff; font-size: 13px; }
-        .btn-file-static a { color: #fff; display: flex; text-decoration: none; }
         button:hover { opacity: 1 !important; transform: translateY(-1px); }
       `}</style>
     </div>
   )
 }
 
-// --- COMPONENTE TAG DE ANEXO ---
 function AttachmentTag({ label, fileUrl, onUpload, disabled = false }) {
     const fileInputRef = useRef(null);
     return (
         <div style={{ display: 'flex', alignItems: 'center', background: '#3f3f44', border: '1px solid #55555a', borderRadius: '12px', overflow: 'hidden', minWidth:'260px' }}>
-            <span style={{ padding: '12px 18px', fontSize: '13px', color: fileUrl ? '#4ade80' : '#9e9e9e', borderRight: '1px solid #55555a', flex: 1, whiteSpace: 'nowrap' }}>{label}</span>
+            <span style={{ padding: '12px 18px', fontSize: '12px', color: fileUrl ? '#4ade80' : '#9e9e9e', borderRight: '1px solid #55555a', flex: 1, whiteSpace: 'nowrap' }}>{label}</span>
             <div style={{ display: 'flex' }}>
                 {fileUrl && (
-                    <button title="Ver arquivo" onClick={() => window.open(fileUrl, '_blank')} style={miniActionBtn}><Eye size={18} /></button>
+                    <button title="Ver" onClick={() => window.open(fileUrl, '_blank')} style={miniActionBtn}><Eye size={18} /></button>
                 )}
                 {!disabled && (
                     <>
-                        <button title="Trocar arquivo" onClick={() => fileInputRef.current.click()} style={miniActionBtn}><RefreshCw size={18} /></button>
+                        <button title="Upload" onClick={() => fileInputRef.current.click()} style={miniActionBtn}><RefreshCw size={18} /></button>
                         <input type="file" ref={fileInputRef} hidden onChange={(e) => onUpload(e.target.files[0])} />
                     </>
                 )}
@@ -426,18 +429,21 @@ function AttachmentTag({ label, fileUrl, onUpload, disabled = false }) {
     );
 }
 
-// --- ESTILOS AUXILIARES ---
-const colHeaderStyle = { padding: '18px', textAlign: 'center', fontSize: '18px', background: '#313134', borderRadius: '16px', border: '1px solid #55555a', color: '#9e9e9e', letterSpacing:'1.5px' };
-const cardMetaStyle = { display:'flex', alignItems:'center', gap:'8px', color:'#d1d5db', fontSize:'13px', background:'#313134', padding:'8px 12px', borderRadius:'10px', border: '1px solid #55555a' };
-const cobroBadgeStyle = { fontSize:'10px', background:'#fca5a520', color:'#fca5a5', padding:'6px 14px', borderRadius:'12px', border:'1px solid #fca5a550' };
+const colHeaderStyle = { padding: '18px', textAlign: 'center', fontSize: '16px', background: '#313134', borderRadius: '16px', border: '1px solid #55555a', color: '#9e9e9e', letterSpacing:'1.5px', fontWeight:'700' };
+const cardMetaStyle = { display:'flex', alignItems:'center', gap:'8px', color:'#d1d5db', fontSize:'12px', background:'#313134', padding:'6px 10px', borderRadius:'10px', border: '1px solid #55555a' };
 const btnNovoStyle = { background:'#3f3f44', color:'#fff', border:'1px solid #55555a', padding:'12px 28px', borderRadius:'14px', cursor:'pointer', display:'flex', alignItems:'center', gap:'12px', fontSize: '15px' };
 const dropdownStyle = { position:'absolute', top:'65px', right: 0, background:'#3f3f44', borderRadius:'22px', boxShadow: '0 30px 60px rgba(0,0,0,0.5)', zIndex:2000, width:'300px', border:'1px solid #55555a', overflow:'hidden' };
 const dropdownItemStyle = { padding:'18px 25px', cursor:'pointer', borderBottom:'1px solid #55555a', fontSize:'15px', color: '#e2e8f0', transition:'0.2s' };
-const btnBackStyle = { background: 'transparent', color: '#9e9e9e', border: '1px solid #55555a', padding: '10px 24px', borderRadius: '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '14px' };
-const infoGridStyle = { display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:'25px', marginTop:'45px' };
-const infoBoxStyle = { background:'#2a2a2d', padding:'25px', borderRadius:'22px', border:'1px solid #55555a', display: 'flex', flexDirection: 'column', gap: '10px' };
-const labelMStyle = { fontSize:'16px', color:'#9e9e9e', letterSpacing:'0.5px', textTransform:'uppercase' };
-const valueMStyle = { fontSize: '22px', color: '#fff' };
-const btnActionGreen = { flex:1, color:'#fff', background:'#22c55e20', border:'1px solid #22c55e', padding:'20px', borderRadius:'18px', cursor:'pointer', display:'flex', alignItems:'center', gap:'15px', fontSize:'16px', justifyContent:'center' };
-const btnActionBlue = { flex:1, color:'#fff', background:'#3b82f620', border:'1px solid #3b82f6', padding:'20px', borderRadius:'18px', cursor:'pointer', display:'flex', alignItems:'center', gap:'15px', fontSize:'16px', justifyContent:'center' };
+const btnBackStyle = { background: 'transparent', color: '#9e9e9e', border: '1px solid #55555a', padding: '10px 24px', borderRadius: '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '14px', marginBottom: '10px' };
+const fieldBoxModal = { border: '1px solid #dcdde1', padding: '25px', background: '#ffffff', flex: 1 };
+const fieldBoxInner = { padding: '10px' };
+const labelMStyle = { fontSize:'14px', color:'#64748b', textTransform:'uppercase', fontWeight: '700', marginBottom: '8px' };
+const pModalStyle = { fontSize:'24px', color:'#0f172a', margin: 0, fontWeight: '700' };
+const inputStyleLight = { width: '100%', padding: '15px', border: '1px solid #dcdde1', outline: 'none', background:'#fff', color:'#000', fontSize: '15px' };
 const miniActionBtn = { background: 'transparent', border: 'none', padding: '12px 15px', color: '#fff', cursor: 'pointer', transition: '0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center' };
+const btnActionGreen = { flex:1, color:'#fff', background:'#22c55e20', border:'1px solid #22c55e', padding:'20px', borderRadius:'18px', cursor:'pointer', display:'flex', alignItems:'center', gap:'15px', fontSize:'16px', justifyContent:'center', fontWeight: '600' };
+const btnActionBlue = { flex:1, color:'#fff', background:'#3b82f620', border:'1px solid #3b82f6', padding:'20px', borderRadius:'18px', cursor:'pointer', display:'flex', alignItems:'center', gap:'15px', fontSize:'16px', justifyContent:'center', fontWeight: '600' };
+const cascadeRowStyle = { display: 'grid', gridTemplateColumns: '150px 180px 150px 280px', gap: '20px', alignItems: 'center', background: '#ffffff', padding: '12px', border: '1px solid #e2e8f0' };
+const cascadeLabelStyle = { fontSize: '11px', color: '#64748b', fontWeight: '700', letterSpacing: '0.5px' };
+const inputCascadeStyle = { background: '#fff', border: '1px solid #cbd5e1', color: '#000', padding: '8px', fontSize: '13px', outline: 'none' };
+const cascadeValueStyle = { fontSize: '16px', color: '#0f172a', fontWeight: '600' };
