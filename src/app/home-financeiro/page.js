@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 // IMPORTAÇÃO DO MENU MODULAR
 import MenuLateral from '@/components/MenuLateral'
 // ÍCONES COMPLETOS
@@ -62,6 +62,7 @@ function ChatChamado({ registroId, tipo, userProfile }) {
  const enviar = async (e) => {
   e.preventDefault(); if (!novaMsg.trim()) return;
   const texto = novaMsg; setNovaMsg('');
+  try { const a = new Audio(`/${userProfile?.som_notificacao || 'som-notificacao-1.mp3'}`); a.volume = 0.4; a.play().catch(() => {}) } catch(e) {}
   setMensagens(prev => [...prev, { id: Date.now(), texto, usuario_nome: userProfile.nome, usuario_id: userProfile.id }]);
   const payload = { texto, usuario_nome: userProfile.nome, usuario_id: userProfile.id };
   payload[colunaLink] = registroId;
@@ -93,8 +94,9 @@ export default function HomeFinanceiro() {
  const [tarefaSelecionada, setTarefaSelecionada] = useState(null);
  const [listaBoletos, setListaBoletos] = useState([]); const [listaPagar, setListaPagar] = useState([]); const [listaReceber, setListaReceber] = useState([]); const [listaRH, setListaRH] = useState([]);
  const [fileBoleto, setFileBoleto] = useState(null);
- const [zoom, setZoom] = useState(1); 
+ const [zoom, setZoom] = useState(1);
  const router = useRouter();
+ const searchParams = useSearchParams();
 
  // --- CARREGAMENTO UNIFICADO ---
  const carregarDados = async () => {
@@ -162,6 +164,16 @@ export default function HomeFinanceiro() {
   }; carregar();
  }, [router]);
 
+ // Abre o card automaticamente quando chegou via notificação (?id=&tipo=)
+ useEffect(() => {
+  const id = searchParams.get('id');
+  const tipo = searchParams.get('tipo');
+  if (!id || !tipo) return;
+  const listas = { boleto: listaBoletos, pagar: listaPagar, receber: listaReceber, rh: listaRH };
+  const card = (listas[tipo] || []).find(t => String(t.id) === id);
+  if (card) setTarefaSelecionada(card);
+ }, [searchParams, listaBoletos, listaPagar, listaReceber, listaRH]);
+
  const handleUpdateField = async (t, field, value) => {
     const table = t.gTipo === 'pagar' ? 'finan_pagar' : t.gTipo === 'receber' ? 'finan_receber' : t.gTipo === 'rh' ? 'finan_rh' : 'Chamado_NF';
     await supabase.from(table).update({ [field]: value }).eq('id', t.id);
@@ -212,6 +224,24 @@ export default function HomeFinanceiro() {
     const table = t.gTipo === 'pagar' ? 'finan_pagar' : t.gTipo === 'receber' ? 'finan_receber' : t.gTipo === 'rh' ? 'finan_rh' : 'Chamado_NF';
     await supabase.from(table).update({ status: 'concluido' }).eq('id', t.id);
     alert("Processo concluído!"); setTarefaSelecionada(null);
+ };
+
+ // --- NOVAS FUNÇÕES DE VENCIMENTO ---
+ const handlePedirRecobranca = async (t) => {
+    if (!window.confirm("Deseja solicitar recobrança ao Pós-Vendas?")) return;
+    const newVal = (t.recombrancas_qtd || 0) + 1;
+    await supabase.from('Chamado_NF').update({ 
+        status: 'vencido', 
+        tarefa: 'Cobrar Cliente (Recobrança)', 
+        setor: 'Pós-Vendas',
+        recombrancas_qtd: newVal
+    }).eq('id', t.id);
+    alert("Recobrança solicitada ao Pós-Vendas!"); setTarefaSelecionada(null); carregarDados();
+ };
+
+ const handleSomenteVencido = async (t) => {
+    await supabase.from('Chamado_NF').update({ status: 'vencido' }).eq('id', t.id);
+    alert("Card movido para Vencido!"); setTarefaSelecionada(null); carregarDados();
  };
 
  if (loading) return <LoadingScreen />
@@ -468,10 +498,6 @@ export default function HomeFinanceiro() {
                      <AttachmentTag icon={<FileText size={18} />} label="NF SERVIÇO" fileUrl={tarefaSelecionada.anexo_nf_servico} onUpload={f => handleUpdateFileDirect(tarefaSelecionada, 'anexo_nf_servico', f)} />
                      <AttachmentTag icon={<ClipboardList size={18} />} label="NF PEÇA" fileUrl={tarefaSelecionada.anexo_nf_peca} onUpload={f => handleUpdateFileDirect(tarefaSelecionada, 'anexo_nf_peca', f)} />
                      
-                     {/* BOLETO AGORA APARECE NA LISTA GERAL DE DOCUMENTOS */}
-                     <AttachmentTag icon={<Barcode size={18} />} label="BOLETO" fileUrl={tarefaSelecionada.anexo_boleto} onUpload={f => handleUpdateFileDirect(tarefaSelecionada, 'anexo_boleto', f)} />
-                     
-                     {/* COMPROVANTE GERAL: APARECE PARA PIX, CARTÃO OU SE JÁ ESTIVER PAGO/CONFERIR */}
                      {(isCashOrCardType || tarefaSelecionada.isTarefaPagamentoRealizado) && (
                         <div style={{ border: '1px solid #10b981', borderRadius: '12px', padding: '2px', background: 'rgba(16, 185, 129, 0.03)' }}>
                             <AttachmentTag 
@@ -489,21 +515,41 @@ export default function HomeFinanceiro() {
 
         <div style={{marginTop:'50px', display:'flex', gap:'20px'}}>
             {isBoletoType && tarefaSelecionada.status === 'gerar_boleto' && !isCashOrCardType && (
-                <div style={{flex: 1, background:'rgba(15, 23, 42, 0.03)', padding:'40px', border:'2px dashed #0ea5e9', borderRadius: '30px'}}>
-                    <label style={{...labelMStyle, color:'#0ea5e9', fontSize: '15px', fontWeight: '800'}}>PROCESSAMENTO DE BOLETO FINAL</label>
-                    <div style={{display:'flex', gap:'25px', marginTop:'25px', alignItems: 'center'}}>
-                        <div style={{flex: 1, position: 'relative'}}>
-                            <input type="file" id="file_boleto_input" onChange={e => setFileBoleto(e.target.files[0])} style={{display:'none'}} />
-                            <label htmlFor="file_boleto_input" style={{
-                                display:'flex', alignItems:'center', gap:'10px', background:'#ffffff', border:'1px solid #dcdde1', padding:'18px 25px', borderRadius:'12px', cursor:'pointer', color:'#64748b', fontSize:'14px', fontWeight: '600'
-                            }}>
-                               <Upload size={20} /> {fileBoleto ? fileBoleto.name : "Escolher Boleto..."}
-                            </label>
-                        </div>
-                        <button 
-                            onClick={() => handleGerarBoletoFinanceiro(tarefaSelecionada)} 
-                            style={btnPrimaryBeautified} 
+                <div style={{ flex: 1, background: '#f0f9ff', padding: '35px', border: '1.5px dashed #0ea5e9', borderRadius: '20px' }}>
+                    <label style={{ ...labelMStyle, color: '#0ea5e9', fontSize: '12px', fontWeight: '800', display: 'block', marginBottom: '20px' }}>PROCESSAMENTO DE BOLETO FINAL</label>
+                    <div style={{ display: 'flex', gap: '20px', alignItems: 'stretch' }}>
+                        <input type="file" id="file_boleto_input" onChange={e => setFileBoleto(e.target.files[0])} style={{ display: 'none' }} />
+                        <label htmlFor="file_boleto_input" style={{
+                            flex: 1,
+                            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '10px',
+                            background: fileBoleto ? '#f0fdf4' : '#ffffff',
+                            border: fileBoleto ? '2px solid #10b981' : '2px dashed #cbd5e1',
+                            padding: '28px 20px', borderRadius: '16px', cursor: 'pointer',
+                            transition: 'all 0.3s ease', minHeight: '110px'
+                        }}>
+                            {fileBoleto ? (
+                                <>
+                                    <div style={{ width: '44px', height: '44px', background: '#dcfce7', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                        <CheckCircle size={24} color="#10b981" />
+                                    </div>
+                                    <span style={{ fontSize: '13px', fontWeight: '800', color: '#10b981' }}>BOLETO SELECIONADO</span>
+                                    <span style={{ fontSize: '11px', color: '#64748b', maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fileBoleto.name}</span>
+                                </>
+                            ) : (
+                                <>
+                                    <div style={{ width: '44px', height: '44px', background: '#e0f2fe', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                        <Upload size={22} color="#0ea5e9" />
+                                    </div>
+                                    <span style={{ fontSize: '13px', fontWeight: '800', color: '#0ea5e9' }}>ANEXAR BOLETO</span>
+                                    <span style={{ fontSize: '11px', color: '#94a3b8' }}>Clique para escolher o arquivo</span>
+                                </>
+                            )}
+                        </label>
+                        <button
+                            onClick={() => handleGerarBoletoFinanceiro(tarefaSelecionada)}
+                            style={{ ...btnPrimaryBeautified, flexDirection: 'column', gap: '8px', minWidth: '150px', padding: '20px' }}
                         >
+                            <Send size={22} />
                             LANÇAR TAREFA
                         </button>
                     </div>
@@ -514,6 +560,18 @@ export default function HomeFinanceiro() {
                 <button onClick={() => handleMoverParaPago(tarefaSelecionada)} style={btnSuccessBeautified}>
                     <CheckCircle size={24}/> CONCLUÍDO-MOVER PARA PAGO
                 </button>
+            )}
+
+            {/* BOTÕES DE VENCIMENTO QUANDO EM AGUARDANDO VENCIMENTO */}
+            {tarefaSelecionada.gTipo === 'boleto' && tarefaSelecionada.status === 'aguardando_vencimento' && (
+                <div style={{ display: 'flex', gap: '20px', flex: 1 }}>
+                    <button onClick={() => handlePedirRecobranca(tarefaSelecionada)} style={{ ...btnPrimaryBeautified, flex: 1, background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)' }}>
+                        <DollarSign size={20}/> PEDIR PARA POS VENDAS RECOBRAR
+                    </button>
+                    <button onClick={() => handleSomenteVencido(tarefaSelecionada)} style={{ ...btnPrimaryBeautified, flex: 1, background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)' }}>
+                        <AlertCircle size={20}/> MUDAR CARD PARA VENCIDO
+                    </button>
+                </div>
             )}
 
             {tarefaSelecionada.gTipo !== 'boleto' && (

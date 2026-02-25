@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import MenuLateral from '@/components/MenuLateral'
 import { 
   X, Send, ArrowLeft, RefreshCw, MessageSquare, PlusCircle, CheckCircle, 
@@ -60,6 +60,7 @@ function ChatChamado({ chamadoId, userProfile, tipo }) {
   const enviar = async (e) => {
     e.preventDefault(); if (!novaMsg.trim()) return
     const texto = novaMsg; setNovaMsg('')
+    try { const a = new Audio(`/${userProfile?.som_notificacao || 'som-notificacao-1.mp3'}`); a.volume = 0.4; a.play().catch(() => {}) } catch(e) {}
     const insertPayload = { texto, usuario_nome: userProfile.nome, usuario_id: userProfile.id };
     insertPayload[colunaLink] = chamadoId;
     await supabase.from('mensagens_chat').insert([insertPayload])
@@ -96,6 +97,7 @@ export default function HomePosVendas() {
   const [listaRH, setListaRH] = useState([]);
   const [showNovoMenu, setShowNovoMenu] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const handleLogout = async () => { await supabase.auth.signOut(); router.push('/login'); };
 
@@ -192,6 +194,16 @@ export default function HomePosVendas() {
     }; init();
   }, [router]);
 
+  // Abre o card automaticamente quando chegou via notificação (?id=&tipo=)
+  useEffect(() => {
+    const id = searchParams.get('id');
+    const tipo = searchParams.get('tipo');
+    if (!id || !tipo) return;
+    const listas = { boleto: listaBoletos, pagar: listaPagar, receber: listaReceber, rh: listaRH };
+    const card = (listas[tipo] || []).find(t => String(t.id) === id);
+    if (card) setTarefaSelecionada(card);
+  }, [searchParams, listaBoletos, listaPagar, listaReceber, listaRH]);
+
   if (loading) return <LoadingScreen />
 
   // --- LÓGICAS CONDICIONAIS DE INTERFACE DO MODAL ---
@@ -241,8 +253,8 @@ export default function HomePosVendas() {
                 {[...listaPagar, ...listaReceber].map((t) => (
                   <div key={`${t.fornecedor ? 'p' : 'r'}-${t.id}`} onClick={() => setTarefaSelecionada(t)} className="task-card">
                     <div style={{
-                      padding: '24px', 
-                      background: t.fornecedor ? '#fef2f210' : '#eff6ff10', 
+                      padding: '24px',
+                      background: t.fornecedor ? 'rgba(239, 68, 68, 0.12)' : 'rgba(59, 130, 246, 0.12)',
                       borderLeft: `6px solid ${t.fornecedor ? '#ef4444' : '#3b82f6'}`
                     }}>
                         <small style={{color: t.fornecedor ? '#fca5a5' : '#93c5fd', letterSpacing: '1px', textTransform: 'uppercase', fontSize: '11px'}}>{t.fornecedor ? 'A Pagar' : 'A Receber'}</small>
@@ -274,12 +286,12 @@ export default function HomePosVendas() {
       {/* --- MODAL DETALHES --- */}
       {tarefaSelecionada && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0, 0, 0, 0.85)', backdropFilter: 'blur(15px)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ background: '#ffffff', width: '1650px', maxWidth: '98%', maxHeight: '95vh', borderRadius: '40px', display: 'flex', overflow:'hidden', boxShadow:'0 50px 100px rgba(0,0,0,0.6)', border: '1px solid #55555a' }}>
-            <div style={{ flex: 1.2, padding: '60px', display:'flex', flexDirection:'column', overflowY:'auto', color: '#1e293b' }}>
+          <div style={{ background: '#1e1e21', width: '1650px', maxWidth: '98%', maxHeight: '95vh', borderRadius: '40px', display: 'flex', overflow:'hidden', boxShadow:'0 50px 100px rgba(0,0,0,0.6)', border: '1px solid #3f3f44' }}>
+            <div style={{ flex: 1.2, padding: '60px', display:'flex', flexDirection:'column', overflowY:'auto', color: '#e2e8f0', background: '#1e1e21' }}>
               <button onClick={() => setTarefaSelecionada(null)} style={btnBackStyle}><ArrowLeft size={18}/> VOLTAR AO PAINEL</button>
               
               <div style={{marginTop: '35px'}}>
-                  <h2 style={{fontSize:'32px', fontWeight:'400', margin:0, letterSpacing: '-1px', color:'#0f172a', lineHeight: '1.1'}}>{tarefaSelecionada.nom_cliente || tarefaSelecionada.fornecedor || tarefaSelecionada.funcionario || tarefaSelecionada.cliente}</h2>
+                  <h2 style={{fontSize:'32px', fontWeight:'400', margin:0, letterSpacing: '-1px', color:'#f8fafc', lineHeight: '1.1'}}>{tarefaSelecionada.nom_cliente || tarefaSelecionada.fornecedor || tarefaSelecionada.funcionario || tarefaSelecionada.cliente}</h2>
                   
                   <div style={{display:'flex', gap:'30px', marginTop:'40px', marginBottom:'45px'}}>
                       <div style={fieldBoxModal}><label style={labelMStyle}>CONDIÇÃO / MOTIVO</label><p style={pModalStyle}>{tarefaSelecionada.forma_pagamento?.toUpperCase() || tarefaSelecionada.motivo || 'N/A'}</p></div>
@@ -303,8 +315,8 @@ export default function HomePosVendas() {
                   </div>
 
                   {!isBoleto30 && isParcelamento && (
-                      <div style={{ display:'flex', flexDirection:'column', gap:'20px', background:'#f8fafc', padding:'40px', border:'1px solid #dcdde1', marginBottom:'45px' }}>
-                          <div style={{ display:'flex', gap:'40px', borderBottom:'1px solid #dcdde1', paddingBottom:'20px' }}>
+                      <div style={{ display:'flex', flexDirection:'column', gap:'20px', background:'#2a2a2d', padding:'40px', border:'1px solid #3f3f44', marginBottom:'45px' }}>
+                          <div style={{ display:'flex', gap:'40px', borderBottom:'1px solid #3f3f44', paddingBottom:'20px' }}>
                               <div><label style={labelMStyle}>QUANTIDADE</label><select style={{ ...inputStyleLight, width:'120px', padding:'10px' }} value={tarefaSelecionada.qtd_parcelas || 1} onChange={e => handleUpdateField(tarefaSelecionada, 'qtd_parcelas', e.target.value)}>{[1,2,3,4,5].map(n => <option key={n} value={n}>{n}x</option>)}</select></div>
                               <div><label style={labelMStyle}>VALOR PARCELA</label><p style={{fontSize:'22px', fontWeight:'700'}}>R$ {valorIndividual}</p></div>
                           </div>
@@ -331,7 +343,7 @@ export default function HomePosVendas() {
                       </div>
                   )}
 
-                  <div style={{ display:'grid', gridTemplateColumns:'repeat(2, 1fr)', gap:'30px', border:'0.5px solid #dcdde1', padding:'45px', background:'#f8fafc' }}>
+                  <div style={{ display:'grid', gridTemplateColumns:'repeat(2, 1fr)', gap:'30px', border:'0.5px solid #3f3f44', padding:'45px', background:'#2a2a2d' }}>
                     {tarefaSelecionada.gTipo === 'rh' ? (
                       <>
                         <div style={fieldBoxInner}><label style={labelMStyle}>TÍTULO</label><p style={{fontSize:'15px', fontWeight: '600'}}>{tarefaSelecionada.titulo}</p></div>
@@ -381,10 +393,14 @@ export default function HomePosVendas() {
 
                   <div style={{display:'flex', gap:'20px', marginTop:'45px'}}>
                     {tarefaSelecionada.status === 'enviar_cliente' && (
-                        <button onClick={() => handleConfirmarEnvioBoleto(tarefaSelecionada)} style={btnActionGreen}><Send size={22}/> MARCAR COMO ENVIADO AO CLIENTE</button>
+                        <button onClick={() => handleConfirmarEnvioBoleto(tarefaSelecionada)} style={btnActionGreen}>
+                          <Send size={22}/> MARCAR COMO ENVIADO AO CLIENTE
+                        </button>
                     )}
                     {tarefaSelecionada.tarefa?.includes('Cobrar') && (
-                        <button onClick={() => handleConcluirRecobranca(tarefaSelecionada)} style={btnActionBlue}><DollarSign size={22}/> CLIENTE RECOBRADO</button>
+                        <button onClick={() => handleConcluirRecobranca(tarefaSelecionada)} style={btnActionBlue}>
+                          <DollarSign size={22}/> CLIENTE RECOBRADO
+                        </button>
                     )}
                   </div>
               </div>
@@ -412,15 +428,21 @@ export default function HomePosVendas() {
 function AttachmentTag({ label, fileUrl, onUpload, disabled = false }) {
     const fileInputRef = useRef(null);
     return (
-        <div style={{ display: 'flex', alignItems: 'center', background: '#3f3f44', border: '1px solid #55555a', borderRadius: '12px', overflow: 'hidden', minWidth:'260px' }}>
-            <span style={{ padding: '12px 18px', fontSize: '12px', color: fileUrl ? '#4ade80' : '#9e9e9e', borderRight: '1px solid #55555a', flex: 1, whiteSpace: 'nowrap' }}>{label}</span>
-            <div style={{ display: 'flex' }}>
+        <div style={{ display: 'flex', alignItems: 'center', background: '#2a2a2d', border: '1px solid #55555a', borderRadius: '12px', minWidth: '280px', overflow: 'hidden' }}>
+            <div style={{ padding: '0 18px', color: '#71717a', background: '#313134', alignSelf: 'stretch', display: 'flex', alignItems: 'center', borderRight: '1px solid #55555a' }}>
+                <FileText size={18} />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, padding: '12px 15px' }}>
+                <span style={{ fontSize: '13px', color: '#e2e8f0', fontWeight: '700', letterSpacing: '0.5px' }}>{label}</span>
+                <span style={{ fontSize: '11px', color: fileUrl ? '#4ade80' : '#f87171', fontWeight: '700' }}>{fileUrl ? 'ARQUIVO PRONTO' : 'PENDENTE'}</span>
+            </div>
+            <div style={{ display: 'flex', borderLeft: '1px solid #55555a' }}>
                 {fileUrl && (
-                    <button title="Ver" onClick={() => window.open(fileUrl, '_blank')} style={miniActionBtn}><Eye size={18} /></button>
+                    <button title="Ver" onClick={() => window.open(fileUrl, '_blank')} style={miniActionBtn}><Eye size={18} color="#9e9e9e" /></button>
                 )}
                 {!disabled && (
                     <>
-                        <button title="Upload" onClick={() => fileInputRef.current.click()} style={miniActionBtn}><RefreshCw size={18} /></button>
+                        <button title="Upload" onClick={() => fileInputRef.current.click()} style={miniActionBtn}><RefreshCw size={18} color="#9e9e9e" /></button>
                         <input type="file" ref={fileInputRef} hidden onChange={(e) => onUpload(e.target.files[0])} />
                     </>
                 )}
@@ -434,16 +456,16 @@ const cardMetaStyle = { display:'flex', alignItems:'center', gap:'8px', color:'#
 const btnNovoStyle = { background:'#3f3f44', color:'#fff', border:'1px solid #55555a', padding:'12px 28px', borderRadius:'14px', cursor:'pointer', display:'flex', alignItems:'center', gap:'12px', fontSize: '15px' };
 const dropdownStyle = { position:'absolute', top:'65px', right: 0, background:'#3f3f44', borderRadius:'22px', boxShadow: '0 30px 60px rgba(0,0,0,0.5)', zIndex:2000, width:'300px', border:'1px solid #55555a', overflow:'hidden' };
 const dropdownItemStyle = { padding:'18px 25px', cursor:'pointer', borderBottom:'1px solid #55555a', fontSize:'15px', color: '#e2e8f0', transition:'0.2s' };
-const btnBackStyle = { background: 'transparent', color: '#9e9e9e', border: '1px solid #55555a', padding: '10px 24px', borderRadius: '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '14px', marginBottom: '10px' };
-const fieldBoxModal = { border: '1px solid #dcdde1', padding: '25px', background: '#ffffff', flex: 1 };
+const btnBackStyle = { background: '#3f3f44', color: '#9e9e9e', border: '1px solid #55555a', padding: '10px 24px', borderRadius: '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '14px', marginBottom: '10px' };
+const fieldBoxModal = { border: '1px solid #3f3f44', padding: '25px', background: '#2a2a2d', flex: 1, borderRadius: '12px' };
 const fieldBoxInner = { padding: '10px' };
-const labelMStyle = { fontSize:'14px', color:'#64748b', textTransform:'uppercase', fontWeight: '700', marginBottom: '8px' };
-const pModalStyle = { fontSize:'24px', color:'#0f172a', margin: 0, fontWeight: '700' };
-const inputStyleLight = { width: '100%', padding: '15px', border: '1px solid #dcdde1', outline: 'none', background:'#fff', color:'#000', fontSize: '15px' };
-const miniActionBtn = { background: 'transparent', border: 'none', padding: '12px 15px', color: '#fff', cursor: 'pointer', transition: '0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center' };
-const btnActionGreen = { flex:1, color:'#fff', background:'#22c55e20', border:'1px solid #22c55e', padding:'20px', borderRadius:'18px', cursor:'pointer', display:'flex', alignItems:'center', gap:'15px', fontSize:'16px', justifyContent:'center', fontWeight: '600' };
-const btnActionBlue = { flex:1, color:'#fff', background:'#3b82f620', border:'1px solid #3b82f6', padding:'20px', borderRadius:'18px', cursor:'pointer', display:'flex', alignItems:'center', gap:'15px', fontSize:'16px', justifyContent:'center', fontWeight: '600' };
-const cascadeRowStyle = { display: 'grid', gridTemplateColumns: '150px 180px 150px 280px', gap: '20px', alignItems: 'center', background: '#ffffff', padding: '12px', border: '1px solid #e2e8f0' };
-const cascadeLabelStyle = { fontSize: '11px', color: '#64748b', fontWeight: '700', letterSpacing: '0.5px' };
-const inputCascadeStyle = { background: '#fff', border: '1px solid #cbd5e1', color: '#000', padding: '8px', fontSize: '13px', outline: 'none' };
-const cascadeValueStyle = { fontSize: '16px', color: '#0f172a', fontWeight: '600' };
+const labelMStyle = { fontSize:'13px', color:'#71717a', textTransform:'uppercase', fontWeight: '700', marginBottom: '8px', display: 'block' };
+const pModalStyle = { fontSize:'24px', color:'#f8fafc', margin: 0, fontWeight: '700' };
+const inputStyleLight = { width: '100%', padding: '15px', border: '1px solid #55555a', outline: 'none', background:'#3f3f44', color:'#f8fafc', fontSize: '15px', borderRadius: '8px' };
+const miniActionBtn = { background: 'transparent', border: 'none', padding: '10px', cursor: 'pointer', transition: '0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '8px' };
+const btnActionGreen = { flex:1, color:'#fff', background:'linear-gradient(135deg, #16a34a 0%, #15803d 100%)', border:'none', padding:'22px', borderRadius:'18px', cursor:'pointer', display:'flex', alignItems:'center', gap:'15px', fontSize:'16px', justifyContent:'center', fontWeight: '700', boxShadow: '0 10px 25px rgba(22, 163, 74, 0.3)', transition: '0.3s' };
+const btnActionBlue = { flex:1, color:'#fff', background:'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)', border:'none', padding:'22px', borderRadius:'18px', cursor:'pointer', display:'flex', alignItems:'center', gap:'15px', fontSize:'16px', justifyContent:'center', fontWeight: '700', boxShadow: '0 10px 25px rgba(37, 99, 235, 0.3)', transition: '0.3s' };
+const cascadeRowStyle = { display: 'grid', gridTemplateColumns: '150px 180px 150px 280px', gap: '20px', alignItems: 'center', background: '#1e1e21', padding: '12px', border: '1px solid #3f3f44' };
+const cascadeLabelStyle = { fontSize: '11px', color: '#71717a', fontWeight: '700', letterSpacing: '0.5px' };
+const inputCascadeStyle = { background: '#3f3f44', border: '1px solid #55555a', color: '#f8fafc', padding: '8px', fontSize: '13px', outline: 'none', borderRadius: '6px' };
+const cascadeValueStyle = { fontSize: '16px', color: '#f8fafc', fontWeight: '600' };

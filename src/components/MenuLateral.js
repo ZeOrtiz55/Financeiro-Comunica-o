@@ -110,6 +110,7 @@ export default function MenuLateral({ isSidebarOpen, setIsSidebarOpen, path, rou
   e.preventDefault();
   if (!novaMsg.trim() || !userProfile?.id) return;
   const t = novaMsg; setNovaMsg('');
+  try { const a = new Audio(`/${userProfile?.som_notificacao || 'som-notificacao-1.mp3'}`); a.volume = 0.4; a.play().catch(() => {}) } catch(e) {}
 
   const msgOtimista = { 
     id: Math.random(), 
