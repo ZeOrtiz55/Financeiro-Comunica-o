@@ -20,6 +20,24 @@ export default function MenuLateral({ isSidebarOpen, setIsSidebarOpen, path, rou
  const isChatOpenRef = useRef(isChatOpen)
  useEffect(() => { isChatOpenRef.current = isChatOpen }, [isChatOpen])
 
+ // ABRE O CHAT VIA EVENTO GLOBAL ou sessionStorage (para quando o usuário veio de outra página)
+ useEffect(() => {
+  // Ao montar: verifica se há flag do sessionStorage (usuário navegou de outra página)
+  if (sessionStorage.getItem('openChatGeral') === '1') {
+   sessionStorage.removeItem('openChatGeral')
+   setIsChatOpen(true)
+   setNotificacoesAtivas(0)
+  }
+  // Escuta evento imediato (usuário já estava na home quando clicou)
+  const handler = () => {
+   sessionStorage.removeItem('openChatGeral')
+   setIsChatOpen(true)
+   setNotificacoesAtivas(0)
+  }
+  window.addEventListener('abrirChatGeral', handler)
+  return () => window.removeEventListener('abrirChatGeral', handler)
+ }, [])
+
  // ESTADO PARA NOTIFICAÇÕES DE CARDS VENCIDOS
  const [alertasVencidos, setAlertasVencidos] = useState(0)
 
@@ -295,63 +313,97 @@ export default function MenuLateral({ isSidebarOpen, setIsSidebarOpen, path, rou
        <button onClick={() => setIsChatOpen(false)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', cursor: 'pointer', padding: '15px', borderRadius: '20px' }}><X size={32} /></button>
       </div>
 
-      <div ref={scrollRef} style={{ flex: 1, padding: '40px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '35px', background: '#f8fafc' }}>
-       {mensagens.map((m, idx) => {
-        const souEu = String(m.usuario_id) === String(userProfile?.id);
-        const userDaMsg = usuariosMap[m.usuario_id] || { nome: m.usuario_nome };
-        const visualizadores = m.visualizado_por?.filter(id => id !== m.usuario_id)
-                                .map(id => usuariosMap[id]?.nome?.split(' ')[0]) || [];
+      <div ref={scrollRef} style={{ flex: 1, padding: '40px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '28px', background: '#f8fafc' }}>
+       {(() => {
+        const hoje = new Date(); hoje.setHours(0,0,0,0);
+        const ontem = new Date(hoje.getTime() - 86400000);
+        const getDateKey = (ts) => ts ? new Date(ts).toISOString().split('T')[0] : null;
+        const getDateLabel = (key) => {
+          if (!key) return null;
+          const hojeKey = hoje.toISOString().split('T')[0];
+          const ontemKey = ontem.toISOString().split('T')[0];
+          if (key === hojeKey) return 'Hoje';
+          if (key === ontemKey) return 'Ontem';
+          const d = new Date(key + 'T12:00:00');
+          return d.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' });
+        };
 
-        return (
-          <div key={m.id || idx} style={{ 
-            display: 'flex', 
-            flexDirection: souEu ? 'row-reverse' : 'row', 
-            gap: '15px', 
-            alignItems: 'flex-end', 
-            alignSelf: souEu ? 'flex-end' : 'flex-start', 
-            maxWidth: '90%',
-            animation: 'slideIn 0.3s ease'
-          }}>
-            <img 
-              src={userDaMsg?.avatar_url || 'https://citrhumdkfivdzbmayde.supabase.co/storage/v1/object/public/avatars/default.png'} 
-              style={{ width: '48px', height: '48px', borderRadius: '16px', objectFit: 'cover', border: '2px solid #fff', boxShadow: '0 5px 15px rgba(0,0,0,0.1)' }}
-              alt="User"
-            />
+        const items = [];
+        let lastDateKey = null;
 
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: souEu ? 'flex-end' : 'flex-start' }}>
-              <div style={{ 
-                background: souEu ? 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)' : '#fff', 
-                color: souEu ? '#fff' : '#0f172a', 
-                padding: '22px 28px', 
-                borderRadius: souEu ? '32px 32px 5px 32px' : '32px 32px 32px 5px', 
-                boxShadow: '0 12px 30px rgba(0,0,0,0.06)',
-                border: souEu ? 'none' : '1px solid #e2e8f0'
-              }}>
-               {!souEu && <small style={{ fontSize: '12px', fontWeight: '900', color: '#3b82f6', display: 'block', marginBottom: '8px' }}>{m.usuario_nome?.toUpperCase()}</small>}
-               
-               {m.midia_url && (
-                <div style={{ marginBottom: '18px' }}>
-                 {m.midia_url.match(/\.(jpeg|jpg|gif|png|webp)$/i) ? <img src={m.midia_url} style={{ width: '100%', borderRadius: '25px' }} /> : <a href={m.midia_url} target="_blank" style={{ fontSize: '15px', color: '#38bdf8', fontWeight: '800' }}>📎 Documento Anexo</a>}
-                </div>
-               )}
-               
-               <div style={{ fontSize: '18px', lineHeight: '1.7', fontWeight: '500' }}>{m.texto}</div>
+        mensagens.forEach((m, idx) => {
+          const dateKey = getDateKey(m.created_at);
 
-               <div style={{ textAlign: 'right', fontSize: '11px', opacity: 0.5, marginTop: '10px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
-                {m.created_at ? new Date(m.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '--:--'}
-                {souEu && <CheckCheck size={18} color={m.visualizado_por?.length > 1 ? "#38bdf8" : "#94a3b8"} />}
-               </div>
+          // Insere separador de dia quando muda o dia
+          if (dateKey && dateKey !== lastDateKey) {
+            lastDateKey = dateKey;
+            items.push(
+              <div key={`day-${dateKey}`} style={{ display: 'flex', alignItems: 'center', gap: '16px', alignSelf: 'stretch', margin: '4px 0' }}>
+                <div style={{ flex: 1, height: '1px', background: 'linear-gradient(to right, transparent, #e2e8f0)' }} />
+                <span style={{ fontSize: '11px', fontWeight: '700', color: '#94a3b8', background: '#fff', padding: '5px 16px', borderRadius: '20px', border: '1px solid #e2e8f0', whiteSpace: 'nowrap', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+                  {getDateLabel(dateKey)}
+                </span>
+                <div style={{ flex: 1, height: '1px', background: 'linear-gradient(to left, transparent, #e2e8f0)' }} />
               </div>
+            );
+          }
 
-              {visualizadores.length > 0 && (
-                <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '6px', fontWeight: '700', padding: '0 10px' }}>
-                  Visto por: {visualizadores.join(', ')}
+          const souEu = String(m.usuario_id) === String(userProfile?.id);
+          const userDaMsg = usuariosMap[m.usuario_id] || { nome: m.usuario_nome };
+          const visualizadores = m.visualizado_por?.filter(id => id !== m.usuario_id)
+                                  .map(id => usuariosMap[id]?.nome?.split(' ')[0]) || [];
+
+          items.push(
+            <div key={m.id || idx} style={{
+              display: 'flex',
+              flexDirection: souEu ? 'row-reverse' : 'row',
+              gap: '15px',
+              alignItems: 'flex-end',
+              alignSelf: souEu ? 'flex-end' : 'flex-start',
+              maxWidth: '90%',
+              animation: 'slideIn 0.3s ease'
+            }}>
+              <img
+                src={userDaMsg?.avatar_url || 'https://citrhumdkfivdzbmayde.supabase.co/storage/v1/object/public/avatars/default.png'}
+                style={{ width: '48px', height: '48px', borderRadius: '16px', objectFit: 'cover', border: '2px solid #fff', boxShadow: '0 5px 15px rgba(0,0,0,0.1)' }}
+                alt="User"
+              />
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: souEu ? 'flex-end' : 'flex-start' }}>
+                <div style={{
+                  background: souEu ? 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)' : '#fff',
+                  color: souEu ? '#fff' : '#0f172a',
+                  padding: '22px 28px',
+                  borderRadius: souEu ? '32px 32px 5px 32px' : '32px 32px 32px 5px',
+                  boxShadow: '0 12px 30px rgba(0,0,0,0.06)',
+                  border: souEu ? 'none' : '1px solid #e2e8f0'
+                }}>
+                  {!souEu && <small style={{ fontSize: '12px', fontWeight: '900', color: '#3b82f6', display: 'block', marginBottom: '8px' }}>{m.usuario_nome?.toUpperCase()}</small>}
+                  {m.midia_url && (
+                    <div style={{ marginBottom: '18px' }}>
+                      {m.midia_url.match(/\.(jpeg|jpg|gif|png|webp)$/i)
+                        ? <img src={m.midia_url} style={{ width: '100%', borderRadius: '25px' }} />
+                        : <a href={m.midia_url} target="_blank" style={{ fontSize: '15px', color: '#38bdf8', fontWeight: '800' }}>📎 Documento Anexo</a>
+                      }
+                    </div>
+                  )}
+                  <div style={{ fontSize: '18px', lineHeight: '1.7', fontWeight: '500' }}>{m.texto}</div>
+                  <div style={{ textAlign: 'right', fontSize: '11px', opacity: 0.5, marginTop: '10px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
+                    {m.created_at ? new Date(m.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '--:--'}
+                    {souEu && <CheckCheck size={18} color={m.visualizado_por?.length > 1 ? "#38bdf8" : "#94a3b8"} />}
+                  </div>
                 </div>
-              )}
+                {visualizadores.length > 0 && (
+                  <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '6px', fontWeight: '700', padding: '0 10px' }}>
+                    Visto por: {visualizadores.join(', ')}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        )
-       })}
+          );
+        });
+
+        return items;
+       })()}
       </div>
 
       <form onSubmit={enviarMsg} style={{ padding: '40px', display: 'flex', gap: '25px', borderTop: '1px solid #f1f5f9', alignItems: 'center', background: '#fff' }}>

@@ -1,128 +1,154 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Bell, RefreshCw, MessageSquare, ChevronRight } from 'lucide-react'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 
-export default function NotificationSystem({ userProfile, setIsChatOpen }) {
+export default function NotificationSystem({ userProfile }) {
   const [notificacoes, setNotificacoes] = useState([])
   const [toasts, setToasts] = useState([])
   const [showDropdown, setShowDropdown] = useState(false)
+  const audioRef = useRef(null)
   const router = useRouter()
+  const pathname = usePathname()
 
-  // Rota correta baseada na função do usuário
   const rotaHome = userProfile?.funcao === 'Financeiro' ? '/home-financeiro' : '/home-posvendas'
 
+  // ─── AUDIO UNLOCK ────────────────────────────────────────────────────────────
+  // O browser bloqueia audio.play() quando não há interação prévia do usuário.
+  // Na primeira interação (clique), pré-tocamos o áudio silenciosamente para
+  // "desbloquear" o contexto de áudio. Depois reutilizamos a mesma instância.
+  useEffect(() => {
+    if (!userProfile) return
+    const somEscolhido = userProfile?.som_notificacao || 'som-notificacao-1.mp3'
+
+    const unlock = () => {
+      const audio = new Audio(`/${somEscolhido}`)
+      audio.volume = 0
+      audio.play()
+        .then(() => {
+          audio.pause()
+          audio.currentTime = 0
+          audio.volume = 1
+          audioRef.current = audio // salva instância desbloqueada
+        })
+        .catch(() => {})
+    }
+
+    document.addEventListener('click', unlock, { once: true })
+    return () => document.removeEventListener('click', unlock)
+  }, [userProfile?.som_notificacao])
+
+  const tocarSom = () => {
+    try {
+      if (audioRef.current) {
+        audioRef.current.currentTime = 0
+        audioRef.current.play().catch(() => {})
+      } else {
+        // fallback: tenta sem unlock (pode ser bloqueado pelo browser)
+        new Audio(`/${userProfile?.som_notificacao || 'som-notificacao-1.mp3'}`).play().catch(() => {})
+      }
+    } catch (e) {}
+  }
+
+  // ─── NAVEGAÇÃO AO CLICAR ─────────────────────────────────────────────────────
   const handleNotifClick = (n) => {
     setShowDropdown(false)
-    setNotificacoes(prev => prev.filter(item => item !== n))
+    setNotificacoes(prev => prev.filter(item => item.id !== n.id))
+    setToasts(prev => prev.filter(item => item.id !== n.id))
 
-    // Mensagem do chat geral (sem vínculo a card): abre o chat da sidebar
     if (!n.registro_id) {
-      if (setIsChatOpen) setIsChatOpen(true)
+      // Guarda flag persistente (funciona mesmo ao navegar de página)
+      sessionStorage.setItem('openChatGeral', '1')
+      // Dispara evento imediato (pego pelo MenuLateral se já estiver montado)
+      window.dispatchEvent(new CustomEvent('abrirChatGeral'))
+      // Navega para home se não estiver lá (MenuLateral lerá o sessionStorage ao montar)
+      if (!pathname?.includes('home-')) router.push(rotaHome)
       return
     }
 
-    // Navega para a página correta passando id e tipo como query params
+    // Card específico: navega com query params
     router.push(`${rotaHome}?id=${n.registro_id}&tipo=${n.tipo_fluxo}`)
   }
 
   const addToast = (notif) => {
     const id = Date.now()
     setToasts(prev => [{ ...notif, id }, ...prev])
-
-    try {
-      const somEscolhido = userProfile?.som_notificacao || 'som-notificacao-1.mp3'
-      const audio = new Audio(`/${somEscolhido}`)
-      audio.play().catch(() => {})
-    } catch (e) {}
-
-    setTimeout(() => {
-      setToasts(prev => prev.filter(t => t.id !== id))
-    }, 8000)
+    tocarSom()
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 8000)
   }
 
+  // ─── REALTIME ────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!userProfile?.id) return
 
-    // Canal único por usuário para evitar conflitos entre abas/sessões
     const channel = supabase.channel(`notifs_${userProfile.id}`)
 
-      // --- 1. MENSAGENS DO CHAT ---
+      // 1. MENSAGENS DO CHAT (handler SÍNCRONO — async causa bug silencioso no Supabase Realtime)
       .on('postgres_changes', {
         event: 'INSERT', schema: 'public', table: 'mensagens_chat'
-      }, async (payload) => {
+      }, (payload) => {
         // Ignora próprias mensagens
         if (String(payload.new.usuario_id) === String(userProfile.id)) return
 
         const autor = payload.new.usuario_nome || 'Alguém'
-        let nome_card = 'Chat Geral'
-        let tipo_fluxo = 'chat_geral'
-        let registro_id = null
+        const texto = payload.new.texto || ''
 
-        if (payload.new.chamado_id) {
-          const { data } = await supabase.from('Chamado_NF').select('nom_cliente').eq('id', payload.new.chamado_id).single()
-          nome_card = data?.nom_cliente || 'Boleto'
-          registro_id = payload.new.chamado_id
-          tipo_fluxo = 'boleto'
-        } else if (payload.new.pagar_id) {
-          const { data } = await supabase.from('finan_pagar').select('fornecedor').eq('id', payload.new.pagar_id).single()
-          nome_card = data?.fornecedor || 'Conta a Pagar'
-          registro_id = payload.new.pagar_id
-          tipo_fluxo = 'pagar'
-        } else if (payload.new.receber_id) {
-          const { data } = await supabase.from('finan_receber').select('cliente').eq('id', payload.new.receber_id).single()
-          nome_card = data?.cliente || 'Conta a Receber'
-          registro_id = payload.new.receber_id
-          tipo_fluxo = 'receber'
-        } else if (payload.new.rh_id) {
-          const { data } = await supabase.from('finan_rh').select('funcionario').eq('id', payload.new.rh_id).single()
-          nome_card = data?.funcionario || 'RH'
-          registro_id = payload.new.rh_id
-          tipo_fluxo = 'rh'
-        }
+        // Detecta o tipo de vínculo do card (síncrono, sem await)
+        const registro_id =
+          payload.new.chamado_id  ||
+          payload.new.pagar_id    ||
+          payload.new.receber_id  ||
+          payload.new.rh_id       ||
+          null
+
+        const tipo_fluxo =
+          payload.new.chamado_id  ? 'boleto'     :
+          payload.new.pagar_id    ? 'pagar'      :
+          payload.new.receber_id  ? 'receber'    :
+          payload.new.rh_id       ? 'rh'         :
+          'chat_geral'
 
         const novaNotif = {
           id: Date.now(),
-          titulo: registro_id ? 'NOVA MENSAGEM NO CARD' : 'NOVA MENSAGEM NO CHAT',
-          mensagem: `${autor}: "${payload.new.texto}"${registro_id ? ` — ${nome_card}` : ''}`,
+          titulo: registro_id ? 'MENSAGEM NO CARD' : 'MENSAGEM NO CHAT',
+          mensagem: `${autor}: "${texto}"`,
           data: new Date().toISOString(),
           tipo: 'chat',
           registro_id,
-          tipo_fluxo
+          tipo_fluxo,
         }
         setNotificacoes(prev => [novaNotif, ...prev])
         addToast(novaNotif)
       })
 
-      // --- 2. MOVIMENTAÇÃO DE CARDS (BOLETOS) ---
+      // 2. CARD MOVIMENTADO (boleto)
       .on('postgres_changes', {
         event: 'UPDATE', schema: 'public', table: 'Chamado_NF'
       }, (payload) => {
-        if (payload.old.status !== payload.new.status) {
-          const statusLabel = {
-            gerar_boleto: 'Gerar Boleto',
-            enviar_cliente: 'Enviar ao Cliente',
-            aguardando_vencimento: 'Aguardando Vencimento',
-            vencido: 'Vencido',
-            pago: 'Pago',
-            concluido: 'Concluído',
-          }
-          const novaNotif = {
-            id: Date.now(),
-            titulo: 'CARD MOVIMENTADO',
-            mensagem: `${payload.new.nom_cliente} → ${statusLabel[payload.new.status] || payload.new.status.toUpperCase()}`,
-            data: new Date().toISOString(),
-            tipo: 'movimento',
-            registro_id: payload.new.id,
-            tipo_fluxo: 'boleto'
-          }
-          setNotificacoes(prev => [novaNotif, ...prev])
-          addToast(novaNotif)
+        if (payload.old.status === payload.new.status) return
+        const statusLabel = {
+          gerar_boleto: 'Gerar Boleto',
+          enviar_cliente: 'Enviar ao Cliente',
+          aguardando_vencimento: 'Aguardando Vencimento',
+          vencido: 'Vencido',
+          pago: 'Pago',
+          concluido: 'Concluído',
         }
+        const novaNotif = {
+          id: Date.now(),
+          titulo: 'CARD MOVIMENTADO',
+          mensagem: `${payload.new.nom_cliente} → ${statusLabel[payload.new.status] || payload.new.status}`,
+          data: new Date().toISOString(),
+          tipo: 'movimento',
+          registro_id: payload.new.id,
+          tipo_fluxo: 'boleto',
+        }
+        setNotificacoes(prev => [novaNotif, ...prev])
+        addToast(novaNotif)
       })
 
-      // --- 3. NOVO LANÇAMENTO PAGAR ---
+      // 3. NOVO LANÇAMENTO PAGAR
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'finan_pagar' }, (payload) => {
         const novaNotif = {
           id: Date.now(),
@@ -131,12 +157,13 @@ export default function NotificationSystem({ userProfile, setIsChatOpen }) {
           data: new Date().toISOString(),
           tipo: 'movimento',
           registro_id: payload.new.id,
-          tipo_fluxo: 'pagar'
+          tipo_fluxo: 'pagar',
         }
-        setNotificacoes(prev => [novaNotif, ...prev]); addToast(novaNotif)
+        setNotificacoes(prev => [novaNotif, ...prev])
+        addToast(novaNotif)
       })
 
-      // --- 4. NOVO LANÇAMENTO RECEBER ---
+      // 4. NOVO LANÇAMENTO RECEBER
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'finan_receber' }, (payload) => {
         const novaNotif = {
           id: Date.now(),
@@ -145,9 +172,10 @@ export default function NotificationSystem({ userProfile, setIsChatOpen }) {
           data: new Date().toISOString(),
           tipo: 'movimento',
           registro_id: payload.new.id,
-          tipo_fluxo: 'receber'
+          tipo_fluxo: 'receber',
         }
-        setNotificacoes(prev => [novaNotif, ...prev]); addToast(novaNotif)
+        setNotificacoes(prev => [novaNotif, ...prev])
+        addToast(novaNotif)
       })
 
       .subscribe()
@@ -155,71 +183,231 @@ export default function NotificationSystem({ userProfile, setIsChatOpen }) {
     return () => { supabase.removeChannel(channel) }
   }, [userProfile?.id])
 
-  // Não renderiza nada se não há usuário logado
-  if (!userProfile) return null
+  // Não renderiza no login nem sem usuário logado
+  if (!userProfile || pathname === '/login') return null
+
+  const temNotif = notificacoes.length > 0
 
   return (
     <>
-      {/* ÍCONE DO SININHO */}
-      <div style={{ position: 'fixed', bottom: '35px', right: '125px', zIndex: 2050 }}>
-        <div
-          onClick={() => setShowDropdown(!showDropdown)}
-          style={{ cursor: 'pointer', position: 'relative', background: '#fff', width: '75px', height: '75px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 20px 40px rgba(0,0,0,0.1)', border: '1px solid #dcdde1' }}
+      {/* ═══════════════════════════════════════════════════════════
+          SINO — canto superior direito, circular, moderno
+      ═══════════════════════════════════════════════════════════ */}
+      <div style={{ position: 'fixed', top: '20px', right: '24px', zIndex: 2050 }}>
+
+        {/* Botão circular */}
+        <button
+          onClick={() => setShowDropdown(s => !s)}
+          style={{
+            position: 'relative',
+            width: '64px',
+            height: '64px',
+            borderRadius: '50%',
+            border: 'none',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: temNotif
+              ? 'linear-gradient(135deg, #0ea5e9 0%, #0369a1 100%)'
+              : 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
+            boxShadow: temNotif
+              ? '0 6px 28px rgba(14,165,233,0.5), 0 0 0 4px rgba(14,165,233,0.2)'
+              : '0 6px 20px rgba(0,0,0,0.4)',
+            transition: 'all 0.3s ease',
+          }}
         >
-          <Bell size={30} color={notificacoes.length > 0 ? '#0ea5e9' : '#475569'} />
-          {notificacoes.length > 0 && (
-            <div style={{ position: 'absolute', top: '12px', right: '12px', background: '#ef4444', color: '#fff', fontSize: '11px', width: '20px', height: '20px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>
+          <Bell
+            size={28}
+            color="#fff"
+            fill={temNotif ? '#fff' : 'none'}
+            strokeWidth={2}
+            style={temNotif ? { animation: 'bellRing 0.6s ease' } : {}}
+          />
+          {/* Badge */}
+          {temNotif && (
+            <span style={{
+              position: 'absolute',
+              top: '-4px',
+              right: '-4px',
+              background: '#ef4444',
+              color: '#fff',
+              fontSize: '10px',
+              minWidth: '18px',
+              height: '18px',
+              borderRadius: '9px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontWeight: '900',
+              padding: '0 4px',
+              border: '2px solid #fff',
+              boxShadow: '0 2px 8px rgba(239,68,68,0.6)',
+              lineHeight: 1,
+            }}>
               {notificacoes.length > 9 ? '9+' : notificacoes.length}
-            </div>
+            </span>
           )}
-        </div>
+        </button>
 
-        {/* DROPDOWN */}
+        {/* ─── DROPDOWN ─────────────────────────────────────────── */}
         {showDropdown && (
-          <div style={{ position: 'absolute', bottom: '90px', right: 0, width: '420px', background: '#fff', boxShadow: '0 40px 80px rgba(0,0,0,0.25)', border: '1px solid #dcdde1', zIndex: 9999, padding: '20px', maxHeight: '480px', overflowY: 'auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px', alignItems: 'center' }}>
-              <span style={{ fontSize: '10px', fontWeight: '900', color: '#94a3b8', letterSpacing: '1.5px' }}>CENTRAL DE NOTIFICAÇÕES</span>
-              <button onClick={() => setNotificacoes([])} style={{ background: '#f1f5f9', border: 'none', color: '#475569', padding: '5px 10px', fontSize: '10px', cursor: 'pointer', fontWeight: 'bold' }}>LIMPAR</button>
+          <div style={{
+            position: 'absolute',
+            top: '74px',
+            right: 0,
+            width: '390px',
+            background: '#fff',
+            borderRadius: '20px',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.07)',
+            zIndex: 9999,
+            overflow: 'hidden',
+          }}>
+            {/* Cabeçalho */}
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              padding: '16px 20px',
+              background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Bell size={14} color="#38bdf8" />
+                <span style={{ fontSize: '11px', fontWeight: '800', color: '#fff', letterSpacing: '1.5px' }}>
+                  NOTIFICAÇÕES
+                </span>
+                {temNotif && (
+                  <span style={{ background: '#ef4444', color: '#fff', fontSize: '10px', padding: '2px 8px', borderRadius: '20px', fontWeight: '900' }}>
+                    {notificacoes.length}
+                  </span>
+                )}
+              </div>
+              {temNotif && (
+                <button
+                  onClick={e => { e.stopPropagation(); setNotificacoes([]) }}
+                  style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#94a3b8', fontSize: '10px', cursor: 'pointer', fontWeight: '700', padding: '5px 10px', borderRadius: '8px', letterSpacing: '0.5px' }}
+                >
+                  LIMPAR
+                </button>
+              )}
             </div>
 
-            {notificacoes.length === 0 ? (
-              <p style={{ textAlign: 'center', color: '#94a3b8', fontSize: '14px', padding: '20px' }}>Nenhuma novidade no momento.</p>
-            ) : notificacoes.map((n) => (
-              <div
-                key={n.id}
-                onClick={() => handleNotifClick(n)}
-                style={{ padding: '14px', borderBottom: '1px solid #f1f5f9', cursor: n.registro_id || setIsChatOpen ? 'pointer' : 'default', display: 'flex', gap: '12px', transition: '0.2s' }}
-              >
-                <div style={{ width: '40px', height: '40px', background: n.tipo === 'chat' ? '#f0f9ff' : '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '8px', flexShrink: 0 }}>
-                  {n.tipo === 'chat' ? <MessageSquare size={18} color="#0ea5e9" /> : <RefreshCw size={18} color="#64748b" />}
+            {/* Lista */}
+            <div style={{ maxHeight: '440px', overflowY: 'auto' }}>
+              {notificacoes.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '44px 20px' }}>
+                  <Bell size={36} color="#e2e8f0" />
+                  <p style={{ color: '#94a3b8', fontSize: '13px', margin: '12px 0 0', fontWeight: '500' }}>
+                    Nenhuma novidade no momento
+                  </p>
                 </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <b style={{ fontSize: '11px', color: '#0f172a', display: 'block' }}>{n.titulo}</b>
-                  <p style={{ fontSize: '12px', color: '#475569', margin: '3px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{n.mensagem}</p>
-                  <small style={{ fontSize: '10px', color: '#94a3b8' }}>{new Date(n.data).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</small>
+              ) : notificacoes.map(n => (
+                <div
+                  key={n.id}
+                  onClick={() => handleNotifClick(n)}
+                  style={{
+                    padding: '14px 20px',
+                    borderBottom: '1px solid #f8fafc',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    gap: '12px',
+                    alignItems: 'center',
+                    transition: 'background 0.15s',
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >
+                  <div style={{
+                    width: '40px', height: '40px', borderRadius: '12px', flexShrink: 0,
+                    background: n.tipo === 'chat' ? '#eff6ff' : '#f0fdf4',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    {n.tipo === 'chat'
+                      ? <MessageSquare size={18} color="#3b82f6" />
+                      : <RefreshCw size={18} color="#22c55e" />
+                    }
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <b style={{ fontSize: '10px', color: '#64748b', display: 'block', letterSpacing: '0.5px', fontWeight: '800' }}>{n.titulo}</b>
+                    <p style={{ fontSize: '13px', color: '#1e293b', margin: '3px 0 2px', fontWeight: '500', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{n.mensagem}</p>
+                    <small style={{ fontSize: '10px', color: '#cbd5e1', fontWeight: '600' }}>
+                      {new Date(n.data).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                    </small>
+                  </div>
+                  <ChevronRight size={14} color="#cbd5e1" style={{ flexShrink: 0 }} />
                 </div>
-                {(n.registro_id || setIsChatOpen) && <ChevronRight size={14} color="#cbd5e1" style={{ alignSelf: 'center', flexShrink: 0 }} />}
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         )}
       </div>
 
-      {/* TOASTS */}
-      <div style={{ position: 'fixed', top: '30px', right: '30px', zIndex: 100000, display: 'flex', flexDirection: 'column', gap: '10px', pointerEvents: 'none' }}>
+      {/* ═══════════════════════════════════════════════════════════
+          TOASTS — abaixo do sino, canto superior direito
+      ═══════════════════════════════════════════════════════════ */}
+      <div style={{
+        position: 'fixed',
+        top: '96px',
+        right: '24px',
+        zIndex: 100000,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '8px',
+        pointerEvents: 'none',
+      }}>
         {toasts.map(t => (
           <div
             key={t.id}
             onClick={() => handleNotifClick(t)}
-            style={{ pointerEvents: 'auto', background: '#fff', borderLeft: `5px solid ${t.tipo === 'chat' ? '#0ea5e9' : '#1e293b'}`, padding: '16px 20px', boxShadow: '0 25px 50px rgba(0,0,0,0.15)', minWidth: '360px', maxWidth: '420px', display: 'flex', gap: '12px', cursor: 'pointer', border: '1px solid #dcdde1' }}
+            style={{
+              pointerEvents: 'auto',
+              background: '#fff',
+              borderRadius: '14px',
+              borderLeft: `4px solid ${t.tipo === 'chat' ? '#3b82f6' : '#22c55e'}`,
+              padding: '14px 18px',
+              boxShadow: '0 8px 30px rgba(0,0,0,0.12)',
+              minWidth: '300px',
+              maxWidth: '360px',
+              display: 'flex',
+              gap: '12px',
+              alignItems: 'center',
+              cursor: 'pointer',
+              border: '1px solid #f1f5f9',
+              animation: 'slideInRight 0.3s ease',
+            }}
           >
+            <div style={{
+              width: '36px', height: '36px', borderRadius: '10px', flexShrink: 0,
+              background: t.tipo === 'chat' ? '#eff6ff' : '#f0fdf4',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              {t.tipo === 'chat'
+                ? <MessageSquare size={16} color="#3b82f6" />
+                : <RefreshCw size={16} color="#22c55e" />
+              }
+            </div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <b style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase', display: 'block' }}>{t.titulo}</b>
-              <p style={{ fontSize: '13px', margin: '4px 0 0', color: '#1e293b', fontWeight: '600', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.mensagem}</p>
+              <b style={{ fontSize: '10px', color: '#94a3b8', display: 'block', letterSpacing: '0.5px', fontWeight: '800' }}>{t.titulo}</b>
+              <p style={{ fontSize: '13px', margin: '3px 0 0', color: '#1e293b', fontWeight: '600', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.mensagem}</p>
             </div>
           </div>
         ))}
       </div>
+
+      <style>{`
+        @keyframes bellRing {
+          0%   { transform: rotate(0deg);   }
+          20%  { transform: rotate(18deg);  }
+          40%  { transform: rotate(-18deg); }
+          60%  { transform: rotate(12deg);  }
+          80%  { transform: rotate(-8deg);  }
+          100% { transform: rotate(0deg);   }
+        }
+        @keyframes slideInRight {
+          from { transform: translateX(110%); opacity: 0; }
+          to   { transform: translateX(0);    opacity: 1; }
+        }
+      `}</style>
     </>
   )
 }
