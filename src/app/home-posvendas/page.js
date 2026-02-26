@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
 import MenuLateral from '@/components/MenuLateral'
@@ -86,7 +86,7 @@ function ChatChamado({ chamadoId, userProfile, tipo }) {
   )
 }
 
-export default function HomePosVendas() {
+function HomePosVendasContent() {
   const [userProfile, setUserProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -469,3 +469,11 @@ const cascadeRowStyle = { display: 'grid', gridTemplateColumns: '150px 180px 150
 const cascadeLabelStyle = { fontSize: '11px', color: '#71717a', fontWeight: '700', letterSpacing: '0.5px' };
 const inputCascadeStyle = { background: '#3f3f44', border: '1px solid #55555a', color: '#f8fafc', padding: '8px', fontSize: '13px', outline: 'none', borderRadius: '6px' };
 const cascadeValueStyle = { fontSize: '16px', color: '#f8fafc', fontWeight: '600' };
+
+export default function HomePosVendas() {
+  return (
+    <Suspense fallback={<div style={{ position: 'fixed', inset: 0, background: '#212124', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span style={{ color: '#f8fafc', fontFamily: 'Montserrat, sans-serif', fontSize: '20px', letterSpacing: '4px' }}>CARREGANDO...</span></div>}>
+      <HomePosVendasContent />
+    </Suspense>
+  )
+}

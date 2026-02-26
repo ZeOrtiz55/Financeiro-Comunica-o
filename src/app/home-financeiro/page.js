@@ -87,8 +87,8 @@ function ChatChamado({ registroId, tipo, userProfile }) {
  )
 }
 
-// --- 4. COMPONENTE KANBAN COM A LÓGICA ---
-function ConteudoFinanceiro() {
+// --- 4. COMPONENTE KANBAN PRINCIPAL ---
+function HomeFinanceiroContent() {
  const [userProfile, setUserProfile] = useState(null); const [loading, setLoading] = useState(true); const [isSidebarOpen, setIsSidebarOpen] = useState(false);
  const [showNovoMenu, setShowNovoMenu] = useState(false);
  const [tarefaSelecionada, setTarefaSelecionada] = useState(null);
@@ -604,15 +604,6 @@ function ConteudoFinanceiro() {
  )
 }
 
-// --- 5. COMPONENTE PAI QUE ENVOLVE COM O SUSPENSE (A SOLUÇÃO DO ERRO) ---
-export default function HomeFinanceiro() {
-  return (
-    <Suspense fallback={<LoadingScreen />}>
-      <ConteudoFinanceiro />
-    </Suspense>
-  )
-}
-
 // --- COMPONENTE TAG DE ANEXO ---
 function AttachmentTag({ icon, label, fileUrl, onUpload, disabled }) {
     const fileInputRef = useRef(null);
@@ -655,3 +646,11 @@ const miniActionBtn = { background: 'transparent', border: 'none', padding: '10p
 const btnPrimaryBeautified = { background: 'linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)', color:'#ffffff', border:'none', padding:'18px 40px', borderRadius:'15px', cursor:'pointer', fontSize: '14px', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '12px', boxShadow: '0 10px 20px rgba(14, 165, 233, 0.2)', transition: '0.3s' };
 const btnSuccessBeautified = { flex: 1, background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', color:'#ffffff', border:'none', padding:'25px', borderRadius:'15px', cursor:'pointer', fontSize: '18px', fontWeight: '800', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '15px', boxShadow: '0 10px 20px rgba(16, 185, 129, 0.2)', transition: '0.3s' };
 const zoomBtnStyle = { background: 'transparent', border: 'none', cursor: 'pointer' };
+
+export default function HomeFinanceiro() {
+  return (
+    <Suspense fallback={<div style={{ position: 'fixed', inset: 0, background: '#f8fafc', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span style={{ color: '#0f172a', fontFamily: 'Montserrat, sans-serif', fontSize: '20px', letterSpacing: '4px' }}>CARREGANDO...</span></div>}>
+      <HomeFinanceiroContent />
+    </Suspense>
+  )
+}
