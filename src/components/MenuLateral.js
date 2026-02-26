@@ -101,7 +101,7 @@ export default function MenuLateral({ isSidebarOpen, setIsSidebarOpen, path, rou
        if (jaExiste) return prev.map(m => m.tempId && m.texto === msg.texto ? msg : m);
        return [...prev, msg];
       });
-      if (!isChatOpenRef.current) setNotificacoesAtivas(prev => prev + 1);
+      if (!isChatOpenRef.current && msg.usuario_id !== userId) setNotificacoesAtivas(prev => prev + 1);
      }
     }
    )

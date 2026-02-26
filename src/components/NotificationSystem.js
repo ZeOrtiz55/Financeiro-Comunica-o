@@ -4,6 +4,15 @@ import { supabase } from '@/lib/supabase'
 import { Bell, RefreshCw, MessageSquare, ChevronRight } from 'lucide-react'
 import { useRouter, usePathname } from 'next/navigation'
 
+// Set de ações recentes do próprio usuário — evita auto-notificação
+const minhasAcoes = new Set()
+export function marcarMinhaAcao(tabela, id) {
+  const key = `${tabela}:${id}`
+  minhasAcoes.add(key)
+  // Remove automaticamente após 15s para não vazar memória
+  setTimeout(() => minhasAcoes.delete(key), 15000)
+}
+
 export default function NotificationSystem({ userProfile }) {
   const [notificacoes, setNotificacoes] = useState([])
   const [toasts, setToasts] = useState([])
@@ -127,6 +136,9 @@ export default function NotificationSystem({ userProfile }) {
         event: 'UPDATE', schema: 'public', table: 'Chamado_NF'
       }, (payload) => {
         if (payload.old.status === payload.new.status) return
+        // Ignora se foi o próprio usuário que moveu o card
+        const keyCard = `Chamado_NF:${payload.new.id}`
+        if (minhasAcoes.has(keyCard)) { minhasAcoes.delete(keyCard); return }
         const statusLabel = {
           gerar_boleto: 'Gerar Boleto',
           enviar_cliente: 'Enviar ao Cliente',
@@ -150,6 +162,9 @@ export default function NotificationSystem({ userProfile }) {
 
       // 3. NOVO LANÇAMENTO PAGAR
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'finan_pagar' }, (payload) => {
+        // Ignora se foi o próprio usuário que criou o registro
+        const keyPagar = `finan_pagar:${payload.new.id}`
+        if (minhasAcoes.has(keyPagar)) { minhasAcoes.delete(keyPagar); return }
         const novaNotif = {
           id: Date.now(),
           titulo: 'NOVO PAGAMENTO',
@@ -165,6 +180,9 @@ export default function NotificationSystem({ userProfile }) {
 
       // 4. NOVO LANÇAMENTO RECEBER
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'finan_receber' }, (payload) => {
+        // Ignora se foi o próprio usuário que criou o registro
+        const keyReceber = `finan_receber:${payload.new.id}`
+        if (minhasAcoes.has(keyReceber)) { minhasAcoes.delete(keyReceber); return }
         const novaNotif = {
           id: Date.now(),
           titulo: 'NOVO RECEBIMENTO',

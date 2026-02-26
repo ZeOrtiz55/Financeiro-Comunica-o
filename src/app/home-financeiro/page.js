@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
 // IMPORTAÇÃO DO MENU MODULAR
 import MenuLateral from '@/components/MenuLateral'
+import { marcarMinhaAcao } from '@/components/NotificationSystem'
 // ÍCONES COMPLETOS
 import { 
  Bell, MessageSquare, X, Menu, PlusCircle, FileText, Download, 
@@ -107,28 +108,42 @@ function HomeFinanceiroContent() {
     const faturamentoFormatado = (bolds || []).map(c => {
       const venc = c.vencimento_boleto ? new Date(c.vencimento_boleto) : null;
       if (venc) venc.setHours(0,0,0,0);
-      
+
       let todosPagos = false;
       const isParceladoLocal = c.forma_pagamento?.toLowerCase().includes('parcelado');
-      
+
       if (isParceladoLocal) {
-          const qtd = c.qtd_parcelas || 1;
+          const qtd = parseInt(c.qtd_parcelas || 1);
           let conferidos = 0;
           for (let i = 1; i <= qtd; i++) {
-              if (c[`comprovante_pagamento_p${i}`]) conferidos++;
+              if (i === 1 ? (c.comprovante_pagamento_p1 || c.comprovante_pagamento) : c[`comprovante_pagamento_p${i}`]) conferidos++;
           }
-          todosPagos = conferidos === parseInt(qtd);
+          todosPagos = conferidos === qtd;
       } else {
           todosPagos = !!(c.comprovante_pagamento || c.comprovante_pagamento_p1);
       }
-      
+
+      // Verifica se alguma parcela venceu sem comprovante
+      let parcelaVencida = false;
+      if (isParceladoLocal && c.status === 'aguardando_vencimento') {
+        const qtd = parseInt(c.qtd_parcelas || 1);
+        const datas = [c.vencimento_boleto, ...(c.datas_parcelas || '').split(/[\s,]+/).filter(d => d.includes('-'))];
+        for (let i = 0; i < qtd; i++) {
+          const comp = i === 0 ? (c.comprovante_pagamento || c.comprovante_pagamento_p1) : c[`comprovante_pagamento_p${i + 1}`];
+          const dp = datas[i] ? new Date(datas[i]) : null;
+          if (dp) dp.setHours(0,0,0,0);
+          if (dp && dp < hoje && !comp) { parcelaVencida = true; break; }
+        }
+      }
+
       return {
         ...c,
         gTipo: 'boleto',
         valor_exibicao: c.valor_servico,
-        isVencidoDisplay: venc && venc < hoje, 
-        isTarefaPagamentoRealizado: todosPagos, 
-        isPagamentoRealizado: todosPagos 
+        isVencidoDisplay: venc && venc < hoje,
+        isTarefaPagamentoRealizado: todosPagos,
+        isPagamentoRealizado: todosPagos,
+        parcelaVencida
       }
     });
 
@@ -203,25 +218,28 @@ function HomeFinanceiroContent() {
     const path = `boletos/${Date.now()}-${fileBoleto.name}`;
     await supabase.storage.from('anexos').upload(path, fileBoleto);
     const { data } = supabase.storage.from('anexos').getPublicUrl(path);
-    
-    await supabase.from('Chamado_NF').update({ 
-        status: 'enviar_cliente', 
-        tarefa: 'Enviar Boleto para o Cliente', 
-        setor: 'Pós-Vendas', 
-        anexo_boleto: data.publicUrl 
+
+    marcarMinhaAcao('Chamado_NF', t.id);
+    await supabase.from('Chamado_NF').update({
+        status: 'enviar_cliente',
+        tarefa: 'Enviar Boleto para o Cliente',
+        setor: 'Pós-Vendas',
+        anexo_boleto: data.publicUrl
     }).eq('id', t.id);
-    
+
     alert("Tarefa enviada ao Pós-Vendas!"); setTarefaSelecionada(null); carregarDados();
   } catch (err) { alert("Erro: " + err.message); }
  };
 
  const handleMoverParaPago = async (t) => {
+    marcarMinhaAcao('Chamado_NF', t.id);
     await supabase.from('Chamado_NF').update({ status: 'pago', tarefa: 'Pagamento Confirmado' }).eq('id', t.id);
     alert("Pagamento confirmado e processo finalizado!"); setTarefaSelecionada(null); carregarDados();
  };
 
  const handleConcluirGeral = async (t) => {
     const table = t.gTipo === 'pagar' ? 'finan_pagar' : t.gTipo === 'receber' ? 'finan_receber' : t.gTipo === 'rh' ? 'finan_rh' : 'Chamado_NF';
+    marcarMinhaAcao(table, t.id);
     await supabase.from(table).update({ status: 'concluido' }).eq('id', t.id);
     alert("Processo concluído!"); setTarefaSelecionada(null);
  };
@@ -230,9 +248,10 @@ function HomeFinanceiroContent() {
  const handlePedirRecobranca = async (t) => {
     if (!window.confirm("Deseja solicitar recobrança ao Pós-Vendas?")) return;
     const newVal = (t.recombrancas_qtd || 0) + 1;
-    await supabase.from('Chamado_NF').update({ 
-        status: 'vencido', 
-        tarefa: 'Cobrar Cliente (Recobrança)', 
+    marcarMinhaAcao('Chamado_NF', t.id);
+    await supabase.from('Chamado_NF').update({
+        status: 'vencido',
+        tarefa: 'Cobrar Cliente (Recobrança)',
         setor: 'Pós-Vendas',
         recombrancas_qtd: newVal
     }).eq('id', t.id);
@@ -240,6 +259,7 @@ function HomeFinanceiroContent() {
  };
 
  const handleSomenteVencido = async (t) => {
+    marcarMinhaAcao('Chamado_NF', t.id);
     await supabase.from('Chamado_NF').update({ status: 'vencido' }).eq('id', t.id);
     alert("Card movido para Vencido!"); setTarefaSelecionada(null); carregarDados();
  };
@@ -293,7 +313,7 @@ function HomeFinanceiroContent() {
       <div style={colWrapperStyle}>
        <div style={colTitleStyle}>Faturamento</div>
        <div style={{ display: 'flex', flexDirection: 'column', gap: '0px', borderTop: '0.5px solid #dcdde1' }}>
-        {listaBoletos.filter(c => c.status === 'gerar_boleto' || c.status === 'validar_pix' || (c.status === 'aguardando_vencimento' && (c.isVencidoDisplay || c.isTarefaPagamentoRealizado))).map((t, idx) => (
+        {listaBoletos.filter(c => c.status === 'gerar_boleto' || c.status === 'validar_pix' || (c.status === 'aguardando_vencimento' && (c.isVencidoDisplay || c.isTarefaPagamentoRealizado || c.parcelaVencida))).map((t, idx) => (
          <div key={`bol-${t.id}-${idx}`} onClick={() => setTarefaSelecionada(t)} className="task-card-grid">
           <div style={{ background: '#f1f5f9', padding: '24px', borderBottom: '0.5px solid #dcdde1' }}>
             <h4 style={{ margin: 0, fontSize: '18px', fontWeight:'700', color: '#1e293b' }}>{t.nom_cliente?.toUpperCase()}</h4>
@@ -312,10 +332,16 @@ function HomeFinanceiroContent() {
                   <FileText size={16} /> BOLETO ANEXADO
                 </div>
             )}
-            {t.isVencidoDisplay && !t.isTarefaPagamentoRealizado && (
+            {t.isVencidoDisplay && !t.isTarefaPagamentoRealizado && !t.parcelaVencida && (
              <div style={{marginTop: '20px', background: '#fee2e2', border: '1px solid #ef4444', padding: '15px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
                 <span style={{color: '#ef4444', fontWeight: '800', fontSize: '14px'}}>VENCIDO</span>
                 <button onClick={(e) => {e.stopPropagation(); alert('Vencimento conferido.')}} style={{background: '#ef4444', color: '#fff', border: 'none', padding: '8px 15px', borderRadius: '5px', cursor: 'pointer', fontSize: '12px', fontWeight: '700'}}>CONFERIDO</button>
+             </div>
+            )}
+            {t.parcelaVencida && !t.isTarefaPagamentoRealizado && (
+             <div style={{marginTop: '20px', background: '#fff7ed', border: '1px solid #f97316', padding: '12px 15px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px'}}>
+                <AlertCircle size={16} color="#f97316" />
+                <span style={{color: '#f97316', fontWeight: '800', fontSize: '13px'}}>PARCELA VENCIDA SEM COMPROVANTE</span>
              </div>
             )}
           </div>

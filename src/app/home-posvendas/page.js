@@ -3,6 +3,7 @@ import { useEffect, useState, useRef, Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
 import MenuLateral from '@/components/MenuLateral'
+import { marcarMinhaAcao } from '@/components/NotificationSystem'
 import { 
   X, Send, ArrowLeft, RefreshCw, MessageSquare, PlusCircle, CheckCircle, 
   FileText, Download, Eye, Calendar, CreditCard, User as UserIcon, Tag, Search, DollarSign, Upload, Barcode
@@ -122,9 +123,9 @@ function HomePosVendasContent() {
 
       setListaBoletos(tarefasFaturamento);
 
-      const { data: pag } = await supabase.from('finan_pagar').select('*').eq('status', 'pos_vendas');
-      const { data: rec } = await supabase.from('finan_receber').select('*').eq('status', 'pos_vendas');
-      const { data: rh } = await supabase.from('finan_rh').select('*').eq('status', 'pos_vendas');
+      const { data: pag } = await supabase.from('finan_pagar').select('*').eq('status', 'financeiro');
+      const { data: rec } = await supabase.from('finan_receber').select('*').eq('status', 'financeiro');
+      const { data: rh } = await supabase.from('finan_rh').select('*').neq('status', 'concluido');
       
       setListaPagar((pag || []).map(p => ({ ...p, gTipo: 'pagar' })));
       setListaReceber((rec || []).map(r => ({ ...r, gTipo: 'receber' })));
@@ -346,9 +347,9 @@ function HomePosVendasContent() {
                   <div style={{ display:'grid', gridTemplateColumns:'repeat(2, 1fr)', gap:'30px', border:'0.5px solid #3f3f44', padding:'45px', background:'#2a2a2d' }}>
                     {tarefaSelecionada.gTipo === 'rh' ? (
                       <>
-                        <div style={fieldBoxInner}><label style={labelMStyle}>TÍTULO</label><p style={{fontSize:'15px', fontWeight: '600'}}>{tarefaSelecionada.titulo}</p></div>
-                        <div style={fieldBoxInner}><label style={labelMStyle}>SETOR</label><p style={{fontSize:'15px', color:'#0ea5e9', fontWeight: '600'}}>{tarefaSelecionada.setor?.toUpperCase()}</p></div>
-                        <div style={{...fieldBoxInner, gridColumn:'span 2'}}><label style={labelMStyle}>DESCRIÇÃO</label><p style={{fontSize:'15px', lineHeight:'1.6'}}>{tarefaSelecionada.descricao}</p></div>
+                        <div style={fieldBoxInner}><label style={labelMStyle}>TÍTULO</label><input style={inputStyleLight} defaultValue={tarefaSelecionada.titulo} onBlur={e => handleUpdateField(tarefaSelecionada, 'titulo', e.target.value)} /></div>
+                        <div style={fieldBoxInner}><label style={labelMStyle}>SETOR</label><input style={{...inputStyleLight, color:'#0ea5e9'}} defaultValue={tarefaSelecionada.setor} onBlur={e => handleUpdateField(tarefaSelecionada, 'setor', e.target.value)} /></div>
+                        <div style={{...fieldBoxInner, gridColumn:'span 2'}}><label style={labelMStyle}>DESCRIÇÃO</label><textarea style={{...inputStyleLight, height:'100px', resize:'none'}} defaultValue={tarefaSelecionada.descricao} onBlur={e => handleUpdateField(tarefaSelecionada, 'descricao', e.target.value)} /></div>
                       </>
                     ) : (
                       <>

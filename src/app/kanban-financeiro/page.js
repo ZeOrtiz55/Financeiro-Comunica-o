@@ -126,14 +126,43 @@ const carregarDados = async () => {
       let st = c.status || 'gerar_boleto';
       const venc = c.vencimento_boleto ? new Date(c.vencimento_boleto) : null;
       if (venc) venc.setHours(0,0,0,0);
-      
-      if (st === 'aguardando_vencimento' && venc && venc < hoje) st = 'pago';
+      const isParc = c.forma_pagamento?.toLowerCase().includes('parcelado');
 
-      return { 
-        ...c, 
-        status: st, 
+      // Só auto-move para 'pago' se NÃO for parcelado (parcelado tem datas por parcela)
+      if (st === 'aguardando_vencimento' && venc && venc < hoje && !isParc) st = 'pago';
+
+      // Verifica se alguma parcela venceu sem comprovante (para alertar no Home Financeiro)
+      let parcelaVencida = false;
+      if (st === 'aguardando_vencimento' && isParc) {
+        const qtd = c.qtd_parcelas || 1;
+        const datas = [c.vencimento_boleto, ...(c.datas_parcelas || '').split(/[\s,]+/).filter(d => d.includes('-'))];
+        for (let i = 0; i < qtd; i++) {
+          const comprovante = i === 0 ? (c.comprovante_pagamento || c.comprovante_pagamento_p1) : c[`comprovante_pagamento_p${i + 1}`];
+          const dataParc = datas[i] ? new Date(datas[i]) : null;
+          if (dataParc) dataParc.setHours(0,0,0,0);
+          if (dataParc && dataParc < hoje && !comprovante) { parcelaVencida = true; break; }
+        }
+      }
+
+      // isPagamentoRealizado verifica todos os comprovantes de parcelas
+      let isPagamentoRealizado = false;
+      if (isParc) {
+        const qtd = parseInt(c.qtd_parcelas || 1);
+        let conferidos = 0;
+        for (let i = 1; i <= qtd; i++) {
+          if (i === 1 ? (c.comprovante_pagamento_p1 || c.comprovante_pagamento) : c[`comprovante_pagamento_p${i}`]) conferidos++;
+        }
+        isPagamentoRealizado = conferidos === qtd;
+      } else {
+        isPagamentoRealizado = !!(c.comprovante_pagamento || c.comprovante_pagamento_p1);
+      }
+
+      return {
+        ...c,
+        status: st,
         valor_exibicao: c.valor_servico,
-        isPagamentoRealizado: (!!c.comprovante_pagamento || !!c.comprovante_pagamento_p1)
+        isPagamentoRealizado,
+        parcelaVencida
       };
     });
     setChamados(processados);
@@ -279,7 +308,7 @@ if (loading) return <LoadingScreen />
 const isPixOuCartaoVista = tarefaSelecionada && ['Á Vista no Pix', 'Cartão a Vista', 'Cartão Parcelado'].includes(tarefaSelecionada.forma_pagamento);
 const isParcelamentoOuBoleto30 = tarefaSelecionada && ['Boleto 30 Dias', 'Boleto Parcelado', 'Cartão Parcelado'].includes(tarefaSelecionada.forma_pagamento);
 const isBoleto30 = tarefaSelecionada && tarefaSelecionada.forma_pagamento === 'Boleto 30 Dias';
-const isParceladoBoleto = tarefaSelecionada?.forma_pagamento === 'Boleto Parcelado';
+const isParceladoBoleto = tarefaSelecionada?.forma_pagamento?.toLowerCase().includes('parcelado');
 
 const valorIndividual = tarefaSelecionada ? (tarefaSelecionada.valor_servico / (tarefaSelecionada.qtd_parcelas || 1)).toFixed(2) : 0;
 
@@ -357,6 +386,11 @@ return (
               {t.isPagamentoRealizado && (
                   <div style={{marginTop: '10px', display:'flex', alignItems:'center', gap:'8px', color: '#27ae60', fontSize: '15px', fontWeight: '600'}} title="Comprovante de pagamento anexado">
                       <CheckCircle size={16} /> PAGAMENTO REALIZADO
+                  </div>
+              )}
+              {t.parcelaVencida && !t.isPagamentoRealizado && (
+                  <div style={{marginTop: '10px', display:'flex', alignItems:'center', gap:'8px', color: '#ef4444', fontSize: '13px', fontWeight: '700', background: '#fee2e2', padding: '6px 12px', borderRadius: '8px'}} title="Uma ou mais parcelas venceram sem comprovante">
+                      <AlertCircle size={14} /> PARCELA VENCIDA SEM COMPROVANTE
                   </div>
               )}
               {t.anexo_boleto && (t.status === 'gerar_boleto' || t.status === 'validar_pix') && (

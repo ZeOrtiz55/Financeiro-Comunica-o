@@ -176,6 +176,25 @@ export default function Kanban() {
     } catch (err) { alert("Erro: " + err.message); }
  };
 
+ const handleAnexarComprovantePV = async (t, file) => {
+    if (!file) return;
+    try {
+      const path = `anexos/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+      const { error: uploadError } = await supabase.storage.from('anexos').upload(path, file);
+      if (uploadError) throw uploadError;
+      const { data: linkData } = supabase.storage.from('anexos').getPublicUrl(path);
+
+      await supabase.from('Chamado_NF').update({
+        comprovante_pagamento: linkData.publicUrl,
+        tarefa: 'Pagamento Realizado'
+      }).eq('id', t.id);
+
+      alert("Comprovante anexado! Tarefa enviada ao Financeiro.");
+      carregarDados();
+      if (tarefaSelecionada) setTarefaSelecionada(prev => ({ ...prev, comprovante_pagamento: linkData.publicUrl, tarefa: 'Pagamento Realizado' }));
+    } catch (err) { alert("Erro: " + err.message); }
+ };
+
  const handleConfirmarEnvioPV = async (t) => {
     await supabase.from('Chamado_NF').update({ status: 'aguardando_vencimento', tarefa: 'Aguardando Vencimento' }).eq('id', t.id);
     alert("Card movido para Aguardando Vencimento!");
@@ -362,7 +381,7 @@ export default function Kanban() {
             </div>
         </div>
 
-        <div style={{marginTop:'50px'}}>
+        <div style={{marginTop:'50px', display:'flex', flexDirection:'column', gap:'20px'}}>
           {tarefaSelecionada.status === 'enviar_cliente' && (
             <div style={{background:'#242427', padding:'40px', borderRadius:'28px', border:'1px solid #22c55e50'}}>
                 <label style={{...labelModalStyle, color:'#4ade80', fontSize: '18px'}}>AÇÃO REQUERIDA</label>
@@ -370,6 +389,29 @@ export default function Kanban() {
                 <button onClick={() => handleConfirmarEnvioPV(tarefaSelecionada)} style={{background:'#22c55e', color:'#fff', padding:'20px 45px', border:'none', borderRadius:'14px', cursor:'pointer', fontSize: '18px', display:'flex', alignItems:'center', gap:'15px', transition:'0.3s'}}>
                     <Send size={22}/> MARCAR COMO ENVIADO AO CLIENTE
                 </button>
+            </div>
+          )}
+
+          {tarefaSelecionada.status === 'aguardando_vencimento' && (
+            <div style={{background:'#242427', padding:'40px', borderRadius:'28px', border:'1px solid #3b82f650'}}>
+                <label style={{...labelModalStyle, color:'#60a5fa', fontSize: '16px'}}>COMPROVANTE DE PAGAMENTO</label>
+                <p style={{color: '#9e9e9e', marginBottom: '25px', fontSize: '14px'}}>
+                  Anexe o comprovante quando o cliente efetuar o pagamento. Uma tarefa será criada automaticamente para o Financeiro confirmar.
+                </p>
+                {tarefaSelecionada.comprovante_pagamento && (
+                  <div style={{marginBottom:'20px', display:'flex', alignItems:'center', gap:'10px', color:'#4ade80', fontSize:'13px', fontWeight:'700', background:'#4ade8015', padding:'12px 20px', borderRadius:'12px', border:'1px solid #4ade8030'}}>
+                    <CheckCircle size={16}/> COMPROVANTE JÁ ANEXADO — tarefa enviada ao Financeiro
+                    <button onClick={() => window.open(tarefaSelecionada.comprovante_pagamento, '_blank')} style={{marginLeft:'auto', background:'#3f3f44', color:'#fff', border:'none', padding:'6px 16px', borderRadius:'8px', cursor:'pointer', fontSize:'12px'}}>VER</button>
+                  </div>
+                )}
+                <label style={{display:'flex', alignItems:'center', gap:'15px', background:'#3f3f44', border:'2px dashed #55555a', borderRadius:'16px', padding:'25px', cursor:'pointer', transition:'0.3s'}}>
+                  <Upload size={24} color="#60a5fa" />
+                  <div>
+                    <div style={{color:'#60a5fa', fontWeight:'700', fontSize:'14px'}}>{tarefaSelecionada.comprovante_pagamento ? 'SUBSTITUIR COMPROVANTE' : 'ANEXAR COMPROVANTE'}</div>
+                    <div style={{color:'#9e9e9e', fontSize:'12px', marginTop:'4px'}}>Clique para escolher o arquivo</div>
+                  </div>
+                  <input type="file" hidden onChange={e => handleAnexarComprovantePV(tarefaSelecionada, e.target.files[0])} />
+                </label>
             </div>
           )}
         </div>
