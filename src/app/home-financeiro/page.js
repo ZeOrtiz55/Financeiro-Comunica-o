@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
 // IMPORTAÇÃO DO MENU MODULAR
@@ -87,8 +87,8 @@ function ChatChamado({ registroId, tipo, userProfile }) {
  )
 }
 
-// --- 4. COMPONENTE KANBAN PRINCIPAL ---
-export default function HomeFinanceiro() {
+// --- 4. COMPONENTE KANBAN COM A LÓGICA ---
+function ConteudoFinanceiro() {
  const [userProfile, setUserProfile] = useState(null); const [loading, setLoading] = useState(true); const [isSidebarOpen, setIsSidebarOpen] = useState(false);
  const [showNovoMenu, setShowNovoMenu] = useState(false);
  const [tarefaSelecionada, setTarefaSelecionada] = useState(null);
@@ -602,6 +602,15 @@ export default function HomeFinanceiro() {
    `}</style>
   </div>
  )
+}
+
+// --- 5. COMPONENTE PAI QUE ENVOLVE COM O SUSPENSE (A SOLUÇÃO DO ERRO) ---
+export default function HomeFinanceiro() {
+  return (
+    <Suspense fallback={<LoadingScreen />}>
+      <ConteudoFinanceiro />
+    </Suspense>
+  )
 }
 
 // --- COMPONENTE TAG DE ANEXO ---
