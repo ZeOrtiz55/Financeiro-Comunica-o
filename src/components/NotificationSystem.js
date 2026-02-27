@@ -4,29 +4,87 @@ import { supabase } from '@/lib/supabase'
 import { Bell, RefreshCw, MessageSquare, ChevronRight } from 'lucide-react'
 import { useRouter, usePathname } from 'next/navigation'
 
-// Set de ações recentes do próprio usuário — evita auto-notificação
+// ─── MARCA AÇÃO PRÓPRIA (evita auto-notificação) ─────────────────────────────
 const minhasAcoes = new Set()
 export function marcarMinhaAcao(tabela, id) {
   const key = `${tabela}:${id}`
   minhasAcoes.add(key)
-  // Remove automaticamente após 15s para não vazar memória
   setTimeout(() => minhasAcoes.delete(key), 15000)
+}
+
+// ─── CONVERTE VAPID BASE64 → Uint8Array ──────────────────────────────────────
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
+  const rawData = atob(base64)
+  const output = new Uint8Array(rawData.length)
+  for (let i = 0; i < rawData.length; ++i) output[i] = rawData.charCodeAt(i)
+  return output
 }
 
 export default function NotificationSystem({ userProfile }) {
   const [notificacoes, setNotificacoes] = useState([])
-  const [toasts, setToasts] = useState([])
+  const [toasts, setToasts]             = useState([])
   const [showDropdown, setShowDropdown] = useState(false)
-  const audioRef = useRef(null)
-  const router = useRouter()
-  const pathname = usePathname()
+  const [realtimeVersion, setRealtimeVersion] = useState(0)
+  const audioRef       = useRef(null)
+  const reconectarRef  = useRef(null)
+  const router         = useRouter()
+  const pathname       = usePathname()
 
   const rotaHome = userProfile?.funcao === 'Financeiro' ? '/home-financeiro' : '/home-posvendas'
 
-  // ─── AUDIO UNLOCK ────────────────────────────────────────────────────────────
-  // O browser bloqueia audio.play() quando não há interação prévia do usuário.
-  // Na primeira interação (clique), pré-tocamos o áudio silenciosamente para
-  // "desbloquear" o contexto de áudio. Depois reutilizamos a mesma instância.
+  // ─── RECONECTA QUANDO A ABA VOLTA AO FOCO ────────────────────────────────
+  useEffect(() => {
+    const handleVisible = () => {
+      if (document.visibilityState === 'visible') {
+        setRealtimeVersion(v => v + 1)
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisible)
+    return () => document.removeEventListener('visibilitychange', handleVisible)
+  }, [])
+
+  // ─── REGISTRO DO SERVICE WORKER + PUSH SUBSCRIPTION ──────────────────────
+  useEffect(() => {
+    if (!userProfile?.id || typeof window === 'undefined') return
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return
+
+    const VAPID_PUBLIC = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
+    if (!VAPID_PUBLIC) return // push desabilitado se chave não configurada
+
+    const registrarPush = async () => {
+      try {
+        const reg = await navigator.serviceWorker.register('/sw.js')
+        await navigator.serviceWorker.ready
+
+        let sub = await reg.pushManager.getSubscription()
+
+        if (!sub) {
+          const perm = await Notification.requestPermission()
+          if (perm !== 'granted') return
+
+          sub = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC),
+          })
+        }
+
+        // Salva subscription no servidor
+        await fetch('/api/push/subscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ subscription: sub.toJSON(), userId: userProfile.id }),
+        })
+      } catch (e) {
+        console.warn('[Push] Falha ao registrar:', e)
+      }
+    }
+
+    registrarPush()
+  }, [userProfile?.id])
+
+  // ─── AUDIO UNLOCK ─────────────────────────────────────────────────────────
   useEffect(() => {
     if (!userProfile) return
     const somEscolhido = userProfile?.som_notificacao || 'som-notificacao-1.mp3'
@@ -39,7 +97,7 @@ export default function NotificationSystem({ userProfile }) {
           audio.pause()
           audio.currentTime = 0
           audio.volume = 1
-          audioRef.current = audio // salva instância desbloqueada
+          audioRef.current = audio
         })
         .catch(() => {})
     }
@@ -54,29 +112,24 @@ export default function NotificationSystem({ userProfile }) {
         audioRef.current.currentTime = 0
         audioRef.current.play().catch(() => {})
       } else {
-        // fallback: tenta sem unlock (pode ser bloqueado pelo browser)
         new Audio(`/${userProfile?.som_notificacao || 'som-notificacao-1.mp3'}`).play().catch(() => {})
       }
     } catch (e) {}
   }
 
-  // ─── NAVEGAÇÃO AO CLICAR ─────────────────────────────────────────────────────
+  // ─── NAVEGAÇÃO AO CLICAR ──────────────────────────────────────────────────
   const handleNotifClick = (n) => {
     setShowDropdown(false)
     setNotificacoes(prev => prev.filter(item => item.id !== n.id))
     setToasts(prev => prev.filter(item => item.id !== n.id))
 
     if (!n.registro_id) {
-      // Guarda flag persistente (funciona mesmo ao navegar de página)
       sessionStorage.setItem('openChatGeral', '1')
-      // Dispara evento imediato (pego pelo MenuLateral se já estiver montado)
       window.dispatchEvent(new CustomEvent('abrirChatGeral'))
-      // Navega para home se não estiver lá (MenuLateral lerá o sessionStorage ao montar)
       if (!pathname?.includes('home-')) router.push(rotaHome)
       return
     }
 
-    // Card específico: navega com query params
     router.push(`${rotaHome}?id=${n.registro_id}&tipo=${n.tipo_fluxo}`)
   }
 
@@ -87,23 +140,22 @@ export default function NotificationSystem({ userProfile }) {
     setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 8000)
   }
 
-  // ─── REALTIME ────────────────────────────────────────────────────────────────
+  // ─── REALTIME COM RECONEXÃO AUTOMÁTICA ───────────────────────────────────
   useEffect(() => {
     if (!userProfile?.id) return
 
-    const channel = supabase.channel(`notifs_${userProfile.id}`)
+    const channel = supabase
+      .channel(`notifs_${userProfile.id}_v${realtimeVersion}`)
 
-      // 1. MENSAGENS DO CHAT (handler SÍNCRONO — async causa bug silencioso no Supabase Realtime)
+      // 1. MENSAGENS DO CHAT
       .on('postgres_changes', {
         event: 'INSERT', schema: 'public', table: 'mensagens_chat'
       }, (payload) => {
-        // Ignora próprias mensagens
         if (String(payload.new.usuario_id) === String(userProfile.id)) return
 
         const autor = payload.new.usuario_nome || 'Alguém'
         const texto = payload.new.texto || ''
 
-        // Detecta o tipo de vínculo do card (síncrono, sem await)
         const registro_id =
           payload.new.chamado_id  ||
           payload.new.pagar_id    ||
@@ -112,10 +164,10 @@ export default function NotificationSystem({ userProfile }) {
           null
 
         const tipo_fluxo =
-          payload.new.chamado_id  ? 'boleto'     :
-          payload.new.pagar_id    ? 'pagar'      :
-          payload.new.receber_id  ? 'receber'    :
-          payload.new.rh_id       ? 'rh'         :
+          payload.new.chamado_id  ? 'boleto'   :
+          payload.new.pagar_id    ? 'pagar'    :
+          payload.new.receber_id  ? 'receber'  :
+          payload.new.rh_id       ? 'rh'       :
           'chat_geral'
 
         const novaNotif = {
@@ -136,17 +188,18 @@ export default function NotificationSystem({ userProfile }) {
         event: 'UPDATE', schema: 'public', table: 'Chamado_NF'
       }, (payload) => {
         if (payload.old.status === payload.new.status) return
-        // Ignora se foi o próprio usuário que moveu o card
         const keyCard = `Chamado_NF:${payload.new.id}`
         if (minhasAcoes.has(keyCard)) { minhasAcoes.delete(keyCard); return }
+
         const statusLabel = {
-          gerar_boleto: 'Gerar Boleto',
-          enviar_cliente: 'Enviar ao Cliente',
+          gerar_boleto:          'Gerar Boleto',
+          enviar_cliente:        'Enviar ao Cliente',
           aguardando_vencimento: 'Aguardando Vencimento',
-          vencido: 'Vencido',
-          pago: 'Pago',
-          concluido: 'Concluído',
+          vencido:               'Vencido',
+          pago:                  'Pago',
+          concluido:             'Concluído',
         }
+
         const novaNotif = {
           id: Date.now(),
           titulo: 'CARD MOVIMENTADO',
@@ -162,9 +215,9 @@ export default function NotificationSystem({ userProfile }) {
 
       // 3. NOVO LANÇAMENTO PAGAR
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'finan_pagar' }, (payload) => {
-        // Ignora se foi o próprio usuário que criou o registro
         const keyPagar = `finan_pagar:${payload.new.id}`
         if (minhasAcoes.has(keyPagar)) { minhasAcoes.delete(keyPagar); return }
+
         const novaNotif = {
           id: Date.now(),
           titulo: 'NOVO PAGAMENTO',
@@ -180,9 +233,9 @@ export default function NotificationSystem({ userProfile }) {
 
       // 4. NOVO LANÇAMENTO RECEBER
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'finan_receber' }, (payload) => {
-        // Ignora se foi o próprio usuário que criou o registro
         const keyReceber = `finan_receber:${payload.new.id}`
         if (minhasAcoes.has(keyReceber)) { minhasAcoes.delete(keyReceber); return }
+
         const novaNotif = {
           id: Date.now(),
           titulo: 'NOVO RECEBIMENTO',
@@ -196,10 +249,23 @@ export default function NotificationSystem({ userProfile }) {
         addToast(novaNotif)
       })
 
-      .subscribe()
+      .subscribe((status) => {
+        // Reconecta automaticamente em caso de erro ou desconexão
+        if (status === 'CHANNEL_ERROR' || status === 'CLOSED' || status === 'TIMED_OUT') {
+          if (reconectarRef.current) clearTimeout(reconectarRef.current)
+          reconectarRef.current = setTimeout(() => {
+            setRealtimeVersion(v => v + 1)
+          }, 5000)
+        } else if (status === 'SUBSCRIBED') {
+          if (reconectarRef.current) clearTimeout(reconectarRef.current)
+        }
+      })
 
-    return () => { supabase.removeChannel(channel) }
-  }, [userProfile?.id])
+    return () => {
+      if (reconectarRef.current) clearTimeout(reconectarRef.current)
+      supabase.removeChannel(channel)
+    }
+  }, [userProfile?.id, realtimeVersion])
 
   // Não renderiza no login nem sem usuário logado
   if (!userProfile || pathname === '/login') return null
@@ -242,7 +308,6 @@ export default function NotificationSystem({ userProfile }) {
             strokeWidth={2}
             style={temNotif ? { animation: 'bellRing 0.6s ease' } : {}}
           />
-          {/* Badge */}
           {temNotif && (
             <span style={{
               position: 'absolute',

@@ -130,21 +130,21 @@ export default function MenuLateral({ isSidebarOpen, setIsSidebarOpen, path, rou
   const t = novaMsg; setNovaMsg('');
   try { const a = new Audio(`/${userProfile?.som_notificacao || 'som-notificacao-1.mp3'}`); a.volume = 0.4; a.play().catch(() => {}) } catch(e) {}
 
-  const msgOtimista = { 
-    id: Math.random(), 
-    texto: t, 
-    usuario_nome: userProfile.nome, 
-    usuario_id: userProfile.id, 
-    created_at: new Date().toISOString(), 
+  const msgOtimista = {
+    id: Math.random(),
+    texto: t,
+    usuario_nome: userProfile.nome,
+    usuario_id: userProfile.id,
+    created_at: new Date().toISOString(),
     visualizado_por: [userProfile.id],
-    tempId: true 
+    tempId: true
   };
   setMensagens(prev => [...prev, msgOtimista]);
 
-  const { error } = await supabase.from('mensagens_chat').insert([{ 
-    texto: t, 
-    usuario_nome: userProfile.nome, 
-    usuario_id: userProfile.id, 
+  const { error } = await supabase.from('mensagens_chat').insert([{
+    texto: t,
+    usuario_nome: userProfile.nome,
+    usuario_id: userProfile.id,
     data_hora: new Date().toISOString(),
     visualizado_por: [userProfile.id]
   }]);
@@ -152,6 +152,21 @@ export default function MenuLateral({ isSidebarOpen, setIsSidebarOpen, path, rou
   if (error) {
     alert("Erro: " + error.message);
     loadMensagens();
+  } else {
+    // Notifica outros usuários via push (funciona mesmo com aba fechada)
+    fetch('/api/push/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        payload: {
+          title: '💬 Mensagem no Chat',
+          body: `${userProfile.nome}: "${t.length > 80 ? t.slice(0, 80) + '…' : t}"`,
+          url: rotaHome,
+          tag: 'chat-geral',
+        },
+        excludeUserId: userProfile.id,
+      }),
+    }).catch(() => {}) // Falha silenciosa — push não é crítico
   }
  };
 
