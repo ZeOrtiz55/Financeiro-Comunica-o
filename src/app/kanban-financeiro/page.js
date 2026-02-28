@@ -121,7 +121,30 @@ const carregarDados = async () => {
   try {
     const { data } = await supabase.from('Chamado_NF').select('*');
     const hoje = new Date(); hoje.setHours(0,0,0,0);
-    
+
+    // ─── AUTO-MOVE: gerar_boleto + boleto anexado → enviar_cliente ───────────
+    const formasSemBoleto = ['Á Vista no Pix', 'Cartão a Vista', 'Cartão Parcelado'];
+    const paraAutoMover = (data || []).filter(c =>
+      (c.status === 'gerar_boleto' || c.status === 'validar_pix') &&
+      c.anexo_boleto &&
+      !formasSemBoleto.includes(c.forma_pagamento)
+    );
+    if (paraAutoMover.length > 0) {
+      await Promise.all(paraAutoMover.map(c =>
+        supabase.from('Chamado_NF').update({
+          status: 'enviar_cliente',
+          tarefa: 'Enviar para o Cliente',
+          setor: 'Pós-Vendas'
+        }).eq('id', c.id)
+      ));
+      // Atualiza o array local para refletir já sem nova busca
+      paraAutoMover.forEach(c => {
+        const idx = (data || []).findIndex(d => d.id === c.id);
+        if (idx !== -1) data[idx] = { ...data[idx], status: 'enviar_cliente', tarefa: 'Enviar para o Cliente', setor: 'Pós-Vendas' };
+      });
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     const processados = (data || []).map(c => {
       let st = c.status || 'gerar_boleto';
       const venc = c.vencimento_boleto ? new Date(c.vencimento_boleto) : null;
@@ -277,21 +300,21 @@ const handleActionSomenteVencido = async (t) => {
     }
 };
 
-const handleGerarBoletoFaturamentoFinal = async (id) => {
-    if (!fileBoleto) return alert("Anexe o arquivo.");
-    const path = `boletos/${Date.now()}-${fileBoleto.name}`;
-    await supabase.storage.from('anexos').upload(path, fileBoleto);
+const handleGerarBoletoFaturamentoFinal = async (id, fileArg) => {
+    const arquivo = fileArg || fileBoleto;
+    if (!arquivo) return alert("Anexe o arquivo.");
+    const path = `boletos/${Date.now()}-${arquivo.name}`;
+    await supabase.storage.from('anexos').upload(path, arquivo);
     const { data } = supabase.storage.from('anexos').getPublicUrl(path);
-    
-    const updateData = { 
-        status: 'enviar_cliente', 
-        anexo_boleto: data.publicUrl, 
+
+    const updateData = {
+        status: 'enviar_cliente',
+        anexo_boleto: data.publicUrl,
         tarefa: 'Enviar para o Cliente',
         setor: 'Pós-Vendas'
     };
 
     await supabase.from('Chamado_NF').update(updateData).eq('id', id);
-    alert("Boleto anexado e tarefa gerada para o Pós-Vendas!");
     setTarefaSelecionada(null); carregarDados();
 };
 
@@ -594,32 +617,46 @@ return (
                     <label style={{...labelModalStyle, color:'#4f46e5', fontSize: '15px', fontWeight:'700'}}>ANEXAR BOLETO FINAL E PROCESSAR</label>
                     <div style={{display:'flex', gap:'30px', marginTop:'25px', alignItems: 'center'}}>
                       <div style={{flex: 1, position: 'relative'}}>
-                          <input type="file" id="file_boleto_input" onChange={e => setFileBoleto(e.target.files[0])} style={{display:'none'}} />
+                          <input
+                            type="file"
+                            id="file_boleto_input"
+                            onChange={e => {
+                              const file = e.target.files[0];
+                              if (!file) return;
+                              setFileBoleto(file);
+                              // Dispara automaticamente ao selecionar o arquivo
+                              handleGerarBoletoFaturamentoFinal(tarefaSelecionada.id, file);
+                            }}
+                            style={{display:'none'}}
+                          />
                           <label htmlFor="file_boleto_input" style={{
                               display:'flex', alignItems:'center', gap:'10px', background:'#ffffff', border:'1px solid #dcdde1', padding:'15px 20px', borderRadius:'12px', cursor:'pointer', color:'#718093', fontSize:'14px'
                           }}>
-                             <Upload size={18} /> {fileBoleto ? fileBoleto.name : "Escolher boleto..."}
+                             <Upload size={18} /> {fileBoleto ? fileBoleto.name : "Selecionar boleto — tarefa gerada automaticamente"}
                           </label>
                       </div>
-                      <button 
-                        onClick={() => handleGerarBoletoFaturamentoFinal(tarefaSelecionada.id)} 
-                        style={{
-                          background:'#4f46e5', 
-                          color:'#ffffff', 
-                          padding:'18px 40px', 
-                          border:'none', 
-                          borderRadius:'50px', 
-                          cursor:'pointer', 
-                          fontSize: '14px', 
-                          textTransform:'uppercase', 
-                          letterSpacing:'2px', 
-                          fontWeight:'700', 
-                          boxShadow: '0 10px 20px rgba(79, 70, 229, 0.2)', 
-                          transition:'0.3s'
-                        }} 
-                      >
-                        GERAR TAREFA
-                      </button>
+                      {/* Botão manual mantido como fallback */}
+                      {fileBoleto && (
+                        <button
+                          onClick={() => handleGerarBoletoFaturamentoFinal(tarefaSelecionada.id)}
+                          style={{
+                            background:'#4f46e5',
+                            color:'#ffffff',
+                            padding:'18px 40px',
+                            border:'none',
+                            borderRadius:'50px',
+                            cursor:'pointer',
+                            fontSize: '14px',
+                            textTransform:'uppercase',
+                            letterSpacing:'2px',
+                            fontWeight:'700',
+                            boxShadow: '0 10px 20px rgba(79, 70, 229, 0.2)',
+                            transition:'0.3s'
+                          }}
+                        >
+                          GERAR TAREFA
+                        </button>
+                      )}
                     </div>
                 </div>
               )}

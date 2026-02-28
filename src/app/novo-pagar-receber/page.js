@@ -48,6 +48,10 @@ export default function NovoPagarReceber() {
   const path = typeof window !== 'undefined' ? window.location.pathname : '/novo-pagar-receber';
 
   useEffect(() => {
+    // Pré-seleciona o tipo via query string (?tipo=pagar ou ?tipo=receber)
+    const tipoFromUrl = new URLSearchParams(window.location.search).get('tipo')
+    if (tipoFromUrl === 'pagar' || tipoFromUrl === 'receber') setTipo(tipoFromUrl)
+
     const init = async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) return router.push('/login')

@@ -223,7 +223,75 @@ function HomePosVendasContent() {
             <h1 style={{ fontWeight: '300', color: '#f8fafc', margin: 0, fontSize:'42px', letterSpacing: '-1.5px' }}>Painel Pós-Vendas</h1>
             <div style={{ width: '80px', height: '4px', background: '#9e9e9e', marginTop: '12px' }}></div>
           </div>
-          <button onClick={() => router.push('/novo-pagar-receber')} style={btnNovoStyle}><PlusCircle size={20}/> NOVO LANÇAMENTO</button>
+          <div style={{ position: 'relative' }}>
+            <button onClick={() => setShowNovoMenu(s => !s)} style={btnNovoStyle}>
+              <PlusCircle size={20}/> NOVO CHAMADO
+            </button>
+            {showNovoMenu && (
+              <>
+                {/* overlay invisível para fechar ao clicar fora */}
+                <div onClick={() => setShowNovoMenu(false)} style={{ position:'fixed', inset:0, zIndex:1999 }} />
+                <div style={dropdownStyle}>
+                  <div style={dropdownItemStyle}
+                    onClick={() => { setShowNovoMenu(false); router.push('/novo-chamado-nf') }}
+                    onMouseEnter={e => e.currentTarget.style.background='#55555a'}
+                    onMouseLeave={e => e.currentTarget.style.background='transparent'}>
+                    <div style={{ display:'flex', alignItems:'center', gap:'14px' }}>
+                      <div style={{ width:'38px', height:'38px', borderRadius:'10px', background:'rgba(14,165,233,0.15)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                        <FileText size={18} color="#38bdf8"/>
+                      </div>
+                      <div>
+                        <div style={{ fontSize:'14px', color:'#f8fafc', fontWeight:'600' }}>Chamado NF</div>
+                        <div style={{ fontSize:'11px', color:'#71717a' }}>Nota fiscal / faturamento</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div style={dropdownItemStyle}
+                    onClick={() => { setShowNovoMenu(false); router.push('/novo-pagar-receber?tipo=pagar') }}
+                    onMouseEnter={e => e.currentTarget.style.background='#55555a'}
+                    onMouseLeave={e => e.currentTarget.style.background='transparent'}>
+                    <div style={{ display:'flex', alignItems:'center', gap:'14px' }}>
+                      <div style={{ width:'38px', height:'38px', borderRadius:'10px', background:'rgba(239,68,68,0.15)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                        <DollarSign size={18} color="#f87171"/>
+                      </div>
+                      <div>
+                        <div style={{ fontSize:'14px', color:'#f8fafc', fontWeight:'600' }}>Chamado Pagar</div>
+                        <div style={{ fontSize:'11px', color:'#71717a' }}>Lançar conta a pagar</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div style={dropdownItemStyle}
+                    onClick={() => { setShowNovoMenu(false); router.push('/novo-pagar-receber?tipo=receber') }}
+                    onMouseEnter={e => e.currentTarget.style.background='#55555a'}
+                    onMouseLeave={e => e.currentTarget.style.background='transparent'}>
+                    <div style={{ display:'flex', alignItems:'center', gap:'14px' }}>
+                      <div style={{ width:'38px', height:'38px', borderRadius:'10px', background:'rgba(59,130,246,0.15)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                        <Download size={18} color="#93c5fd"/>
+                      </div>
+                      <div>
+                        <div style={{ fontSize:'14px', color:'#f8fafc', fontWeight:'600' }}>Chamado Receber</div>
+                        <div style={{ fontSize:'11px', color:'#71717a' }}>Lançar conta a receber</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ ...dropdownItemStyle, borderBottom:'none' }}
+                    onClick={() => { setShowNovoMenu(false); router.push('/novo-chamado-rh') }}
+                    onMouseEnter={e => e.currentTarget.style.background='#55555a'}
+                    onMouseLeave={e => e.currentTarget.style.background='transparent'}>
+                    <div style={{ display:'flex', alignItems:'center', gap:'14px' }}>
+                      <div style={{ width:'38px', height:'38px', borderRadius:'10px', background:'rgba(168,85,247,0.15)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                        <UserIcon size={18} color="#c084fc"/>
+                      </div>
+                      <div>
+                        <div style={{ fontSize:'14px', color:'#f8fafc', fontWeight:'600' }}>Chamado RH</div>
+                        <div style={{ fontSize:'11px', color:'#71717a' }}>Solicitação interna de RH</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         </header>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '30px' }}>
