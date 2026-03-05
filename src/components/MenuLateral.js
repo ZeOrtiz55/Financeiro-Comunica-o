@@ -1,10 +1,10 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
-import { 
- LayoutDashboard, ClipboardList, TrendingDown, TrendingUp, 
- UserCheck, LogOut, Menu, MessageSquare, X, Send, Paperclip, 
- FileText, Settings, User, CheckCheck 
+import {
+ LayoutDashboard, ClipboardList, TrendingDown, TrendingUp,
+ UserCheck, LogOut, Menu, MessageSquare, X, Send, Paperclip,
+ FileText, Settings, User, CheckCheck, History, Bell, RefreshCw, ChevronRight, Clock
 } from 'lucide-react'
 
 export default function MenuLateral({ isSidebarOpen, setIsSidebarOpen, path, router, handleLogout, userProfile }) {
@@ -40,6 +40,53 @@ export default function MenuLateral({ isSidebarOpen, setIsSidebarOpen, path, rou
 
  // ESTADO PARA NOTIFICAÇÕES DE CARDS VENCIDOS
  const [alertasVencidos, setAlertasVencidos] = useState(0)
+
+ // HISTÓRICO DE NOTIFICAÇÕES
+ const [showHistorico, setShowHistorico] = useState(false)
+ const [historico, setHistorico] = useState([])
+ const [historicoNaoLidos, setHistoricoNaoLidos] = useState(0)
+
+ const contarNaoLidos = () => {
+  try {
+   const hist = JSON.parse(localStorage.getItem('notif_historico') || '[]')
+   setHistoricoNaoLidos(hist.filter(h => !h.lida).length)
+  } catch(e) {}
+ }
+
+ const abrirHistorico = () => {
+  try {
+   const hist = JSON.parse(localStorage.getItem('notif_historico') || '[]')
+   setHistorico(hist)
+   localStorage.setItem('notif_historico', JSON.stringify(hist.map(h => ({ ...h, lida: true }))))
+   setHistoricoNaoLidos(0)
+  } catch(e) { setHistorico([]) }
+  setShowHistorico(true)
+ }
+
+ const limparHistorico = () => {
+  localStorage.removeItem('notif_historico')
+  setHistorico([])
+  setHistoricoNaoLidos(0)
+ }
+
+ const calcTempoHistorico = (dateStr) => {
+  if (!dateStr) return ''
+  const diffMs = new Date() - new Date(dateStr)
+  const mins = Math.floor(diffMs / 60000)
+  const hours = Math.floor(mins / 60)
+  const days = Math.floor(hours / 24)
+  if (days > 0) return `${days}d atrás`
+  if (hours > 0) return `${hours}h atrás`
+  if (mins > 0) return `${mins}min atrás`
+  return 'agora'
+ }
+
+ useEffect(() => {
+  contarNaoLidos()
+  const handler = () => contarNaoLidos()
+  window.addEventListener('notif_historico_updated', handler)
+  return () => window.removeEventListener('notif_historico_updated', handler)
+ }, [])
 
  // --- CORREÇÃO DINÂMICA DAS ROTAS ---
  const rotaHome = userProfile?.funcao === 'Financeiro' ? '/home-financeiro' : '/home-posvendas';
@@ -280,6 +327,18 @@ export default function MenuLateral({ isSidebarOpen, setIsSidebarOpen, path, rou
        )}
       </button>
 
+      <button onClick={abrirHistorico} style={{ ...getBtnStyle('_historico'), position: 'relative' }}>
+       <div style={{ ...iconContainer, position: 'relative' }}>
+        <History size={28} />
+        {historicoNaoLidos > 0 && (
+         <div style={{ position: 'absolute', top: '0px', right: '8px', background: '#ef4444', color: '#fff', fontSize: '10px', fontWeight: '900', minWidth: '18px', height: '18px', borderRadius: '9px', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px', border: '2px solid #fff' }}>
+          {historicoNaoLidos > 9 ? '9+' : historicoNaoLidos}
+         </div>
+        )}
+       </div>
+       <span style={{ opacity: isSidebarOpen ? 1 : 0, whiteSpace: 'nowrap', fontWeight: '700' }}>Historico</span>
+      </button>
+
       <div style={{ height: '2px', background: 'linear-gradient(to right, transparent, #f1f5f9, transparent)', margin: '25px 40px' }}></div>
 
       <button onClick={() => router.push('/historico-pagar')} style={getBtnStyle('/historico-pagar')}>
@@ -436,6 +495,75 @@ export default function MenuLateral({ isSidebarOpen, setIsSidebarOpen, path, rou
         <Send size={32} />
        </button>
       </form>
+     </div>
+    </div>
+   )}
+
+   {/* --- PAINEL DE HISTÓRICO DE NOTIFICAÇÕES --- */}
+   {showHistorico && (
+    <div
+     onClick={() => setShowHistorico(false)}
+     style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(12px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3100, animation: 'fadeIn 0.3s ease' }}
+    >
+     <div
+      onClick={e => e.stopPropagation()}
+      style={{ width: '520px', maxHeight: '85vh', background: '#fff', borderRadius: '32px', boxShadow: '0 60px 150px rgba(0,0,0,0.4)', display: 'flex', flexDirection: 'column', overflow: 'hidden', animation: 'zoomIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)' }}
+     >
+      {/* Cabeçalho */}
+      <div style={{ padding: '30px 35px', background: '#0f172a', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <History size={20} color="#38bdf8" />
+        <span style={{ fontSize: '13px', fontWeight: '800', color: '#fff', letterSpacing: '2px' }}>HISTORICO DE NOTIFICACOES</span>
+       </div>
+       <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+        {historico.length > 0 && (
+         <button onClick={limparHistorico} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#94a3b8', fontSize: '10px', cursor: 'pointer', fontWeight: '700', padding: '6px 14px', borderRadius: '8px', letterSpacing: '0.5px' }}>LIMPAR</button>
+        )}
+        <button onClick={() => setShowHistorico(false)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', cursor: 'pointer', padding: '10px', borderRadius: '14px' }}><X size={20} /></button>
+       </div>
+      </div>
+
+      {/* Lista */}
+      <div style={{ flex: 1, overflowY: 'auto', background: '#f8fafc' }}>
+       {historico.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '60px 20px' }}>
+         <Bell size={40} color="#e2e8f0" />
+         <p style={{ color: '#94a3b8', fontSize: '14px', margin: '16px 0 0', fontWeight: '500' }}>Nenhuma notificacao no historico</p>
+        </div>
+       ) : historico.map((n, idx) => (
+        <div
+         key={n.id || idx}
+         style={{
+          padding: '16px 24px',
+          borderBottom: '1px solid #f1f5f9',
+          display: 'flex',
+          gap: '14px',
+          alignItems: 'center',
+          background: n.lida ? 'transparent' : '#eff6ff',
+          transition: 'background 0.15s',
+         }}
+         onMouseEnter={e => e.currentTarget.style.background = '#f1f5f9'}
+         onMouseLeave={e => e.currentTarget.style.background = n.lida ? 'transparent' : '#eff6ff'}
+        >
+         <div style={{
+          width: '42px', height: '42px', borderRadius: '14px', flexShrink: 0,
+          background: n.tipo === 'chat' ? '#eff6ff' : '#f0fdf4',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          border: `1px solid ${n.tipo === 'chat' ? '#bfdbfe' : '#bbf7d0'}`
+         }}>
+          {n.tipo === 'chat' ? <MessageSquare size={18} color="#3b82f6" /> : <RefreshCw size={18} color="#22c55e" />}
+         </div>
+         <div style={{ flex: 1, minWidth: 0 }}>
+          <b style={{ fontSize: '10px', color: '#64748b', display: 'block', letterSpacing: '0.5px', fontWeight: '800', marginBottom: '3px' }}>{n.titulo}</b>
+          <p style={{ fontSize: '13px', color: '#1e293b', margin: '0 0 4px', fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n.mensagem}</p>
+          <small style={{ fontSize: '11px', color: '#94a3b8', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '4px' }}>
+           <Clock size={10} /> {calcTempoHistorico(n.data)}
+          </small>
+         </div>
+         {!n.lida && <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#3b82f6', flexShrink: 0 }} />}
+        </div>
+       ))}
+      </div>
      </div>
     </div>
    )}

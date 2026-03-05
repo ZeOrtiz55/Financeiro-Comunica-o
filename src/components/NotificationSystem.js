@@ -138,6 +138,14 @@ export default function NotificationSystem({ userProfile }) {
     setToasts(prev => [{ ...notif, id }, ...prev])
     tocarSom()
     setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 8000)
+    // Salva no histórico persistente (localStorage)
+    try {
+      const hist = JSON.parse(localStorage.getItem('notif_historico') || '[]')
+      localStorage.setItem('notif_historico', JSON.stringify(
+        [{ ...notif, id, lida: false }, ...hist].slice(0, 200)
+      ))
+      window.dispatchEvent(new CustomEvent('notif_historico_updated'))
+    } catch(e) {}
   }
 
   // ─── REALTIME COM RECONEXÃO AUTOMÁTICA ───────────────────────────────────

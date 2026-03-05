@@ -22,16 +22,13 @@ function LoadingScreen() {
 }
 
 export default function NovoPagarReceber() {
-  const [tipo, setTipo] = useState('') 
-  const [tipoNota, setTipoNota] = useState('') 
   const [loading, setLoading] = useState(false)
   const [pageLoading, setPageLoading] = useState(true)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [userProfile, setUserProfile] = useState(null)
-  const [fornecedores, setFornecedores] = useState([]) 
+  const [fornecedores, setFornecedores] = useState([])
 
   const [fileNFServ, setFileNFServ] = useState(null)
-  const [fileNFPeca, setFileNFPeca] = useState(null)
   const [fileBoleto, setFileBoleto] = useState(null)
   const [filesReq, setFilesReq] = useState([])
 
@@ -48,10 +45,6 @@ export default function NovoPagarReceber() {
   const path = typeof window !== 'undefined' ? window.location.pathname : '/novo-pagar-receber';
 
   useEffect(() => {
-    // Pré-seleciona o tipo via query string (?tipo=pagar ou ?tipo=receber)
-    const tipoFromUrl = new URLSearchParams(window.location.search).get('tipo')
-    if (tipoFromUrl === 'pagar' || tipoFromUrl === 'receber') setTipo(tipoFromUrl)
-
     const init = async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) return router.push('/login')
@@ -88,41 +81,24 @@ export default function NovoPagarReceber() {
     e.preventDefault()
     setLoading(true)
     try {
-      if (tipo === 'pagar') {
-        const nf = await uploadSingle(fileNFServ, 'pagar')
-        const bol = await uploadSingle(fileBoleto, 'pagar')
-        const reqs = await uploadMultiple(filesReq, 'pagar')
-        
-        const { error } = await supabase.from('finan_pagar').insert([{
-          fornecedor: formData.entidade, 
-          valor: formData.valor, 
-          data_vencimento: formData.vencimento,
-          motivo: formData.motivo, 
-          numero_NF: formData.numero_NF, 
-          metodo: formData.metodo,
-          anexo_nf: nf, 
-          anexo_boleto: bol, 
-          anexo_requisicao: reqs,
-          status: 'financeiro' 
-        }])
-        if (error) throw error
-      } else {
-        const nfS = await uploadSingle(fileNFServ, 'receber')
-        const nfP = await uploadSingle(fileNFPeca, 'receber')
-        
-        const { error } = await supabase.from('finan_receber').insert([{
-          cliente: formData.entidade, 
-          valor: formData.valor, 
-          data_vencimento: formData.vencimento,
-          motivo: formData.motivo, 
-          tipo_nota: tipoNota, 
-          metodo: formData.metodo,
-          anexo_nf_servico: nfS, 
-          anexo_nf_peca: nfP,
-          status: 'financeiro' 
-        }])
-        if (error) throw error
-      }
+      const nf = await uploadSingle(fileNFServ, 'pagar')
+      const bol = await uploadSingle(fileBoleto, 'pagar')
+      const reqs = await uploadMultiple(filesReq, 'pagar')
+
+      const { error } = await supabase.from('finan_pagar').insert([{
+        fornecedor: formData.entidade,
+        valor: formData.valor,
+        data_vencimento: formData.vencimento,
+        motivo: formData.motivo,
+        numero_NF: formData.numero_NF,
+        metodo: formData.metodo,
+        anexo_nf: nf,
+        anexo_boleto: bol,
+        anexo_requisicao: reqs,
+        is_requisicao: true,
+        status: 'financeiro'
+      }])
+      if (error) throw error
       alert("Processo criado com sucesso."); 
       router.push('/')
     } catch (e) { alert(e.message) } finally { setLoading(false) }
@@ -145,26 +121,16 @@ export default function NovoPagarReceber() {
         <div style={{ background:'#3f3f44', padding:'60px', borderRadius:'35px', width:'100%', maxWidth:'750px', border: '0.5px solid #55555a', boxShadow: '0 30px 80px rgba(0,0,0,0.3)' }}>
           <h2 style={{ textAlign:'center', color:'#ffffff', fontWeight:'300', fontSize:'32px', marginBottom:'50px', letterSpacing:'-1px' }}>Novo Registro Financeiro</h2>
           
-          <div style={{ display:'flex', gap:'15px', marginBottom:'45px' }}>
-            <button type="button" onClick={()=>setTipo('pagar')} style={tipoBtnStyle(tipo === 'pagar', '#fca5a5')}>A Pagar</button>
-            <button type="button" onClick={()=>setTipo('receber')} style={tipoBtnStyle(tipo === 'receber', '#93c5fd')}>A Receber</button>
-          </div>
+          <form onSubmit={salvar} style={{ display:'flex', flexDirection:'column', gap:'30px' }}>
 
-          {tipo && (
-            <form onSubmit={salvar} style={{ display:'flex', flexDirection:'column', gap:'30px' }}>
-              
               <div>
-                <label style={labelStyle}>{tipo === 'pagar' ? "Escolha o Fornecedor" : "Nome do Cliente"}</label>
+                <label style={labelStyle}>Escolha o Fornecedor</label>
                 <div style={{ position: 'relative' }}>
                   <User size={20} style={iconInputStyle} />
-                  {tipo === 'pagar' ? (
-                    <select required style={inputStyle} onChange={e=>setFormData({...formData, entidade: e.target.value})}>
-                        <option value="">Selecione na lista...</option>
-                        {fornecedores.map(f => <option key={f.id} value={f.nome}>{f.nome}</option>)}
-                    </select>
-                  ) : (
-                    <input placeholder="Nome do Cliente" required style={inputStyle} onChange={e=>setFormData({...formData, entidade: e.target.value})} />
-                  )}
+                  <select required style={inputStyle} onChange={e=>setFormData({...formData, entidade: e.target.value})}>
+                      <option value="">Selecione na lista...</option>
+                      {fornecedores.map(f => <option key={f.id} value={f.nome}>{f.nome}</option>)}
+                  </select>
                 </div>
               </div>
 
@@ -184,15 +150,13 @@ export default function NovoPagarReceber() {
                 </div>
               </div>
 
-              {tipo === 'pagar' && (
-                <div>
-                  <label style={labelStyle}>Número da Nota Fiscal</label>
-                  <div style={{ position: 'relative' }}>
-                    <Hash size={20} style={iconInputStyle} />
-                    <input placeholder="000.000.000" required style={inputStyle} onChange={e=>setFormData({...formData, numero_NF: e.target.value})} />
-                  </div>
+              <div>
+                <label style={labelStyle}>Número da Nota Fiscal</label>
+                <div style={{ position: 'relative' }}>
+                  <Hash size={20} style={iconInputStyle} />
+                  <input placeholder="000.000.000" required style={inputStyle} onChange={e=>setFormData({...formData, numero_NF: e.target.value})} />
                 </div>
-              )}
+              </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '25px' }}>
                   <div>
@@ -224,46 +188,41 @@ export default function NovoPagarReceber() {
                     <input type="file" required hidden onChange={e=>setFileNFServ(e.target.files[0])} />
                 </label>
 
-                {tipo === 'pagar' && (
-                  <>
-                    <label style={fileBtnStyle(filesReq.length > 0, true)}>
-                        <Paperclip size={18}/> {filesReq.length > 0 ? `${filesReq.length} Requisições Adicionadas` : "Anexar Requisições de Compra"}
-                        <input 
-                          type="file" 
-                          multiple 
-                          hidden 
-                          onChange={e => {
-                            const novos = Array.from(e.target.files);
-                            setFilesReq(prev => [...prev, ...novos]);
-                          }} 
-                        />
-                    </label>
+                <label style={fileBtnStyle(filesReq.length > 0, true)}>
+                    <Paperclip size={18}/> {filesReq.length > 0 ? `${filesReq.length} Requisições Adicionadas` : "Anexar Requisições de Compra"}
+                    <input
+                      type="file"
+                      multiple
+                      hidden
+                      onChange={e => {
+                        const novos = Array.from(e.target.files);
+                        setFilesReq(prev => [...prev, ...novos]);
+                      }}
+                    />
+                </label>
 
-                    {filesReq.length > 0 && (
-                        <div style={{display:'flex', flexWrap:'wrap', gap:'10px', padding:'15px', background:'#2a2a2d', borderRadius:'15px'}}>
-                            {filesReq.map((f, i) => (
-                                <div key={i} style={{fontSize:'12px', background:'#3f3f44', color:'#f1f5f9', padding:'6px 14px', borderRadius:'10px', display:'flex', alignItems:'center', gap:'8px', border: '0.5px solid #55555a'}}>
-                                    {f.name.substring(0,15)}... 
-                                    <X size={14} style={{cursor:'pointer', color:'#fca5a5'}} onClick={() => setFilesReq(filesReq.filter((_, idx) => idx !== i))}/>
-                                </div>
-                            ))}
-                            <button type="button" onClick={() => setFilesReq([])} style={{fontSize:'11px', color:'#fca5a5', background:'none', border:'none', cursor:'pointer', paddingLeft: '10px', textDecoration: 'underline'}}>Limpar Tudo</button>
-                        </div>
-                    )}
-
-                    <label style={{...fileBtnStyle(!!fileBoleto), borderStyle: 'dashed', opacity: 0.8}}>
-                        <CreditCard size={18}/> {fileBoleto ? fileBoleto.name.substring(0, 30) : "Anexar Boleto (Opcional)"}
-                        <input type="file" hidden onChange={e=>setFileBoleto(e.target.files[0])} />
-                    </label>
-                  </>
+                {filesReq.length > 0 && (
+                    <div style={{display:'flex', flexWrap:'wrap', gap:'10px', padding:'15px', background:'#2a2a2d', borderRadius:'15px'}}>
+                        {filesReq.map((f, i) => (
+                            <div key={i} style={{fontSize:'12px', background:'#3f3f44', color:'#f1f5f9', padding:'6px 14px', borderRadius:'10px', display:'flex', alignItems:'center', gap:'8px', border: '0.5px solid #55555a'}}>
+                                {f.name.substring(0,15)}...
+                                <X size={14} style={{cursor:'pointer', color:'#fca5a5'}} onClick={() => setFilesReq(filesReq.filter((_, idx) => idx !== i))}/>
+                            </div>
+                        ))}
+                        <button type="button" onClick={() => setFilesReq([])} style={{fontSize:'11px', color:'#fca5a5', background:'none', border:'none', cursor:'pointer', paddingLeft: '10px', textDecoration: 'underline'}}>Limpar Tudo</button>
+                    </div>
                 )}
+
+                <label style={{...fileBtnStyle(!!fileBoleto), borderStyle: 'dashed', opacity: 0.8}}>
+                    <CreditCard size={18}/> {fileBoleto ? fileBoleto.name.substring(0, 30) : "Anexar Boleto (Opcional)"}
+                    <input type="file" hidden onChange={e=>setFileBoleto(e.target.files[0])} />
+                </label>
               </div>
 
-              <button disabled={loading} style={submitBtnStyle(tipo, loading)}>
+              <button disabled={loading} style={submitBtnStyle(loading)}>
                 {loading ? "Processando arquivos..." : "Finalizar e Criar Registro"}
               </button>
             </form>
-          )}
         </div>
       </main>
 
@@ -292,11 +251,11 @@ const fileBtnStyle = (hasFile, isMultiple = false) => ({
   color: hasFile ? (isMultiple ? '#93c5fd' : '#4ade80') : '#bdbdbd', fontSize: '15px', cursor: 'pointer', transition: '0.2s'
 });
 
-const submitBtnStyle = (tipo, loading) => ({
-  background: loading ? '#55555a' : (tipo === 'pagar' ? '#fca5a520' : '#93c5fd20'), 
-  color: tipo === 'pagar' ? '#fca5a5' : '#93c5fd', 
-  border: `1px solid ${tipo === 'pagar' ? '#fca5a5' : '#93c5fd'}`, 
-  padding: '22px', borderRadius: '18px', 
-  cursor: loading ? 'not-allowed' : 'pointer', fontSize: '17px', marginTop: '15px', 
+const submitBtnStyle = (loading) => ({
+  background: loading ? '#55555a' : '#fca5a520',
+  color: '#fca5a5',
+  border: '1px solid #fca5a5',
+  padding: '22px', borderRadius: '18px',
+  cursor: loading ? 'not-allowed' : 'pointer', fontSize: '17px', marginTop: '15px',
   transition: '0.3s', opacity: loading ? 0.6 : 0.9
 });

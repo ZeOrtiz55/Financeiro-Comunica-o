@@ -38,6 +38,16 @@ const formatarData = (dataStr) => {
  return dataStr;
 };
 
+const formatarMoeda = (valor) => {
+ const num = parseFloat(valor);
+ if (isNaN(num)) return 'R$ 0,00';
+ return num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+};
+
+const getRequisicoes = (t) => {
+ try { return JSON.parse(t.requisicoes_json || '[]'); } catch { return []; }
+};
+
 function GeometricBackground() {
  return (
   <div style={{ position: 'fixed', inset: 0, zIndex: -1, overflow: 'hidden', background: '#f8fafc', pointerEvents: 'none' }}>
@@ -93,7 +103,7 @@ function HomeFinanceiroContent() {
  const [userProfile, setUserProfile] = useState(null); const [loading, setLoading] = useState(true); const [isSidebarOpen, setIsSidebarOpen] = useState(false);
  const [showNovoMenu, setShowNovoMenu] = useState(false);
  const [tarefaSelecionada, setTarefaSelecionada] = useState(null);
- const [listaBoletos, setListaBoletos] = useState([]); const [listaPagar, setListaPagar] = useState([]); const [listaReceber, setListaReceber] = useState([]); const [listaRH, setListaRH] = useState([]);
+ const [listaBoletos, setListaBoletos] = useState([]); const [listaPagar, setListaPagar] = useState([]); const [listaRH, setListaRH] = useState([]);
  const [fileBoleto, setFileBoleto] = useState(null);
  const [zoom, setZoom] = useState(1);
  const router = useRouter();
@@ -123,7 +133,6 @@ function HomeFinanceiroContent() {
           todosPagos = !!(c.comprovante_pagamento || c.comprovante_pagamento_p1);
       }
 
-      // Verifica se alguma parcela venceu sem comprovante
       let parcelaVencida = false;
       if (isParceladoLocal && c.status === 'aguardando_vencimento') {
         const qtd = parseInt(c.qtd_parcelas || 1);
@@ -149,12 +158,10 @@ function HomeFinanceiroContent() {
 
     setListaBoletos(faturamentoFormatado);
 
-    const { data: pag } = await supabase.from('finan_pagar').select('*').eq('status', 'financeiro');
-    const { data: rec } = await supabase.from('finan_receber').select('*').eq('status', 'financeiro');
+    const { data: pag } = await supabase.from('finan_pagar').select('*').eq('status', 'financeiro').order('id', {ascending: false});
     const { data: rhData } = await supabase.from('finan_rh').select('*').neq('status', 'concluido');
-    
-    setListaPagar((pag || []).map(p => ({...p, gTipo: 'pagar'}))); 
-    setListaReceber((rec || []).map(r => ({...r, gTipo: 'receber'}))); 
+
+    setListaPagar((pag || []).map(p => ({...p, gTipo: 'pagar'})));
     setListaRH((rhData || []).map(rh => ({...rh, gTipo: 'rh'})));
   } catch (err) { console.error(err); }
  }
@@ -164,7 +171,6 @@ function HomeFinanceiroContent() {
       .channel('home_financeiro_realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'Chamado_NF' }, () => carregarDados())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'finan_pagar' }, () => carregarDados())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'finan_receber' }, () => carregarDados())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'finan_rh' }, () => carregarDados())
       .subscribe();
     return () => { supabase.removeChannel(channel) };
@@ -179,15 +185,14 @@ function HomeFinanceiroContent() {
   }; carregar();
  }, [router]);
 
- // Abre o card automaticamente quando chegou via notificação (?id=&tipo=)
  useEffect(() => {
   const id = searchParams.get('id');
   const tipo = searchParams.get('tipo');
   if (!id || !tipo) return;
-  const listas = { boleto: listaBoletos, pagar: listaPagar, receber: listaReceber, rh: listaRH };
+  const listas = { boleto: listaBoletos, pagar: listaPagar, rh: listaRH };
   const card = (listas[tipo] || []).find(t => String(t.id) === id);
   if (card) setTarefaSelecionada(card);
- }, [searchParams, listaBoletos, listaPagar, listaReceber, listaRH]);
+ }, [searchParams, listaBoletos, listaPagar, listaRH]);
 
  const handleUpdateField = async (t, field, value) => {
     const table = t.gTipo === 'pagar' ? 'finan_pagar' : t.gTipo === 'receber' ? 'finan_receber' : t.gTipo === 'rh' ? 'finan_rh' : 'Chamado_NF';
@@ -241,10 +246,9 @@ function HomeFinanceiroContent() {
     const table = t.gTipo === 'pagar' ? 'finan_pagar' : t.gTipo === 'receber' ? 'finan_receber' : t.gTipo === 'rh' ? 'finan_rh' : 'Chamado_NF';
     marcarMinhaAcao(table, t.id);
     await supabase.from(table).update({ status: 'concluido' }).eq('id', t.id);
-    alert("Processo concluído!"); setTarefaSelecionada(null);
+    alert("Processo concluído!"); setTarefaSelecionada(null); carregarDados();
  };
 
- // --- NOVAS FUNÇÕES DE VENCIMENTO ---
  const handlePedirRecobranca = async (t) => {
     if (!window.confirm("Deseja solicitar recobrança ao Pós-Vendas?")) return;
     const newVal = (t.recombrancas_qtd || 0) + 1;
@@ -264,15 +268,39 @@ function HomeFinanceiroContent() {
     alert("Card movido para Vencido!"); setTarefaSelecionada(null); carregarDados();
  };
 
+ const handleAddRequisicao = async (t) => {
+  const reqs = getRequisicoes(t);
+  reqs.push({ numero: '', anexo_url: '' });
+  await handleUpdateField(t, 'requisicoes_json', JSON.stringify(reqs));
+ };
+
+ const handleRemoveRequisicao = async (t, index) => {
+  const reqs = getRequisicoes(t);
+  reqs.splice(index, 1);
+  await handleUpdateField(t, 'requisicoes_json', JSON.stringify(reqs));
+ };
+
+ const handleRequisicaoAnexo = async (t, index, file) => {
+  if (!file) return;
+  try {
+   const path = `requisicoes/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+   const { error: uploadError } = await supabase.storage.from('anexos').upload(path, file);
+   if (uploadError) throw uploadError;
+   const { data: linkData } = supabase.storage.from('anexos').getPublicUrl(path);
+   const reqs = getRequisicoes(t);
+   reqs[index] = { ...reqs[index], anexo_url: linkData.publicUrl };
+   await handleUpdateField(t, 'requisicoes_json', JSON.stringify(reqs));
+  } catch (err) { alert("Erro: " + err.message); }
+ };
+
  if (loading) return <LoadingScreen />
 
- // --- LÓGICAS CONDICIONAIS ---
  const isBoleto30 = tarefaSelecionada?.forma_pagamento?.toLowerCase().includes('30 dias');
  const isParcelamento = tarefaSelecionada?.forma_pagamento?.toLowerCase().includes('parcelado');
  const isBoletoType = tarefaSelecionada && (tarefaSelecionada.forma_pagamento?.toLowerCase().includes('boleto'));
  const isCashOrCardType = tarefaSelecionada && ['Á Vista no Pix', 'Cartão a Vista', 'Cartão Parcelado'].includes(tarefaSelecionada.forma_pagamento);
 
- const valorIndividual = tarefaSelecionada ? (tarefaSelecionada.valor_servico / (tarefaSelecionada.qtd_parcelas || 1)).toFixed(2) : 0;
+ const valorIndividual = tarefaSelecionada ? (tarefaSelecionada.valor_servico / (tarefaSelecionada.qtd_parcelas || 1)) : 0;
 
  return (
   <div style={{ display: 'flex', minHeight: '100vh', fontFamily: 'Montserrat, sans-serif', background: '#f8fafc' }}>
@@ -325,7 +353,7 @@ function HomeFinanceiroContent() {
           </div>
           <div style={{ padding: '24px', background: '#ffffff' }}>
             <div style={miniTagStyle}><CreditCard size={14}/> {t.forma_pagamento?.toUpperCase()}</div>
-            <div style={{fontSize:'26px', color:'#0f172a', margin: '15px 0 5px 0', fontWeight: '600'}}>R$ {t.valor_exibicao}</div>
+            <div style={{fontSize:'26px', color:'#0f172a', margin: '15px 0 5px 0', fontWeight: '600'}}>{formatarMoeda(t.valor_exibicao)}</div>
             <div style={{fontSize:'14px', color: '#64748b', textTransform:'uppercase', letterSpacing:'1px'}}>{t.status === 'validar_pix' ? 'VALIDAÇÃO PIX' : `Venc: ${formatarData(t.vencimento_boleto)}`}</div>
             {t.anexo_boleto && (t.status === 'gerar_boleto' || t.status === 'validar_pix') && (
                 <div style={{marginTop: '12px', display:'flex', alignItems:'center', gap:'8px', color: '#4f46e5', fontSize: '12px', fontWeight: '800'}} title="Boleto já foi anexado">
@@ -351,18 +379,24 @@ function HomeFinanceiroContent() {
       </div>
 
       <div style={colWrapperStyle}>
-       <div style={colTitleStyle}>Pagar/Receber</div>
+       <div style={colTitleStyle}>Requisições</div>
        <div style={{ display: 'flex', flexDirection: 'column', gap: '0px', borderTop: '0.5px solid #dcdde1' }}>
         {listaPagar.map((t, idx) => (
          <div key={`pag-${t.id}-${idx}`} onClick={() => setTarefaSelecionada(t)} className="task-card-grid">
-          <div style={{padding:'24px', background: '#fef2f2', borderLeft: '6px solid #ef4444', borderBottom: '0.5px solid #dcdde1'}}><h4 style={{fontSize:'13px', color:'#ef4444', fontWeight:'700'}}>A PAGAR</h4><div style={{fontSize:'20px', color:'#1e293b', marginTop:'5px', fontWeight: '700'}}>{t.fornecedor?.toUpperCase()}</div><div style={{fontSize:'22px', color:'#0f172a', marginTop:'10px', fontWeight: '600'}}>R$ {t.valor}</div></div>
-          <div style={{padding:'24px', background:'#ffffff', color: '#64748b', fontSize:'14px', borderBottom: '0.5px solid #dcdde1'}}>{t.metodo || 'Registro de despesa'}</div>
-         </div>
-        ))}
-        {listaReceber.map((t, idx) => (
-         <div key={`rec-${t.id}-${idx}`} onClick={() => setTarefaSelecionada(t)} className="task-card-grid">
-          <div style={{padding:'24px', background: '#eff6ff', borderLeft: '6px solid #3b82f6', borderBottom: '0.5px solid #dcdde1'}}><h4 style={{fontSize:'13px', color:'#3b82f6', fontWeight:'700'}}>A RECEBER</h4><div style={{fontSize:'20px', color:'#1e293b', marginTop:'5px', fontWeight: '700'}}>{t.cliente?.toUpperCase()}</div><div style={{fontSize:'22px', color:'#0f172a', marginTop:'10px', fontWeight: '600'}}>R$ {t.valor}</div></div>
-          <div style={{padding:'24px', background:'#ffffff', color: '#64748b', fontSize:'14px', borderBottom: '0.5px solid #dcdde1'}}>{t.metodo || 'Registro de entrada'}</div>
+          <div style={{padding:'24px', background: '#fef2f2', borderLeft: '6px solid #ef4444', borderBottom: '0.5px solid #dcdde1'}}>
+            <h4 style={{fontSize:'12px', color:'#ef4444', fontWeight:'800', letterSpacing:'1px', marginBottom:'8px'}}>FORNECEDOR</h4>
+            <div style={{fontSize:'20px', color:'#1e293b', fontWeight: '700'}}>{t.fornecedor?.toUpperCase()}</div>
+            <div style={{fontSize:'24px', color:'#0f172a', marginTop:'15px', fontWeight: '700'}}>{formatarMoeda(t.valor)}</div>
+            <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+              {getRequisicoes(t).filter(r => r.numero).map((req, i) => (
+                <span key={i} style={{ background: '#fef2f2', color: '#ef4444', fontSize: '10px', fontWeight: '800', padding: '4px 8px', border: '1px solid #fca5a5', borderRadius: '4px' }}>#{req.numero}</span>
+              ))}
+            </div>
+          </div>
+          <div style={{padding:'18px 24px', background:'#ffffff', display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+            <span style={{color: '#64748b', fontSize:'13px', fontWeight:'600'}}>{t.metodo || 'Despesa'}</span>
+            <span style={{color: '#ef4444', fontSize:'13px', fontWeight:'800'}}>VENC: {formatarData(t.data_vencimento)}</span>
+          </div>
          </div>
         ))}
        </div>
@@ -394,43 +428,107 @@ function HomeFinanceiroContent() {
       <div style={{ flex: '1.2', padding: '60px', overflowY: 'auto', color: '#1e293b' }}>
         <button onClick={() => setTarefaSelecionada(null)} className="btn-back-light"><ArrowLeft size={16}/> VOLTAR AO PAINEL</button>
         
-        <h2 style={{fontSize:'32px', color:'#0f172a', fontWeight:'400', lineHeight:'1.1', margin:'25px 0 45px'}}>{tarefaSelecionada.nom_cliente || tarefaSelecionada.fornecedor || tarefaSelecionada.funcionario || tarefaSelecionada.cliente}</h2>
+        {/* TÍTULO DINÂMICO DO MODAL */}
+        <div style={{marginTop:'25px', marginBottom:'45px'}}>
+            <label style={labelMStyle}>{tarefaSelecionada.gTipo === 'pagar' ? 'FORNECEDOR' : 'PROCESSO'}</label>
+            <h2 style={{fontSize:'38px', color:'#0f172a', fontWeight:'700', lineHeight:'1.1', margin:'10px 0 0'}}>
+                {tarefaSelecionada.nom_cliente || tarefaSelecionada.fornecedor || tarefaSelecionada.funcionario}
+            </h2>
+        </div>
         
+        {/* ÁREA DE VALORES E VENCIMENTO (TOP MODAL) */}
         <div style={{display:'flex', gap:'30px', marginBottom:'45px'}}>
-          <div style={fieldBoxModal}><label style={labelMStyle}>Condição / Motivo</label><p style={pModalStyle}>{tarefaSelecionada.forma_pagamento?.toUpperCase() || tarefaSelecionada.motivo || 'N/A'}</p></div>
+          <div style={fieldBoxModal}>
+            <label style={labelMStyle}>{tarefaSelecionada.gTipo === 'rh' ? 'MOTIVO' : 'CONDIÇÃO/MÉTODO'}</label>
+            <p style={pModalStyle}>{tarefaSelecionada.gTipo === 'pagar' ? (tarefaSelecionada.metodo?.toUpperCase() || 'N/A') : (tarefaSelecionada.forma_pagamento?.toUpperCase() || tarefaSelecionada.metodo?.toUpperCase() || 'N/A')}</p>
+          </div>
           
           {tarefaSelecionada.gTipo !== 'rh' && (
             <>
               <div style={fieldBoxModal}>
-                <label style={labelMStyle}>VALOR TOTAL</label>
-                <input 
-                  type="number" 
-                  style={{ ...inputStyleLight, border:'none', padding:0, fontSize:'36px', fontWeight:'700', background:'transparent' }}
-                  defaultValue={tarefaSelecionada.valor_exibicao || tarefaSelecionada.valor}
-                  onBlur={e => handleUpdateField(tarefaSelecionada, tarefaSelecionada.gTipo === 'boleto' ? 'valor_servico' : 'valor', e.target.value)}
-                />
+                <label style={labelMStyle}>VALOR DO REGISTRO</label>
+                <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
+                    <span style={{fontSize:'24px', fontWeight:'700', color:'#64748b'}}>R$</span>
+                    <input 
+                      type="number" 
+                      style={{ ...inputStyleLight, border:'none', padding:0, fontSize:'36px', fontWeight:'800', background:'transparent' }}
+                      defaultValue={tarefaSelecionada.valor_exibicao || tarefaSelecionada.valor}
+                      onBlur={e => handleUpdateField(tarefaSelecionada, tarefaSelecionada.gTipo === 'boleto' ? 'valor_servico' : 'valor', e.target.value)}
+                    />
+                </div>
               </div>
 
-              {isBoleto30 && (
-                <div style={fieldBoxModal}>
-                  <label style={labelMStyle}>DATA VENCIMENTO</label>
-                  <input 
-                    type="date" 
-                    style={{ ...inputStyleLight, border:'none', padding:0, fontSize:'36px', fontWeight:'700', background:'transparent', color:'#ef4444' }}
-                    defaultValue={tarefaSelecionada.vencimento_boleto}
-                    onBlur={e => handleUpdateField(tarefaSelecionada, 'vencimento_boleto', e.target.value)}
-                  />
-                </div>
-              )}
-
-              {!isBoleto30 && (
-                <div style={fieldBoxModal}><label style={labelMStyle}>VENCIMENTO BASE</label><p style={{...pModalStyle, color:'#ef4444', fontWeight: '600'}}>{formatarData(tarefaSelecionada.vencimento_boleto || tarefaSelecionada.data_vencimento)}</p></div>
-              )}
+              <div style={fieldBoxModal}>
+                <label style={labelMStyle}>DATA DE VENCIMENTO</label>
+                <input 
+                  type="date" 
+                  style={{ ...inputStyleLight, border:'none', padding:0, fontSize:'32px', fontWeight:'800', background:'transparent', color:'#ef4444' }}
+                  defaultValue={tarefaSelecionada.vencimento_boleto || tarefaSelecionada.data_vencimento}
+                  onBlur={e => handleUpdateField(tarefaSelecionada, (tarefaSelecionada.gTipo === 'boleto' ? 'vencimento_boleto' : 'data_vencimento'), e.target.value)}
+                />
+              </div>
             </>
           )}
         </div>
 
-        {!isBoleto30 && isParcelamento && (
+        {/* DISTRIBUIÇÃO ESPECÍFICA PARA PAGAR/RECEBER */}
+        {tarefaSelecionada.gTipo === 'pagar' && (
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'30px', padding:'45px', background:'#f8fafc', border:'1px solid #dcdde1', marginBottom:'45px' }}>
+                <div style={fieldBoxInner}>
+                    <label style={labelMStyle}>NÚMERO DA NOTA FISCAL</label>
+                    <input
+                        style={inputStyleLight}
+                        placeholder="Ex: 000.000.000"
+                        defaultValue={tarefaSelecionada.numero_NF || ''}
+                        onBlur={e => handleUpdateField(tarefaSelecionada, 'numero_NF', e.target.value)}
+                    />
+                </div>
+                <div style={{gridColumn:'span 2', ...fieldBoxInner}}>
+                    <label style={labelMStyle}>DESCRIÇÃO DETALHADA / OBSERVAÇÕES</label>
+                    <textarea
+                        style={{...inputStyleLight, height:'120px', resize: 'none'}}
+                        defaultValue={tarefaSelecionada.motivo}
+                        onBlur={e => handleUpdateField(tarefaSelecionada, 'motivo', e.target.value)}
+                    />
+                </div>
+            </div>
+        )}
+
+        {/* REQUISIÇÕES */}
+        {tarefaSelecionada.gTipo === 'pagar' && (
+            <div style={{ border:'1px solid #dcdde1', padding:'35px', background:'#f8fafc', marginBottom:'45px' }}>
+                <div style={{ marginBottom:'20px' }}>
+                    <label style={labelMStyle}>REQUISIÇÕES</label>
+                </div>
+                {getRequisicoes(tarefaSelecionada).map((req, i) => (
+                    <div key={i} style={{ display:'grid', gridTemplateColumns:'180px 1fr auto', gap:'20px', alignItems:'center', background:'#ffffff', padding:'18px', borderBottom:'1px solid #f1f5f9', marginBottom:'4px' }}>
+                        <div>
+                            <label style={{ ...labelMStyle, fontSize:'11px', display:'block', marginBottom:'6px' }}>Nº REQUISIÇÃO</label>
+                            <input
+                                placeholder="Ex: 00123"
+                                defaultValue={req.numero}
+                                style={inputStyleLight}
+                                onBlur={e => {
+                                    const reqs = getRequisicoes(tarefaSelecionada);
+                                    reqs[i] = { ...reqs[i], numero: e.target.value };
+                                    handleUpdateField(tarefaSelecionada, 'requisicoes_json', JSON.stringify(reqs));
+                                }}
+                            />
+                        </div>
+                        <AttachmentTag
+                            icon={<Paperclip size={18} />}
+                            label={`ANEXO REQ ${req.numero || (i + 1)}`}
+                            fileUrl={req.anexo_url}
+                            onUpload={f => handleRequisicaoAnexo(tarefaSelecionada, i, f)}
+                        />
+                        <button onClick={() => handleRemoveRequisicao(tarefaSelecionada, i)} style={{ background:'transparent', border:'none', cursor:'pointer', color:'#ef4444', padding:'8px' }} title="Remover"><Trash2 size={18}/></button>
+                    </div>
+                ))}
+            </div>
+        )}
+
+        {/* PARCELAMENTO (APENAS BOLETO FATURAMENTO) */}
+        {!isBoleto30 && isParcelamento && tarefaSelecionada.gTipo === 'boleto' && (
             <div style={{ display:'flex', flexDirection:'column', gap:'20px', background:'#f8fafc', padding:'40px', border:'1px solid #dcdde1', marginBottom:'45px' }}>
                 <div style={{ display:'flex', gap:'40px', borderBottom:'1px solid #dcdde1', paddingBottom:'20px' }}>
                     <div>
@@ -443,14 +541,14 @@ function HomeFinanceiroContent() {
                             {[1,2,3,4,5].map(n => <option key={n} value={n}>{n}x</option>)}
                         </select>
                     </div>
-                    <div><label style={labelMStyle}>VALOR PARCELA</label><p style={{fontSize:'22px', fontWeight:'700'}}>R$ {valorIndividual}</p></div>
+                    <div><label style={labelMStyle}>VALOR PARCELA</label><p style={{fontSize:'22px', fontWeight:'700'}}>{formatarMoeda(valorIndividual)}</p></div>
                 </div>
 
                 <div style={{ display:'flex', flexDirection:'column', gap:'15px' }}>
                     <div style={cascadeRowStyle}>
                         <span style={cascadeLabelStyle}>1ª PARCELA</span>
                         <input type="date" style={inputCascadeStyle} defaultValue={tarefaSelecionada.vencimento_boleto} onBlur={e => handleUpdateField(tarefaSelecionada, 'vencimento_boleto', e.target.value)} />
-                        <span style={cascadeValueStyle}>R$ {valorIndividual}</span>
+                        <span style={cascadeValueStyle}>{formatarMoeda(valorIndividual)}</span>
                         <AttachmentTag 
                             label="COMPROVANTE P1" 
                             fileUrl={tarefaSelecionada.comprovante_pagamento || tarefaSelecionada.comprovante_pagamento_p1} 
@@ -467,7 +565,7 @@ function HomeFinanceiroContent() {
                                     let arr = [...currentDates]; arr[i] = e.target.value;
                                     handleUpdateField(tarefaSelecionada, 'datas_parcelas', arr.join(', '));
                                 }} />
-                                <span style={cascadeValueStyle}>R$ {valorIndividual}</span>
+                                <span style={cascadeValueStyle}>{formatarMoeda(valorIndividual)}</span>
                                 <AttachmentTag 
                                     label={`COMPROVANTE P${pNum}`} 
                                     fileUrl={tarefaSelecionada[`comprovante_pagamento_p${pNum}`]} 
@@ -480,44 +578,47 @@ function HomeFinanceiroContent() {
             </div>
         )}
 
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(2, 1fr)', gap:'30px', border:'0.5px solid #dcdde1', padding:'45px', background:'#f8fafc' }}>
-          {tarefaSelecionada.gTipo === 'rh' ? (
-            <>
-              <div style={fieldBoxInner}><label style={labelMStyle}>TÍTULO</label><p style={{fontSize:'15px', fontWeight: '600'}}>{tarefaSelecionada.titulo}</p></div>
-              <div style={fieldBoxInner}><label style={labelMStyle}>SETOR</label><p style={{fontSize:'15px', color:'#0ea5e9', fontWeight: '600'}}>{tarefaSelecionada.setor?.toUpperCase()}</p></div>
-              <div style={{...fieldBoxInner, gridColumn:'span 2'}}><label style={labelMStyle}>DESCRIÇÃO</label><p style={{fontSize:'15px', lineHeight:'1.6'}}>{tarefaSelecionada.descricao}</p></div>
-            </>
-          ) : (
-            <>
-              <div style={fieldBoxInner}><label style={labelMStyle}>MÉTODO</label><p style={{fontSize:'15px', fontWeight: '600'}}>{tarefaSelecionada.forma_pagamento || 'N/A'}</p></div>
-              {tarefaSelecionada.gTipo === 'boleto' && (
-                <>
-                    <div style={fieldBoxInner}><label style={labelMStyle}>NF SERVIÇO</label><input style={inputStyleLight} defaultValue={tarefaSelecionada.num_nf_servico} onBlur={e => handleUpdateField(tarefaSelecionada, 'num_nf_servico', e.target.value)} /></div>
-                    <div style={fieldBoxInner}><label style={labelMStyle}>NF PEÇA</label><input style={inputStyleLight} defaultValue={tarefaSelecionada.num_nf_peca} onBlur={e => handleUpdateField(tarefaSelecionada, 'num_nf_peca', e.target.value)} /></div>
-                </>
-              )}
-              <div style={{gridColumn:'span 2', ...fieldBoxInner}}>
-                  <label style={labelMStyle}>OBSERVAÇÕES</label>
-                  <textarea style={{...inputStyleLight, height:'80px', resize: 'none'}} defaultValue={tarefaSelecionada.obs || tarefaSelecionada.motivo} onBlur={e => handleUpdateField(tarefaSelecionada, tarefaSelecionada.gTipo === 'boleto' ? 'obs' : 'motivo', e.target.value)} />
-              </div>
-            </>
-          )}
-        </div>
+        {/* CAMPOS EXCLUSIVOS DE BOLETO (NF SERVIÇO/PEÇA) */}
+        {tarefaSelecionada.gTipo === 'boleto' && (
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(2, 1fr)', gap:'30px', border:'0.5px solid #dcdde1', padding:'45px', background:'#f8fafc', marginBottom:'45px' }}>
+                <div style={fieldBoxInner}><label style={labelMStyle}>NF SERVIÇO</label><input style={inputStyleLight} defaultValue={tarefaSelecionada.num_nf_servico} onBlur={e => handleUpdateField(tarefaSelecionada, 'num_nf_servico', e.target.value)} /></div>
+                <div style={fieldBoxInner}><label style={labelMStyle}>NF PEÇA</label><input style={inputStyleLight} defaultValue={tarefaSelecionada.num_nf_peca} onBlur={e => handleUpdateField(tarefaSelecionada, 'num_nf_peca', e.target.value)} /></div>
+                <div style={{gridColumn:'span 2', ...fieldBoxInner}}>
+                    <label style={labelMStyle}>OBSERVAÇÕES DO BOLETO</label>
+                    <textarea style={{...inputStyleLight, height:'80px', resize: 'none'}} defaultValue={tarefaSelecionada.obs} onBlur={e => handleUpdateField(tarefaSelecionada, 'obs', e.target.value)} />
+                </div>
+            </div>
+        )}
+
+        {/* CAMPOS RH */}
+        {tarefaSelecionada.gTipo === 'rh' && (
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(2, 1fr)', gap:'30px', border:'0.5px solid #dcdde1', padding:'45px', background:'#f8fafc', marginBottom:'45px' }}>
+                <div style={fieldBoxInner}><label style={labelMStyle}>TÍTULO</label><p style={{fontSize:'18px', fontWeight: '700'}}>{tarefaSelecionada.titulo}</p></div>
+                <div style={fieldBoxInner}><label style={labelMStyle}>SETOR</label><p style={{fontSize:'18px', color:'#0ea5e9', fontWeight: '700'}}>{tarefaSelecionada.setor?.toUpperCase()}</p></div>
+                <div style={{...fieldBoxInner, gridColumn:'span 2'}}><label style={labelMStyle}>DESCRIÇÃO</label><p style={{fontSize:'16px', lineHeight:'1.6'}}>{tarefaSelecionada.descricao}</p></div>
+            </div>
+        )}
 
         <div style={{marginTop:'45px'}}>
             <label style={labelMStyle}>ARQUIVOS E DOCUMENTOS</label>
             <div style={{display:'flex', gap:'15px', marginTop:'15px', flexWrap: 'wrap'}}>
                 {tarefaSelecionada.gTipo === 'pagar' ? (
                    <>
-                     {tarefaSelecionada.anexo_nf && <AttachmentTag icon={<FileText size={18} />} label="Nota Fiscal" fileUrl={tarefaSelecionada.anexo_nf} onUpload={f => handleUpdateFileDirect(tarefaSelecionada, 'anexo_nf', f)} />}
+                     <AttachmentTag icon={<FileText size={18} />} label="Nota Fiscal" fileUrl={tarefaSelecionada.anexo_nf} onUpload={f => handleUpdateFileDirect(tarefaSelecionada, 'anexo_nf', f)} />
                      {tarefaSelecionada.anexo_boleto && <AttachmentTag icon={<Barcode size={18} />} label="Boleto" fileUrl={tarefaSelecionada.anexo_boleto} onUpload={f => handleUpdateFileDirect(tarefaSelecionada, 'anexo_boleto', f)} />}
-                     {tarefaSelecionada.anexo_requisicao && <AttachmentTag icon={<Paperclip size={18} />} label="Anexo" fileUrl={tarefaSelecionada.anexo_requisicao} onUpload={f => handleUpdateFileDirect(tarefaSelecionada, 'anexo_requisicao', f)} />}
-                   </>
-                ) : tarefaSelecionada.gTipo === 'receber' ? (
-                   <>
-                     {tarefaSelecionada.anexo_nf_servico && <AttachmentTag icon={<FileText size={18} />} label="Anexo" fileUrl={tarefaSelecionada.anexo_nf_servico} onUpload={f => handleUpdateFileDirect(tarefaSelecionada, 'anexo_nf_servico', f)} />}
-                     {tarefaSelecionada.anexo_nf_peca && <AttachmentTag icon={<ClipboardList size={18} />} label="Anexo" fileUrl={tarefaSelecionada.anexo_nf_peca} onUpload={f => handleUpdateFileDirect(tarefaSelecionada, 'anexo_nf_peca', f)} />}
-                     {tarefaSelecionada.anexo_boleto && <AttachmentTag icon={<Barcode size={18} />} label="Anexo" fileUrl={tarefaSelecionada.anexo_boleto} onUpload={f => handleUpdateFileDirect(tarefaSelecionada, 'anexo_boleto', f)} />}
+                     {tarefaSelecionada.comprovante_pagamento && <AttachmentTag icon={<CheckCircle size={18} />} label="Comprovante Pagamento" fileUrl={tarefaSelecionada.comprovante_pagamento} onUpload={f => handleUpdateFileDirect(tarefaSelecionada, 'comprovante_pagamento', f)} />}
+                     {tarefaSelecionada.anexo_requisicao && tarefaSelecionada.anexo_requisicao.split(',').map((url, i) => url.trim() && (
+                       <AttachmentTag key={`req-old-${i}`} icon={<Paperclip size={18} />} label={`Requisição ${i + 1}`} fileUrl={url.trim()} onUpload={null} />
+                     ))}
+                     {getRequisicoes(tarefaSelecionada).map((req, i) => (
+                       <AttachmentTag
+                         key={i}
+                         icon={<Paperclip size={18} />}
+                         label={`REQ ${req.numero || (i + 1)}`}
+                         fileUrl={req.anexo_url}
+                         onUpload={f => handleRequisicaoAnexo(tarefaSelecionada, i, f)}
+                       />
+                     ))}
                    </>
                 ) : (
                    <>
@@ -588,7 +689,6 @@ function HomeFinanceiroContent() {
                 </button>
             )}
 
-            {/* BOTÕES DE VENCIMENTO QUANDO EM AGUARDANDO VENCIMENTO */}
             {tarefaSelecionada.gTipo === 'boleto' && tarefaSelecionada.status === 'aguardando_vencimento' && (
                 <div style={{ display: 'flex', gap: '20px', flex: 1 }}>
                     <button onClick={() => handlePedirRecobranca(tarefaSelecionada)} style={{ ...btnPrimaryBeautified, flex: 1, background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)' }}>
@@ -674,9 +774,9 @@ const btnSuccessBeautified = { flex: 1, background: 'linear-gradient(135deg, #10
 const zoomBtnStyle = { background: 'transparent', border: 'none', cursor: 'pointer' };
 
 export default function HomeFinanceiro() {
-  return (
+ return (
     <Suspense fallback={<div style={{ position: 'fixed', inset: 0, background: '#f8fafc', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span style={{ color: '#0f172a', fontFamily: 'Montserrat, sans-serif', fontSize: '20px', letterSpacing: '4px' }}>CARREGANDO...</span></div>}>
       <HomeFinanceiroContent />
     </Suspense>
-  )
+ )
 }

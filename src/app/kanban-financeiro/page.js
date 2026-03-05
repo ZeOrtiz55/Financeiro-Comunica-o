@@ -6,10 +6,10 @@ import { useRouter } from 'next/navigation'
 import MenuLateral from '@/components/MenuLateral'
 // ÍCONES COMPLETOS
 import { 
-Bell, MessageSquare, X, Menu, PlusCircle, FileText, Download, 
-CheckCircle, LogOut, User, ShieldCheck, Upload, Send, 
-Calendar, CreditCard, Hash, History, ArrowLeft, Paperclip, ImageIcon, 
-CheckCheck, Eye, LayoutDashboard, ClipboardList, UserCheck, TrendingUp, TrendingDown, Search, Trash2, Settings, RefreshCw, AlertCircle, Tag, Lock, DollarSign, Barcode, Check
+Bell, MessageSquare, X, Menu, PlusCircle, FileText, Download,
+CheckCircle, LogOut, User, ShieldCheck, Upload, Send,
+Calendar, CreditCard, Hash, History, ArrowLeft, Paperclip, ImageIcon,
+CheckCheck, Eye, LayoutDashboard, ClipboardList, UserCheck, TrendingUp, TrendingDown, Search, Trash2, Settings, RefreshCw, AlertCircle, Tag, Lock, DollarSign, Barcode, Check, Clock
 } from 'lucide-react'
 
 // --- 1. TELA DE CARREGAMENTO ---
@@ -36,6 +36,35 @@ try {
   }
   return dataStr;
 } catch (e) { return dataStr; }
+};
+
+const formatarMoeda = (valor) => {
+  const num = parseFloat(valor);
+  if (isNaN(num)) return 'R$ 0,00';
+  return num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+};
+
+const calcTempo = (dateStr) => {
+  if (!dateStr) return null;
+  const diffMs = new Date() - new Date(dateStr);
+  const mins = Math.floor(diffMs / 60000);
+  const hours = Math.floor(mins / 60);
+  const days = Math.floor(hours / 24);
+  const months = Math.floor(days / 30);
+  if (months > 0) return `${months} ${months === 1 ? 'mes' : 'meses'}`;
+  if (days > 0) return `${days} ${days === 1 ? 'dia' : 'dias'}`;
+  if (hours > 0) return `${hours}h`;
+  if (mins > 0) return `${mins}min`;
+  return 'agora';
+};
+
+const STATUS_CONFIG = {
+  gerar_boleto:          { label: 'GERAR BOLETO',          bg: '#eff6ff', color: '#3b82f6', border: '#bfdbfe' },
+  enviar_cliente:        { label: 'ENVIAR PARA CLIENTE',   bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0' },
+  aguardando_vencimento: { label: 'AGUARDANDO VENCIMENTO', bg: '#fffbeb', color: '#d97706', border: '#fde68a' },
+  pago:                  { label: 'PAGO',                  bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0' },
+  vencido:               { label: 'VENCIDO',               bg: '#fff5f5', color: '#dc2626', border: '#fecaca' },
+  concluido:             { label: 'CONCLUIDO',             bg: '#f0fdf4', color: '#15803d', border: '#bbf7d0' },
 };
 
 function GeometricBackground() {
@@ -119,81 +148,114 @@ const handleLogout = async () => {
 
 const carregarDados = async () => {
   try {
-    const { data } = await supabase.from('Chamado_NF').select('*');
+    const { data } = await supabase.from('Chamado_NF').select('*').order('id', { ascending: false });
     const hoje = new Date(); hoje.setHours(0,0,0,0);
 
-    // ─── AUTO-MOVE: gerar_boleto + boleto anexado → enviar_cliente ───────────
+    // ─── AUTO-MOVE: gerar_boleto + boleto anexado → enviar_cliente ────────────
     const formasSemBoleto = ['Á Vista no Pix', 'Cartão a Vista', 'Cartão Parcelado'];
-    const paraAutoMover = (data || []).filter(c =>
+    const paraAutoMoverEnviar = (data || []).filter(c =>
       (c.status === 'gerar_boleto' || c.status === 'validar_pix') &&
       c.anexo_boleto &&
       !formasSemBoleto.includes(c.forma_pagamento)
     );
-    if (paraAutoMover.length > 0) {
-      await Promise.all(paraAutoMover.map(c =>
-        supabase.from('Chamado_NF').update({
-          status: 'enviar_cliente',
-          tarefa: 'Enviar para o Cliente',
-          setor: 'Pós-Vendas'
-        }).eq('id', c.id)
+    if (paraAutoMoverEnviar.length > 0) {
+      await Promise.all(paraAutoMoverEnviar.map(c =>
+        supabase.from('Chamado_NF').update({ status: 'enviar_cliente', tarefa: 'Enviar para o Cliente', setor: 'Pós-Vendas' }).eq('id', c.id)
       ));
-      // Atualiza o array local para refletir já sem nova busca
-      paraAutoMover.forEach(c => {
+      paraAutoMoverEnviar.forEach(c => {
         const idx = (data || []).findIndex(d => d.id === c.id);
         if (idx !== -1) data[idx] = { ...data[idx], status: 'enviar_cliente', tarefa: 'Enviar para o Cliente', setor: 'Pós-Vendas' };
       });
     }
-    // ─────────────────────────────────────────────────────────────────────────
+
+    // ─── AUTO-MOVE: Boleto 30 Dias vencido → pago (salva no banco) ────────────
+    const paraAutoPago = (data || []).filter(c =>
+      c.status === 'aguardando_vencimento' &&
+      c.forma_pagamento === 'Boleto 30 Dias' &&
+      c.vencimento_boleto && new Date(c.vencimento_boleto + 'T00:00:00') < hoje
+    );
+    if (paraAutoPago.length > 0) {
+      await Promise.all(paraAutoPago.map(c => supabase.from('Chamado_NF').update({ status: 'pago' }).eq('id', c.id)));
+      paraAutoPago.forEach(c => {
+        const idx = (data || []).findIndex(d => d.id === c.id);
+        if (idx !== -1) data[idx] = { ...data[idx], status: 'pago' };
+      });
+    }
+
+    // ─── AUTO-MOVE: boleto simples vencido sem comprovante → vencido (salva no banco) ─
+    const paraAutoVencido = (data || []).filter(c =>
+      c.status === 'aguardando_vencimento' &&
+      c.forma_pagamento !== 'Boleto 30 Dias' &&
+      c.forma_pagamento !== 'Boleto Parcelado' &&
+      c.forma_pagamento !== 'Cartão Parcelado' &&
+      !c.comprovante_pagamento && !c.comprovante_pagamento_p1 &&
+      c.vencimento_boleto && new Date(c.vencimento_boleto + 'T00:00:00') < hoje
+    );
+    if (paraAutoVencido.length > 0) {
+      await Promise.all(paraAutoVencido.map(c => supabase.from('Chamado_NF').update({ status: 'vencido' }).eq('id', c.id)));
+      paraAutoVencido.forEach(c => {
+        const idx = (data || []).findIndex(d => d.id === c.id);
+        if (idx !== -1) data[idx] = { ...data[idx], status: 'vencido' };
+      });
+    }
+
+    // ─── HELPER: calcula estado de cada parcela ────────────────────────────────
+    const calcParcelas = (c) => {
+      const qtd = parseInt(c.qtd_parcelas || 1);
+      const valorUnit = (c.valor_servico || 0) / qtd;
+      const datas = [c.vencimento_boleto, ...(c.datas_parcelas || '').split(/[\s,]+/).filter(d => d.includes('-'))];
+      const hoje3 = new Date(hoje); hoje3.setDate(hoje3.getDate() + 3);
+      return Array.from({ length: qtd }, (_, i) => {
+        const comp = i === 0 ? (c.comprovante_pagamento_p1 || c.comprovante_pagamento) : c[`comprovante_pagamento_p${i + 1}`];
+        const dtStr = datas[i] || null;
+        const dt = dtStr ? new Date(dtStr + 'T00:00:00') : null;
+        let estado;
+        if (comp) estado = 'pago';
+        else if (dt && dt < hoje) estado = 'vencido';
+        else if (dt && dt <= hoje3) estado = 'proximo';
+        else estado = 'futuro';
+        return {
+          num: i + 1,
+          data: dtStr,
+          valor: valorUnit,
+          comprovante: comp || null,
+          estado,
+          campo_comprovante: i === 0 ? 'comprovante_pagamento_p1' : `comprovante_pagamento_p${i + 1}`
+        };
+      });
+    };
 
     const processados = (data || []).map(c => {
-      let st = c.status || 'gerar_boleto';
-      const venc = c.vencimento_boleto ? new Date(c.vencimento_boleto) : null;
-      if (venc) venc.setHours(0,0,0,0);
-      const isParc = c.forma_pagamento?.toLowerCase().includes('parcelado');
+      const isBoletoParc = c.forma_pagamento === 'Boleto Parcelado';
+      const isCartaoParc = c.forma_pagamento === 'Cartão Parcelado';
 
-      // Só auto-move para 'pago' se NÃO for parcelado (parcelado tem datas por parcela)
-      if (st === 'aguardando_vencimento' && venc && venc < hoje && !isParc) st = 'pago';
+      const parcelas_info = isBoletoParc ? calcParcelas(c) : null;
 
-      // Verifica se alguma parcela venceu sem comprovante (para alertar no Home Financeiro)
-      let parcelaVencida = false;
-      if (st === 'aguardando_vencimento' && isParc) {
-        const qtd = c.qtd_parcelas || 1;
-        const datas = [c.vencimento_boleto, ...(c.datas_parcelas || '').split(/[\s,]+/).filter(d => d.includes('-'))];
-        for (let i = 0; i < qtd; i++) {
-          const comprovante = i === 0 ? (c.comprovante_pagamento || c.comprovante_pagamento_p1) : c[`comprovante_pagamento_p${i + 1}`];
-          const dataParc = datas[i] ? new Date(datas[i]) : null;
-          if (dataParc) dataParc.setHours(0,0,0,0);
-          if (dataParc && dataParc < hoje && !comprovante) { parcelaVencida = true; break; }
-        }
-      }
-
-      // isPagamentoRealizado verifica todos os comprovantes de parcelas
       let isPagamentoRealizado = false;
-      if (isParc) {
-        const qtd = parseInt(c.qtd_parcelas || 1);
-        let conferidos = 0;
-        for (let i = 1; i <= qtd; i++) {
-          if (i === 1 ? (c.comprovante_pagamento_p1 || c.comprovante_pagamento) : c[`comprovante_pagamento_p${i}`]) conferidos++;
-        }
-        isPagamentoRealizado = conferidos === qtd;
+      if (isBoletoParc && parcelas_info) {
+        isPagamentoRealizado = parcelas_info.every(p => p.estado === 'pago');
       } else {
         isPagamentoRealizado = !!(c.comprovante_pagamento || c.comprovante_pagamento_p1);
       }
 
+      const parcelaVencida = isBoletoParc && parcelas_info ? parcelas_info.some(p => p.estado === 'vencido') : false;
+      const parcelaProxima = isBoletoParc && parcelas_info ? parcelas_info.some(p => p.estado === 'proximo') : false;
+
       return {
         ...c,
-        status: st,
         valor_exibicao: c.valor_servico,
         isPagamentoRealizado,
-        parcelaVencida
+        parcelaVencida,
+        parcelaProxima,
+        parcelas_info
       };
     });
+
     setChamados(processados);
-    
-    // SINCRONIZA O MODAL SE ESTIVER ABERTO
+
     if (tarefaSelecionada) {
-        const itemAtualizado = processados.find(x => x.id === tarefaSelecionada.id);
-        if (itemAtualizado) setTarefaSelecionada(itemAtualizado);
+      const itemAtualizado = processados.find(x => x.id === tarefaSelecionada.id);
+      if (itemAtualizado) setTarefaSelecionada(itemAtualizado);
     }
   } catch (err) { console.error("Erro ao carregar dados:", err); }
 }
@@ -204,7 +266,7 @@ useEffect(() => {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'Chamado_NF' }, () => carregarDados())
       .subscribe();
     return () => { supabase.removeChannel(channel) };
-}, [tarefaSelecionada?.id ? tarefaSelecionada.id : 'global']);
+}, []);
 
 useEffect(() => {
     const init = async () => {
@@ -252,21 +314,26 @@ const handleUpdateFileDirect = async (id, field, file) => {
 };
 
 const handleActionMoveStatus = async (t, newStatus) => {
+      const now = new Date().toISOString();
       const { error } = await supabase.from('Chamado_NF').update({ status: newStatus }).eq('id', t.id);
       if (!error) {
-          alert(newStatus === 'concluido' ? "Card Concluído!" : "Card movido!");
+          // status_changed_at — atualiza silenciosamente (coluna opcional no Supabase)
+          supabase.from('Chamado_NF').update({ status_changed_at: now }).eq('id', t.id).catch(() => {});
+          alert(newStatus === 'concluido' ? "Card Concluido!" : "Card movido!");
           carregarDados();
       }
 };
 
 const handleActionCobrarCliente = async (t) => {
       const newVal = (t.recombrancas_qtd || 0) + 1;
-      const { error } = await supabase.from('Chamado_NF').update({ 
-          tarefa: 'Cobrar Cliente (Recobrança)', 
+      const now = new Date().toISOString();
+      const { error } = await supabase.from('Chamado_NF').update({
+          tarefa: 'Cobrar Cliente (Recobrança)',
           recombrancas_qtd: newVal,
           setor: 'Pós-Vendas'
       }).eq('id', t.id);
       if (!error) {
+          supabase.from('Chamado_NF').update({ status_changed_at: now }).eq('id', t.id).catch(() => {});
           alert("Recobrança enviada ao Pós-Vendas!");
           setTarefaSelecionada(null);
           carregarDados();
@@ -274,27 +341,31 @@ const handleActionCobrarCliente = async (t) => {
 };
 
 const handleActionPedirRecobranca = async (t, moverParaVencido = true) => {
-    window.confirm("Deseja alterar o boleto?");
+    if (!window.confirm("Deseja solicitar recobrança ao Pós-Vendas?")) return;
     const newVal = (t.recombrancas_qtd || 0) + 1;
-    
-    let updateData = { 
-        tarefa: 'Cobrar Cliente (Recobrança)', 
+    const now = new Date().toISOString();
+
+    let updateData = {
+        tarefa: 'Cobrar Cliente (Recobrança)',
         recombrancas_qtd: newVal,
         setor: 'Pós-Vendas'
     };
-    
+
     if (moverParaVencido) updateData.status = 'vencido';
 
     const { error } = await supabase.from('Chamado_NF').update(updateData).eq('id', t.id);
     if (!error) {
+        if (moverParaVencido) supabase.from('Chamado_NF').update({ status_changed_at: now }).eq('id', t.id).catch(() => {});
         alert("Recobrança enviada ao Pós-Vendas!");
         carregarDados();
     }
 };
 
 const handleActionSomenteVencido = async (t) => {
+    const now = new Date().toISOString();
     const { error } = await supabase.from('Chamado_NF').update({ status: 'vencido' }).eq('id', t.id);
     if (!error) {
+        supabase.from('Chamado_NF').update({ status_changed_at: now }).eq('id', t.id).catch(() => {});
         alert("Card movido para Vencido!");
         carregarDados();
     }
@@ -303,7 +374,7 @@ const handleActionSomenteVencido = async (t) => {
 const handleGerarBoletoFaturamentoFinal = async (id, fileArg) => {
     const arquivo = fileArg || fileBoleto;
     if (!arquivo) return alert("Anexe o arquivo.");
-    const path = `boletos/${Date.now()}-${arquivo.name}`;
+    const path = `boletos/${Date.now()}-${arquivo.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
     await supabase.storage.from('anexos').upload(path, arquivo);
     const { data } = supabase.storage.from('anexos').getPublicUrl(path);
 
@@ -315,6 +386,7 @@ const handleGerarBoletoFaturamentoFinal = async (id, fileArg) => {
     };
 
     await supabase.from('Chamado_NF').update(updateData).eq('id', id);
+    supabase.from('Chamado_NF').update({ status_changed_at: new Date().toISOString() }).eq('id', id).catch(() => {});
     setTarefaSelecionada(null); carregarDados();
 };
 
@@ -328,38 +400,10 @@ const chamadosFiltrados = chamados.filter(c => {
 if (loading) return <LoadingScreen />
 
 // --- LÓGICAS CONDICIONAIS ---
-const isPixOuCartaoVista = tarefaSelecionada && ['Á Vista no Pix', 'Cartão a Vista', 'Cartão Parcelado'].includes(tarefaSelecionada.forma_pagamento);
-const isParcelamentoOuBoleto30 = tarefaSelecionada && ['Boleto 30 Dias', 'Boleto Parcelado', 'Cartão Parcelado'].includes(tarefaSelecionada.forma_pagamento);
+const isPixOuCartaoVista = tarefaSelecionada && ['Á Vista no Pix', 'Cartão a Vista'].includes(tarefaSelecionada.forma_pagamento);
 const isBoleto30 = tarefaSelecionada && tarefaSelecionada.forma_pagamento === 'Boleto 30 Dias';
-const isParceladoBoleto = tarefaSelecionada?.forma_pagamento?.toLowerCase().includes('parcelado');
-
-const valorIndividual = tarefaSelecionada ? (tarefaSelecionada.valor_servico / (tarefaSelecionada.qtd_parcelas || 1)).toFixed(2) : 0;
-
-// --- LÓGICA DE VENCIMENTO PARCELADO ---
-const checkVencimentoParcelado = () => {
-    if(!tarefaSelecionada || !isParceladoBoleto) return { vencido: false, moveParaVencido: false, apenasUma: false };
-    const hoje = new Date(); hoje.setHours(0,0,0,0);
-    const qtd = tarefaSelecionada.qtd_parcelas || 1;
-    const datas = [tarefaSelecionada.vencimento_boleto, ...(tarefaSelecionada.datas_parcelas || "").split(/[\s,]+/).filter(d => d.includes('-'))];
-    const pagas = [tarefaSelecionada.status_p1 === 'pago', tarefaSelecionada.status_p2 === 'pago', tarefaSelecionada.status_p3 === 'pago', tarefaSelecionada.status_p4 === 'pago', tarefaSelecionada.status_p5 === 'pago'];
-    
-    let vencidasIndices = [];
-    datas.forEach((d, i) => {
-        if (i < qtd && d) {
-            const dt = new Date(d); dt.setHours(0,0,0,0);
-            if(dt < hoje && !pagas[i]) vencidasIndices.push(i);
-        }
-    });
-
-    const totalPagasCount = pagas.filter((p, i) => i < qtd && p).length;
-    // Condição crítica: Todas vencidas OU (Todas anteriores pagas e última vencida)
-    const moveParaVencido = (vencidasIndices.length === qtd) || (totalPagasCount === (qtd - 1) && vencidasIndices.includes(qtd - 1));
-    const apenasUma = vencidasIndices.length > 0 && !moveParaVencido;
-
-    return { vencido: vencidasIndices.length > 0, moveParaVencido, apenasUma };
-};
-
-const statusVencimento = checkVencimentoParcelado();
+const isBoletoParcelado = tarefaSelecionada?.forma_pagamento === 'Boleto Parcelado';
+const isCartaoParcelado = tarefaSelecionada?.forma_pagamento === 'Cartão Parcelado';
 
 return (
     <div style={{ display: 'flex', height: '100vh', width: '100vw', fontFamily: 'Montserrat, sans-serif', background: '#f8fafc', overflow: 'hidden' }}>
@@ -407,13 +451,8 @@ return (
               {t.nom_cliente?.toUpperCase()} {t.status === 'concluido' && "✓"}
               </h4>
               {t.isPagamentoRealizado && (
-                  <div style={{marginTop: '10px', display:'flex', alignItems:'center', gap:'8px', color: '#27ae60', fontSize: '15px', fontWeight: '600'}} title="Comprovante de pagamento anexado">
+                  <div style={{marginTop: '10px', display:'flex', alignItems:'center', gap:'8px', color: '#27ae60', fontSize: '15px', fontWeight: '600'}}>
                       <CheckCircle size={16} /> PAGAMENTO REALIZADO
-                  </div>
-              )}
-              {t.parcelaVencida && !t.isPagamentoRealizado && (
-                  <div style={{marginTop: '10px', display:'flex', alignItems:'center', gap:'8px', color: '#ef4444', fontSize: '13px', fontWeight: '700', background: '#fee2e2', padding: '6px 12px', borderRadius: '8px'}} title="Uma ou mais parcelas venceram sem comprovante">
-                      <AlertCircle size={14} /> PARCELA VENCIDA SEM COMPROVANTE
                   </div>
               )}
               {t.anexo_boleto && (t.status === 'gerar_boleto' || t.status === 'validar_pix') && (
@@ -421,12 +460,69 @@ return (
                     <FileText size={16} /> BOLETO ANEXADO
                   </div>
               )}
+
+              {/* ── INDICADORES BOLETO PARCELADO ── */}
+              {t.forma_pagamento === 'Boleto Parcelado' && t.parcelas_info && (
+                <div style={{ marginTop: '12px' }}>
+                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginBottom: '6px' }}>
+                    {t.parcelas_info.map((p, i) => (
+                      <div key={i}
+                        title={`${p.num}ª parcela — ${p.estado === 'pago' ? 'Paga' : p.estado === 'vencido' ? 'EM ATRASO — sem comprovante' : p.estado === 'proximo' ? 'Vence em breve' : 'A vencer'} — ${p.data ? formatarDataBR(p.data) : 'Sem data definida'}`}
+                        style={{ width: '16px', height: '16px', borderRadius: '50%', flexShrink: 0, cursor: 'default',
+                          background: p.estado === 'pago' ? '#27ae60' : p.estado === 'vencido' ? '#e74c3c' : p.estado === 'proximo' ? '#f39c12' : '#bdc3c7',
+                          border: p.estado === 'vencido' ? '2px solid #c0392b' : '2px solid transparent'
+                        }}
+                      />
+                    ))}
+                    <span style={{ fontSize: '11px', color: '#718093', marginLeft: '4px' }}>
+                      {t.parcelas_info.filter(p => p.estado === 'pago').length}/{t.parcelas_info.length} pagas
+                    </span>
+                  </div>
+                  {t.parcelaVencida && !t.isPagamentoRealizado && (
+                    <div style={{ display:'flex', alignItems:'center', gap:'6px', background:'#fee2e2', padding:'8px 12px', borderRadius:'6px' }}>
+                      <AlertCircle size={13} color="#e74c3c" />
+                      <span style={{ color:'#e74c3c', fontSize:'12px', fontWeight:'800' }}>
+                        {t.parcelas_info.filter(p => p.estado === 'vencido').length === 1 ? 'UMA PARCELA EM ATRASO' : `${t.parcelas_info.filter(p => p.estado === 'vencido').length} PARCELAS EM ATRASO`}
+                      </span>
+                    </div>
+                  )}
+                  {t.parcelaProxima && !t.parcelaVencida && (
+                    <div style={{ display:'flex', alignItems:'center', gap:'6px', background:'#fffbeb', padding:'8px 12px', borderRadius:'6px' }}>
+                      <AlertCircle size={13} color="#f39c12" />
+                      <span style={{ color:'#d97706', fontSize:'12px', fontWeight:'800' }}>PARCELA VENCE EM BREVE</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── INDICADOR CARTÃO PARCELADO ── */}
+              {t.forma_pagamento === 'Cartão Parcelado' && t.qtd_parcelas && (
+                <div style={{ marginTop: '10px' }}>
+                  <span style={{ background: 'rgba(139,92,246,0.12)', color: '#7c3aed', fontSize: '12px', fontWeight: '800', padding: '5px 14px', borderRadius: '20px', border: '1px solid rgba(139,92,246,0.25)' }}>
+                    {t.qtd_parcelas}x de {formatarMoeda((t.valor_servico || 0) / t.qtd_parcelas)}
+                  </span>
+                </div>
+              )}
             </div>
             <div onClick={() => setTarefaSelecionada(t)} style={{ padding: '25px', background:'transparent', cursor: 'pointer' }}>
               <div style={cardInfoStyle}><CreditCard size={16}/> <span>FORMA:</span> {t.forma_pagamento?.toUpperCase()}</div>
               <div style={cardInfoStyle}><Calendar size={16}/> <span>VENC:</span> {formatarDataBR(t.vencimento_boleto)}</div>
-              <div style={{fontSize:'32px', fontWeight:'300', margin:'15px 0', color:'#2f3640'}}>R$ {t.valor_exibicao}</div>
+              <div style={{fontSize:'32px', fontWeight:'300', margin:'15px 0', color:'#2f3640'}}>{formatarMoeda(t.valor_exibicao)}</div>
               <div style={highlightIdStyle}>ID: #{t.id}</div>
+              {(t.created_at || t.status_changed_at) && (
+                <div style={{ display: 'flex', gap: '6px', marginTop: '10px', flexWrap: 'wrap' }}>
+                  {t.created_at && (
+                    <span style={{ fontSize: '10px', color: '#718093', display: 'flex', alignItems: 'center', gap: '3px', border: '1px solid #dcdde1', padding: '3px 8px' }}>
+                      <Clock size={10} /> {calcTempo(t.created_at)}
+                    </span>
+                  )}
+                  {t.status_changed_at && (
+                    <span style={{ fontSize: '10px', color: '#4f46e5', display: 'flex', alignItems: 'center', gap: '3px', border: '1px solid #c7d2fe', padding: '3px 8px', background: '#eff6ff' }}>
+                      <Clock size={10} /> fase: {calcTempo(t.status_changed_at)}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           </div>
           ))}
@@ -444,8 +540,31 @@ return (
         <div style={{ flex: '1.2', padding: '60px', overflowY: 'auto' }}>
           <button onClick={() => setTarefaSelecionada(null)} className="btn-back" title="Voltar para a visualização do quadro"><ArrowLeft size={18}/> VOLTAR AO PAINEL</button>
           
-          <h2 style={{fontSize:'32px', fontWeight:'400', margin:'30px 0', letterSpacing:'-1px', color:'#2f3640', lineHeight: '1.1'}}>{tarefaSelecionada.nom_cliente?.toUpperCase()}</h2>
-          
+          <h2 style={{fontSize:'32px', fontWeight:'400', margin:'30px 0 16px', letterSpacing:'-1px', color:'#2f3640', lineHeight: '1.1'}}>{tarefaSelecionada.nom_cliente?.toUpperCase()}</h2>
+
+          {/* BADGE DE FASE ATUAL + TIMERS */}
+          {(() => {
+            const cfg = STATUS_CONFIG[tarefaSelecionada.status] || { label: tarefaSelecionada.status, bg: '#f1f5f9', color: '#64748b', border: '#e2e8f0' };
+            return (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '36px', flexWrap: 'wrap' }}>
+                <div style={{ padding: '8px 20px', background: cfg.bg, color: cfg.color, border: `1.5px solid ${cfg.border}`, fontSize: '11px', fontWeight: '800', letterSpacing: '3px', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: cfg.color, flexShrink: 0 }} />
+                  FASE: {cfg.label}
+                </div>
+                {tarefaSelecionada.created_at && (
+                  <span style={{ fontSize: '12px', color: '#718093', display: 'flex', alignItems: 'center', gap: '5px', border: '1px solid #dcdde1', padding: '6px 14px' }}>
+                    <Clock size={12} /> Criado ha {calcTempo(tarefaSelecionada.created_at)}
+                  </span>
+                )}
+                {tarefaSelecionada.status_changed_at && (
+                  <span style={{ fontSize: '12px', color: '#4f46e5', display: 'flex', alignItems: 'center', gap: '5px', border: '1px solid #c7d2fe', padding: '6px 14px', background: '#eff6ff', fontWeight: '600' }}>
+                    <Clock size={12} /> Nesta fase ha {calcTempo(tarefaSelecionada.status_changed_at)}
+                  </span>
+                )}
+              </div>
+            );
+          })()}
+
           <div style={{display:'flex', gap:'30px', marginBottom:'50px'}}>
             <div style={fieldBoxModal}>
               <label style={labelModalStyle}>Condição</label>
@@ -489,94 +608,117 @@ return (
             )}
           </div>
 
-          {/* --- SEÇÃO DE PARCELAMENTO --- */}
-          {isParcelamentoOuBoleto30 && !isBoleto30 && (
-            <div style={{display:'flex', flexDirection: 'column', gap:'20px', marginBottom:'50px', background: 'rgba(245, 246, 250, 0.5)', padding: '40px', border: '1px solid #dcdde1'}}>
-                <div style={{display: 'flex', gap: '30px', borderBottom: '1px solid #dcdde1', paddingBottom: '20px', marginBottom: '10px'}}>
-                  <div style={{flex: 1}}>
-                      <label style={labelModalStyle}>Qtd. Parcelas</label>
-                      <select 
-                        style={{...inputStyleModal, fontSize: '24px'}}
-                        value={tarefaSelecionada.qtd_parcelas || 1}
-                        disabled={tarefaSelecionada.status === 'concluido'}
-                        onChange={e => handleUpdateField(tarefaSelecionada.id, 'qtd_parcelas', parseInt(e.target.value))}
-                      >
-                        <option value="1">1 Parcela</option>
-                        {[2,3,4,5].map(v => <option key={v} value={v}>{v} Parcelas</option>)}
-                      </select>
-                  </div>
-                  <div style={{flex: 1}}>
-                      <label style={labelModalStyle}>Cálculo Unitário</label>
-                      <div style={{...inputStyleModal, background: '#f8fafc', color: '#718093', borderStyle: 'dashed'}}>R$ {valorIndividual}</div>
+          {/* --- SEÇÃO BOLETO PARCELADO --- */}
+          {isBoletoParcelado && (
+            <div style={{ display:'flex', flexDirection:'column', gap:'16px', marginBottom:'50px', background:'rgba(245,246,250,0.5)', padding:'40px', border:'1px solid #dcdde1' }}>
+              <div style={{ display:'flex', gap:'30px', borderBottom:'1px solid #dcdde1', paddingBottom:'20px' }}>
+                <div style={{ flex: 1 }}>
+                  <label style={labelModalStyle}>Qtd. Parcelas</label>
+                  <select
+                    style={{ ...inputStyleModal, fontSize:'24px' }}
+                    value={tarefaSelecionada.qtd_parcelas || 1}
+                    disabled={tarefaSelecionada.status === 'concluido'}
+                    onChange={e => handleUpdateField(tarefaSelecionada.id, 'qtd_parcelas', parseInt(e.target.value))}
+                  >
+                    {[1,2,3,4,5].map(v => <option key={v} value={v}>{v} {v === 1 ? 'Parcela' : 'Parcelas'}</option>)}
+                  </select>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={labelModalStyle}>Valor por Parcela</label>
+                  <div style={{ ...inputStyleModal, background:'#f8fafc', color:'#718093', borderStyle:'dashed', fontSize:'24px' }}>
+                    {formatarMoeda((tarefaSelecionada.valor_servico || 0) / (tarefaSelecionada.qtd_parcelas || 1))}
                   </div>
                 </div>
+              </div>
 
-                {tarefaSelecionada.forma_pagamento === 'Boleto Parcelado' && (
-                  <div style={{display: 'flex', flexDirection: 'column', gap: '15px'}}>
-                      {/* PARCELA 1 */}
-                      <div style={{display: 'grid', gridTemplateColumns: '60px 150px 220px 150px 320px', gap: '20px', alignItems: 'center', background: '#ffffff', padding: '15px', border: '1px solid #e2e8f0'}}>
-                          <input 
-                            type="checkbox" 
-                            style={{width:'25px', height:'25px', cursor:'pointer'}}
-                            checked={tarefaSelecionada.status_p1 === 'pago'} 
-                            onChange={e => handleUpdateField(tarefaSelecionada.id, 'status_p1', e.target.checked ? 'pago' : 'pendente')}
-                          />
-                          <span style={{...labelModalStyle, marginBottom: 0, fontWeight: '700'}}>1ª PARC</span>
-                          <input 
-                            type="date"
-                            style={{...inputStyleModal, fontSize: '16px', padding: '10px'}}
-                            defaultValue={tarefaSelecionada.vencimento_boleto}
-                            disabled={tarefaSelecionada.status === 'concluido'}
-                            onBlur={e => handleUpdateField(tarefaSelecionada.id, 'vencimento_boleto', e.target.value)}
-                          />
-                          <span style={{fontSize: '18px', color: '#2f3640', fontWeight: '500'}}>R$ {valorIndividual}</span>
-                          <AttachmentTag 
-                            icon={<CheckCircle size={16} />} 
-                            label="Comprovante" 
-                            fileUrl={tarefaSelecionada.comprovante_pagamento_p1 || tarefaSelecionada.comprovante_pagamento} 
-                            onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada.id, 'comprovante_pagamento_p1', file)} 
-                            disabled={tarefaSelecionada.status === 'concluido'} 
-                          />
+              {/* Linhas por parcela com cor por estado */}
+              <div style={{ display:'flex', flexDirection:'column', gap:'10px' }}>
+                {(tarefaSelecionada.parcelas_info || []).map((p, i) => {
+                  const cores = {
+                    pago:    { fundo: '#f0fdf4', borda: '#86efac', label: '#27ae60', texto: 'PAGO' },
+                    vencido: { fundo: '#fff5f5', borda: '#fca5a5', label: '#e74c3c', texto: 'EM ATRASO!' },
+                    proximo: { fundo: '#fffbeb', borda: '#fcd34d', label: '#d97706', texto: 'VENCE EM BREVE' },
+                    futuro:  { fundo: '#ffffff', borda: '#e2e8f0', label: '#718093', texto: 'A VENCER' },
+                  };
+                  const c = cores[p.estado];
+                  return (
+                    <div key={i} style={{ display:'grid', gridTemplateColumns:'130px 190px 160px 1fr', gap:'16px', alignItems:'center', background: c.fundo, padding:'18px', border:`1.5px solid ${c.borda}`, borderRadius:'8px' }}>
+                      <div>
+                        <div style={{ fontSize:'11px', color:'#718093', fontWeight:'700', letterSpacing:'1px', marginBottom:'4px' }}>{p.num}ª PARCELA</div>
+                        <div style={{ fontSize:'13px', fontWeight:'800', color: c.label }}>{c.texto}</div>
                       </div>
+                      <input
+                        type="date"
+                        style={{ ...inputStyleModal, fontSize:'15px', padding:'10px', background:'#ffffff' }}
+                        defaultValue={p.data || ''}
+                        disabled={tarefaSelecionada.status === 'concluido'}
+                        onBlur={e => {
+                          if (i === 0) {
+                            handleUpdateField(tarefaSelecionada.id, 'vencimento_boleto', e.target.value);
+                          } else {
+                            const arr = (tarefaSelecionada.datas_parcelas || '').split(/[\s,]+/).filter(d => d.includes('-'));
+                            while (arr.length < 4) arr.push('');
+                            arr[i - 1] = e.target.value;
+                            handleUpdateField(tarefaSelecionada.id, 'datas_parcelas', arr.filter(d => d).join(', '));
+                          }
+                        }}
+                      />
+                      <div style={{ fontSize:'18px', color:'#2f3640', fontWeight:'600' }}>{formatarMoeda(p.valor)}</div>
+                      <AttachmentTag
+                        icon={<CheckCircle size={16} />}
+                        label={p.estado === 'pago' ? `COMPROVANTE P${p.num}` : `ANEXAR P${p.num}`}
+                        fileUrl={p.comprovante}
+                        onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada.id, p.campo_comprovante, file)}
+                        disabled={tarefaSelecionada.status === 'concluido'}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
 
-                      {/* PARCELAS 2 A 5 */}
-                      {Array.from({ length: Math.min((tarefaSelecionada.qtd_parcelas || 1) - 1, 4) }).map((_, idx) => {
-                          const num = idx + 2;
-                          const currentDatesArr = (tarefaSelecionada.datas_parcelas || "").split(/[\s,]+/).filter(d => d.includes('-'));
-                          return (
-                              <div key={idx} style={{display: 'grid', gridTemplateColumns: '60px 150px 220px 150px 320px', gap: '20px', alignItems: 'center', background: '#ffffff', padding: '15px', border: '1px solid #e2e8f0'}}>
-                                <input 
-                                    type="checkbox" 
-                                    style={{width:'25px', height:'25px', cursor:'pointer'}}
-                                    checked={tarefaSelecionada[`status_p${num}`] === 'pago'} 
-                                    onChange={e => handleUpdateField(tarefaSelecionada.id, `status_p${num}`, e.target.checked ? 'pago' : 'pendente')}
-                                />
-                                <span style={{...labelModalStyle, marginBottom: 0, fontWeight: '700'}}>{num}ª PARC</span>
-                                <input 
-                                  type="date"
-                                  style={{...inputStyleModal, fontSize: '16px', padding: '10px'}}
-                                  defaultValue={currentDatesArr[idx] || ''}
-                                  disabled={tarefaSelecionada.status === 'concluido'}
-                                  onBlur={e => {
-                                      let newDatesArr = [...currentDatesArr];
-                                      while(newDatesArr.length < 4) newDatesArr.push("");
-                                      newDatesArr[idx] = e.target.value;
-                                      handleUpdateField(tarefaSelecionada.id, 'datas_parcelas', newDatesArr.filter(d => d).join(', '));
-                                  }}
-                                />
-                                <span style={{fontSize: '18px', color: '#2f3640', fontWeight: '500'}}>R$ {valorIndividual}</span>
-                                <AttachmentTag 
-                                  icon={<CheckCircle size={16} />} 
-                                  label="Comprovante" 
-                                  fileUrl={tarefaSelecionada[`comprovante_pagamento_p${num}`]} 
-                                  onUpload={(file) => handleUpdateFileDirect(tarefaSelecionada.id, `comprovante_pagamento_p${num}`, file)} 
-                                  disabled={tarefaSelecionada.status === 'concluido'} 
-                                />
-                              </div>
-                          );
-                      })}
+              {/* Aviso de atraso — linguagem simples */}
+              {tarefaSelecionada.parcelas_info?.some(p => p.estado === 'vencido') && (
+                <div style={{ background:'#fff5f5', border:'1.5px solid #fca5a5', borderRadius:'8px', padding:'20px', display:'flex', alignItems:'flex-start', gap:'15px' }}>
+                  <AlertCircle size={24} color="#e74c3c" style={{ flexShrink: 0, marginTop:'2px' }} />
+                  <div>
+                    <div style={{ fontWeight:'800', color:'#e74c3c', fontSize:'15px', marginBottom:'6px' }}>
+                      {tarefaSelecionada.parcelas_info.filter(p => p.estado === 'vencido').length === 1
+                        ? 'Atenção: uma parcela está em atraso!'
+                        : `Atenção: ${tarefaSelecionada.parcelas_info.filter(p => p.estado === 'vencido').length} parcelas estão em atraso!`}
+                    </div>
+                    <div style={{ color:'#718093', fontSize:'14px' }}>Anexe o comprovante na parcela em atraso ou solicite recobrança ao Pós-Vendas usando o botão abaixo.</div>
                   </div>
-                )}
+                </div>
+              )}
+              {tarefaSelecionada.parcelas_info?.some(p => p.estado === 'proximo') && !tarefaSelecionada.parcelas_info?.some(p => p.estado === 'vencido') && (
+                <div style={{ background:'#fffbeb', border:'1.5px solid #fcd34d', borderRadius:'8px', padding:'16px', display:'flex', alignItems:'center', gap:'12px' }}>
+                  <AlertCircle size={20} color="#d97706" />
+                  <span style={{ color:'#d97706', fontSize:'14px', fontWeight:'700' }}>Uma parcela vence nos próximos 3 dias. Fique atento!</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* --- SEÇÃO CARTÃO PARCELADO — simples --- */}
+          {isCartaoParcelado && (
+            <div style={{ display:'flex', gap:'30px', marginBottom:'50px', background:'rgba(245,246,250,0.5)', padding:'40px', border:'1px solid #dcdde1' }}>
+              <div style={{ flex: 1 }}>
+                <label style={labelModalStyle}>Qtd. Parcelas no Cartão</label>
+                <select
+                  style={{ ...inputStyleModal, fontSize:'24px' }}
+                  value={tarefaSelecionada.qtd_parcelas || 1}
+                  disabled={tarefaSelecionada.status === 'concluido'}
+                  onChange={e => handleUpdateField(tarefaSelecionada.id, 'qtd_parcelas', parseInt(e.target.value))}
+                >
+                  {[1,2,3,4,5,6,7,8,9,10,11,12].map(v => <option key={v} value={v}>{v}x</option>)}
+                </select>
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={labelModalStyle}>Valor por Parcela</label>
+                <div style={{ ...inputStyleModal, background:'#f8fafc', color:'#7c3aed', borderStyle:'dashed', fontSize:'24px', fontWeight:'700' }}>
+                  {formatarMoeda((tarefaSelecionada.valor_servico || 0) / (tarefaSelecionada.qtd_parcelas || 1))}
+                </div>
+              </div>
             </div>
           )}
 
@@ -661,35 +803,48 @@ return (
                 </div>
               )}
 
-              {/* BOTÕES DE AÇÃO DINÂMICOS PARA PARCELADO (QUANDO APENAS UMA VENCE) */}
-              {tarefaSelecionada.status === 'aguardando_vencimento' && isParceladoBoleto && statusVencimento.apenasUma && (
-                  <>
-                    <button onClick={() => handleActionPedirRecobranca(tarefaSelecionada, false)} style={btnActionBlue}>
-                        <DollarSign size={20}/> GERAR TAREFA: POS VENDAS RECOBRAR
-                    </button>
-                    <button onClick={() => handleUpdateField(tarefaSelecionada.id, 'tarefa', 'Conferido/Visto')} style={btnActionGreen}>
-                        <CheckCheck size={20}/> MARCADO COMO VISTO
-                    </button>
-                  </>
+              {/* BOLETO PARCELADO: ações quando há parcela em atraso (card NÃO vai todo para vencido) */}
+              {tarefaSelecionada.status === 'aguardando_vencimento' && isBoletoParcelado && tarefaSelecionada.parcelaVencida && !tarefaSelecionada.isPagamentoRealizado && (
+                <>
+                  <button onClick={() => handleActionPedirRecobranca(tarefaSelecionada, false)} style={btnActionBlue}>
+                    <DollarSign size={20}/> PEDIR PÓS-VENDAS RECOBRAR PARCELA
+                  </button>
+                  <button onClick={() => handleUpdateField(tarefaSelecionada.id, 'tarefa', 'Conferido/Visto')} style={btnActionGreen}>
+                    <CheckCheck size={20}/> MARCAR COMO VISTO
+                  </button>
+                </>
               )}
 
-              {/* MOVER PARA VENCIDO APENAS SE CONDIÇÃO CRÍTICA FOR ATENDIDA */}
-              {tarefaSelecionada.status === 'aguardando_vencimento' && (!isParceladoBoleto || statusVencimento.moveParaVencido) && (
-                  <>
-                    <button onClick={() => handleActionPedirRecobranca(tarefaSelecionada, true)} style={btnActionBlue}>
-                        <DollarSign size={20}/> PEDIR PARA POS VENDAS RECOBRAR
-                    </button>
-                    <button onClick={() => handleActionSomenteVencido(tarefaSelecionada)} style={btnActionRed}>
-                        <AlertCircle size={20}/> MUDAR CARD PARA VENCIDO
-                    </button>
-                  </>
-              )}
-
-              {/* BOTÃO MOVE PARA PAGO (PARA PIX/CARTÃO OU BOLETO À VISTA) */}
-              {((tarefaSelecionada.status === 'aguardando_vencimento' && !isParceladoBoleto && (tarefaSelecionada.comprovante_pagamento || tarefaSelecionada.comprovante_pagamento_p1 || isBoleto30)) || 
-                 (isPixOuCartaoVista && tarefaSelecionada.comprovante_pagamento)) && tarefaSelecionada.status !== 'pago' && tarefaSelecionada.status !== 'concluido' && (
+              {/* BOLETO PARCELADO: todas pagas → mover para pago */}
+              {tarefaSelecionada.status === 'aguardando_vencimento' && isBoletoParcelado && tarefaSelecionada.isPagamentoRealizado && (
                 <button onClick={() => handleActionMoveStatus(tarefaSelecionada, 'pago')} style={btnActionGreen}>
-                    <CheckCheck size={20}/> MOVE PARA PAGO
+                  <CheckCheck size={20}/> TODAS AS PARCELAS PAGAS — MOVER PARA PAGO
+                </button>
+              )}
+
+              {/* CARTÃO PARCELADO: comprovante anexado → mover para pago */}
+              {tarefaSelecionada.status === 'aguardando_vencimento' && isCartaoParcelado && tarefaSelecionada.isPagamentoRealizado && (
+                <button onClick={() => handleActionMoveStatus(tarefaSelecionada, 'pago')} style={btnActionGreen}>
+                  <CheckCheck size={20}/> PAGAMENTO CONFIRMADO — MOVER PARA PAGO
+                </button>
+              )}
+
+              {/* OUTROS (PIX, Cartão à Vista, Boleto simples): recobrança e vencido */}
+              {tarefaSelecionada.status === 'aguardando_vencimento' && !isBoletoParcelado && !isCartaoParcelado && !isBoleto30 && (
+                <>
+                  <button onClick={() => handleActionPedirRecobranca(tarefaSelecionada, true)} style={btnActionBlue}>
+                    <DollarSign size={20}/> PEDIR PARA PÓS-VENDAS RECOBRAR
+                  </button>
+                  <button onClick={() => handleActionSomenteVencido(tarefaSelecionada)} style={btnActionRed}>
+                    <AlertCircle size={20}/> MUDAR CARD PARA VENCIDO
+                  </button>
+                </>
+              )}
+
+              {/* PIX / Cartão à Vista com comprovante → pago */}
+              {tarefaSelecionada.status === 'aguardando_vencimento' && isPixOuCartaoVista && tarefaSelecionada.comprovante_pagamento && (
+                <button onClick={() => handleActionMoveStatus(tarefaSelecionada, 'pago')} style={btnActionGreen}>
+                  <CheckCheck size={20}/> PAGAMENTO CONFIRMADO — MOVER PARA PAGO
                 </button>
               )}
 
