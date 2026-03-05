@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 // IMPORTAÇÃO DO MENU MODULAR
 import MenuLateral from '@/components/MenuLateral'
 import { marcarMinhaAcao } from '@/components/NotificationSystem'
+import { formatarDataBR, formatarMoeda, getRequisicoes } from '@/lib/utils'
 // ÍCONES COMPLETOS
 import { 
  Bell, MessageSquare, X, Menu, PlusCircle, FileText, Download, 
@@ -26,27 +27,8 @@ function LoadingScreen() {
  )
 }
 
-// --- 2. FORMATADOR DE DATA ---
-const formatarData = (dataStr) => {
- if (!dataStr || dataStr === 'null' || dataStr.trim() === '') return 'N/A';
- const apenasData = dataStr.split(' ')[0];
- const partes = apenasData.split(/[-/]/);
- if (partes.length === 3) {
-  if (partes[0].length === 4) return `${partes[2]}/${partes[1]}/${partes[0]}`;
-  return `${partes[0]}/${partes[1]}/${partes[2]}`;
- }
- return dataStr;
-};
-
-const formatarMoeda = (valor) => {
- const num = parseFloat(valor);
- if (isNaN(num)) return 'R$ 0,00';
- return num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-};
-
-const getRequisicoes = (t) => {
- try { return JSON.parse(t.requisicoes_json || '[]'); } catch { return []; }
-};
+// formatarData, formatarMoeda e getRequisicoes importados de @/lib/utils
+const formatarData = formatarDataBR;
 
 function GeometricBackground() {
  return (

@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 // IMPORTAÇÃO DO MENU MODULAR
 import MenuLateral from '@/components/MenuLateral'
+import { formatarDataBR, formatarMoeda, calcTempo } from '@/lib/utils'
 // ÍCONES COMPLETOS
 import { 
  Bell, MessageSquare, X, Menu, PlusCircle, FileText, Download, 
@@ -24,39 +25,7 @@ function LoadingScreen() {
  )
 }
 
-// --- 2. FORMATADOR DE DATA PT-BR ---
-const formatarDataBR = (dataStr) => {
- if (!dataStr || dataStr === 'null' || dataStr === "") return 'N/A';
- try {
-  const apenasData = dataStr.split(' ')[0];
-  const partes = apenasData.split(/[-/]/);
-  if (partes.length === 3) {
-   if (partes[0].length === 4) return `${partes[2]}/${partes[1]}/${partes[0]}`;
-   return `${partes[0]}/${partes[1]}/${partes[2]}`;
-  }
-  return dataStr;
- } catch (e) { return dataStr; }
-};
-
-const formatarMoeda = (valor) => {
- const num = parseFloat(valor);
- if (isNaN(num)) return 'R$ 0,00';
- return num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-};
-
-const calcTempo = (dateStr) => {
- if (!dateStr) return null;
- const diffMs = new Date() - new Date(dateStr);
- const mins = Math.floor(diffMs / 60000);
- const hours = Math.floor(mins / 60);
- const days = Math.floor(hours / 24);
- const months = Math.floor(days / 30);
- if (months > 0) return `${months} ${months === 1 ? 'mes' : 'meses'}`;
- if (days > 0) return `${days} ${days === 1 ? 'dia' : 'dias'}`;
- if (hours > 0) return `${hours}h`;
- if (mins > 0) return `${mins}min`;
- return 'agora';
-};
+// formatarDataBR, formatarMoeda, calcTempo importados de @/lib/utils
 
 const STATUS_CONFIG = {
  gerar_boleto:          { label: 'GERAR BOLETO',          bg: '#eff6ff', color: '#3b82f6', border: '#bfdbfe' },
@@ -129,6 +98,7 @@ export default function Kanban() {
  const [filtroData, setFiltroData] = useState('');
 
  const [fileBoleto, setFileBoleto] = useState(null);
+ const carregarTimeoutRef = useRef(null);
  const router = useRouter();
 
  const colunas = [
@@ -245,12 +215,17 @@ export default function Kanban() {
   }; init();
  }, [router]);
 
+ const carregarComDebounce = () => {
+  if (carregarTimeoutRef.current) clearTimeout(carregarTimeoutRef.current);
+  carregarTimeoutRef.current = setTimeout(carregarDados, 600);
+ };
+
  useEffect(() => {
   const channel = supabase
    .channel('kanban_pv_realtime')
-   .on('postgres_changes', { event: '*', schema: 'public', table: 'Chamado_NF' }, () => carregarDados())
+   .on('postgres_changes', { event: '*', schema: 'public', table: 'Chamado_NF' }, carregarComDebounce)
    .subscribe();
-  return () => { supabase.removeChannel(channel) };
+  return () => { supabase.removeChannel(channel); if (carregarTimeoutRef.current) clearTimeout(carregarTimeoutRef.current); };
  }, []);
 
  const handleUpdateField = async (id, field, value) => {

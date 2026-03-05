@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 // IMPORTAÇÃO DO MENU MODULAR
 import MenuLateral from '@/components/MenuLateral'
+import { formatarDataBR, formatarMoeda } from '@/lib/utils'
 // ÍCONES
 import { 
   Bell, ArrowLeft, FileText, CheckCircle, Download, 
@@ -22,19 +23,7 @@ function LoadingScreen() {
   )
 }
 
-// --- FORMATADOR DE DATA PT-BR ---
-const formatarDataBR = (dataStr) => {
-  if (!dataStr || dataStr === 'null' || dataStr === '') return 'N/A';
-  try {
-    const apenasData = dataStr.split(' ')[0];
-    const partes = apenasData.split(/[-/]/);
-    if (partes.length === 3) {
-      if (partes[0].length === 4) return `${partes[2]}/${partes[1]}/${partes[0]}`; 
-      return `${partes[0]}/${partes[1]}/${partes[2]}`;
-    }
-    return dataStr;
-  } catch (e) { return dataStr; }
-};
+// formatarDataBR e formatarMoeda importados de @/lib/utils
 
 export default function HistoricoPagar() {
   const [lista, setLista] = useState([])

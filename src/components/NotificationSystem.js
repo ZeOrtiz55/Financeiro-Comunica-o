@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Bell, RefreshCw, MessageSquare, ChevronRight } from 'lucide-react'
+import { formatarMoeda } from '@/lib/utils'
 import { useRouter, usePathname } from 'next/navigation'
 
 // ─── MARCA AÇÃO PRÓPRIA (evita auto-notificação) ─────────────────────────────
@@ -229,29 +230,11 @@ export default function NotificationSystem({ userProfile }) {
         const novaNotif = {
           id: Date.now(),
           titulo: 'NOVO PAGAMENTO',
-          mensagem: `${payload.new.fornecedor} — R$ ${payload.new.valor}`,
+          mensagem: `${payload.new.fornecedor} — ${formatarMoeda(payload.new.valor)}`,
           data: new Date().toISOString(),
           tipo: 'movimento',
           registro_id: payload.new.id,
           tipo_fluxo: 'pagar',
-        }
-        setNotificacoes(prev => [novaNotif, ...prev])
-        addToast(novaNotif)
-      })
-
-      // 4. NOVO LANÇAMENTO RECEBER
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'finan_receber' }, (payload) => {
-        const keyReceber = `finan_receber:${payload.new.id}`
-        if (minhasAcoes.has(keyReceber)) { minhasAcoes.delete(keyReceber); return }
-
-        const novaNotif = {
-          id: Date.now(),
-          titulo: 'NOVO RECEBIMENTO',
-          mensagem: `${payload.new.cliente} — R$ ${payload.new.valor}`,
-          data: new Date().toISOString(),
-          tipo: 'movimento',
-          registro_id: payload.new.id,
-          tipo_fluxo: 'receber',
         }
         setNotificacoes(prev => [novaNotif, ...prev])
         addToast(novaNotif)

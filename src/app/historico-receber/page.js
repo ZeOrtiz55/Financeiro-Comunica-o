@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 // IMPORTAÇÃO DO NOVO MENU
 import MenuLateral from '@/components/MenuLateral'
+import { formatarMoeda, formatarDataBR } from '@/lib/utils'
 // ÍCONES MODERNOS
 import { 
   Bell, Menu, ArrowLeft, FileText, CheckCircle, Download, 
@@ -110,8 +111,8 @@ export default function HistoricoReceber() {
                 <tr key={item.id} style={{ borderBottom: '1px solid #e2e8f0', transition: '0.2s' }}>
                   <td style={{ padding:'25px 30px', fontSize:'16px', color:'#64748b' }}>#{item.id}</td>
                   <td style={{ fontSize:'18px', color:'#0f172a', fontWeight:'400' }}>{item.cliente?.toUpperCase()}</td>
-                  <td style={{ fontSize:'18px', color:'#0f172a', fontWeight:'400' }}>R$ {item.valor}</td>
-                  <td style={{ fontSize:'18px', color:'#475569', fontWeight:'400' }}>{item.data_vencimento}</td>
+                  <td style={{ fontSize:'18px', color:'#0f172a', fontWeight:'400' }}>{formatarMoeda(item.valor)}</td>
+                  <td style={{ fontSize:'18px', color:'#475569', fontWeight:'400' }}>{formatarDataBR(item.data_vencimento)}</td>
                   <td style={{ textAlign:'center' }}>
                     <div style={{ display:'flex', gap:'12px', justifyContent:'center' }}>
                       {(item.anexo_nf_servico || item.anexo_nf_peca) && (

@@ -4,6 +4,8 @@ import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 // IMPORTAÇÃO DO MENU MODULAR
 import MenuLateral from '@/components/MenuLateral'
+import { formatarDataBR, formatarMoeda, calcTempo } from '@/lib/utils'
+import { STATUS_CONFIG_NF as STATUS_CONFIG } from '@/lib/constants'
 // ÍCONES COMPLETOS
 import { 
 Bell, MessageSquare, X, Menu, PlusCircle, FileText, Download,
@@ -24,48 +26,7 @@ return (
 )
 }
 
-// --- 2. FORMATADOR DE DATA ---
-const formatarDataBR = (dataStr) => {
-if (!dataStr || dataStr === 'null' || dataStr === "") return 'N/A';
-try {
-  const apenasData = dataStr.split(' ')[0];
-  const partes = apenasData.split(/[-/]/);
-  if (partes.length === 3) {
-  if (partes[0].length === 4) return `${partes[2]}/${partes[1]}/${partes[0]}`; 
-  return `${partes[0]}/${partes[1]}/${partes[2]}`;
-  }
-  return dataStr;
-} catch (e) { return dataStr; }
-};
-
-const formatarMoeda = (valor) => {
-  const num = parseFloat(valor);
-  if (isNaN(num)) return 'R$ 0,00';
-  return num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-};
-
-const calcTempo = (dateStr) => {
-  if (!dateStr) return null;
-  const diffMs = new Date() - new Date(dateStr);
-  const mins = Math.floor(diffMs / 60000);
-  const hours = Math.floor(mins / 60);
-  const days = Math.floor(hours / 24);
-  const months = Math.floor(days / 30);
-  if (months > 0) return `${months} ${months === 1 ? 'mes' : 'meses'}`;
-  if (days > 0) return `${days} ${days === 1 ? 'dia' : 'dias'}`;
-  if (hours > 0) return `${hours}h`;
-  if (mins > 0) return `${mins}min`;
-  return 'agora';
-};
-
-const STATUS_CONFIG = {
-  gerar_boleto:          { label: 'GERAR BOLETO',          bg: '#eff6ff', color: '#3b82f6', border: '#bfdbfe' },
-  enviar_cliente:        { label: 'ENVIAR PARA CLIENTE',   bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0' },
-  aguardando_vencimento: { label: 'AGUARDANDO VENCIMENTO', bg: '#fffbeb', color: '#d97706', border: '#fde68a' },
-  pago:                  { label: 'PAGO',                  bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0' },
-  vencido:               { label: 'VENCIDO',               bg: '#fff5f5', color: '#dc2626', border: '#fecaca' },
-  concluido:             { label: 'CONCLUIDO',             bg: '#f0fdf4', color: '#15803d', border: '#bbf7d0' },
-};
+// formatarDataBR, formatarMoeda, calcTempo e STATUS_CONFIG importados de @/lib/utils e @/lib/constants
 
 function GeometricBackground() {
 return (
@@ -129,6 +90,7 @@ const [filtroNF, setFiltroNF] = useState('');
 const [filtroData, setFiltroData] = useState('');
 
 const [fileBoleto, setFileBoleto] = useState(null);
+const carregarTimeoutRef = useRef(null);
 const router = useRouter();
 
 const colunas = [
@@ -260,12 +222,17 @@ const carregarDados = async () => {
   } catch (err) { console.error("Erro ao carregar dados:", err); }
 }
 
+const carregarComDebounce = () => {
+  if (carregarTimeoutRef.current) clearTimeout(carregarTimeoutRef.current);
+  carregarTimeoutRef.current = setTimeout(carregarDados, 600);
+};
+
 useEffect(() => {
     const channel = supabase
       .channel('kanban_realtime_changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'Chamado_NF' }, () => carregarDados())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'Chamado_NF' }, carregarComDebounce)
       .subscribe();
-    return () => { supabase.removeChannel(channel) };
+    return () => { supabase.removeChannel(channel); if (carregarTimeoutRef.current) clearTimeout(carregarTimeoutRef.current); };
 }, []);
 
 useEffect(() => {

@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
 import MenuLateral from '@/components/MenuLateral'
 import { marcarMinhaAcao } from '@/components/NotificationSystem'
+import { formatarDataBR, formatarMoeda, getRequisicoes } from '@/lib/utils'
 import {
   X, Send, ArrowLeft, RefreshCw, MessageSquare, PlusCircle, CheckCircle,
   FileText, Download, Eye, Calendar, CreditCard, User as UserIcon, Tag, Search, DollarSign, Upload, Barcode, Trash2, Paperclip, AlertCircle
@@ -20,29 +21,7 @@ function LoadingScreen() {
   )
 }
 
-const formatarDataBR = (dataStr) => {
-  if (!dataStr || dataStr === 'null' || dataStr === 'N/A') return 'N/A';
-  try {
-    if (dataStr.includes('/') && dataStr.split('/')[0].length <= 2) return dataStr;
-    const dateObj = new Date(dataStr);
-    if (isNaN(dateObj.getTime())) {
-      const partes = dataStr.split(' ')[0].split('-');
-      if (partes.length === 3) return `${partes[2]}/${partes[1]}/${partes[0]}`;
-      return dataStr;
-    }
-    return dateObj.toLocaleDateString('pt-BR', { timeZone: 'UTC' });
-  } catch (e) { return dataStr; }
-};
-
-const formatarMoeda = (valor) => {
-  const num = parseFloat(valor);
-  if (isNaN(num)) return 'R$ 0,00';
-  return num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-};
-
-const getRequisicoes = (t) => {
-  try { return JSON.parse(t.requisicoes_json || '[]'); } catch { return []; }
-};
+// formatarDataBR, formatarMoeda e getRequisicoes importados de @/lib/utils
 
 function GeometricBackground() {
   return (

@@ -53,8 +53,7 @@ export default function NovoChamadoNF() {
 
       const { data } = await supabase.from('financeiro_usu').select('id, nome, funcao')
       if (data) setTodosUsuarios(data)
-      
-      setTimeout(() => setPageLoading(false), 600)
+      setPageLoading(false)
     }
     load()
   }, [router])

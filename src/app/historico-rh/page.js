@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 // IMPORTAÇÃO DO MENU MODULAR
 import MenuLateral from '@/components/MenuLateral'
+import { formatarDataBR } from '@/lib/utils'
 // ÍCONES
 import { 
   Bell, Menu, ArrowLeft, FileText, CheckCircle, Search, 
@@ -72,11 +73,6 @@ export default function HistoricoRH() {
     c.titulo.toLowerCase().includes(busca.toLowerCase())
   )
 
-  const formatarData = (dataStr) => {
-    if (!dataStr) return ''
-    return new Date(dataStr).toLocaleDateString('pt-BR')
-  }
-
   if (loading) return <LoadingScreen />
 
   return (
@@ -136,7 +132,7 @@ export default function HistoricoRH() {
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #f1f5f9', paddingTop: '20px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#94a3b8', fontSize: '16px' }}>
-                    <Calendar size={18} /> {formatarData(c.created_at)}
+                    <Calendar size={18} /> {formatarDataBR(c.created_at)}
                   </div>
                   <button style={{ background: 'none', border: 'none', color: '#3b82f6', fontSize: '16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <FileText size={20} /> VER RESUMO

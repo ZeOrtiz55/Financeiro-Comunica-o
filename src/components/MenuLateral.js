@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase'
 import {
  LayoutDashboard, ClipboardList, TrendingDown, TrendingUp,
  UserCheck, LogOut, Menu, MessageSquare, X, Send, Paperclip,
- FileText, Settings, User, CheckCheck, History, Bell, RefreshCw, ChevronRight, Clock
+ FileText, Settings, User, CheckCheck, History, Bell, RefreshCw, ChevronRight, Clock, BarChart2
 } from 'lucide-react'
 
 export default function MenuLateral({ isSidebarOpen, setIsSidebarOpen, path, router, handleLogout, userProfile }) {
@@ -107,13 +107,8 @@ export default function MenuLateral({ isSidebarOpen, setIsSidebarOpen, path, rou
 
  const checkVencidos = async () => {
   try {
-   const { data } = await supabase.from('Chamado_NF').select('status, status_p1, status_p2, status_p3, status_p4, status_p5, status_p6');
-   let totalVencidos = 0;
-   data?.forEach(c => {
-    if (c.status === 'vencido') totalVencidos++;
-    for(let i=1; i<=6; i++) { if (c[`status_p${i}`] === 'vencido') totalVencidos++; }
-   });
-   setAlertasVencidos(totalVencidos);
+   const { data } = await supabase.from('Chamado_NF').select('id').eq('status', 'vencido');
+   setAlertasVencidos(data?.length || 0);
   } catch (e) { console.error(e); }
  };
 
@@ -315,6 +310,11 @@ export default function MenuLateral({ isSidebarOpen, setIsSidebarOpen, path, rou
       <button onClick={() => router.push(rotaHome)} style={getBtnStyle(rotaHome)}>
        <div style={iconContainer}><LayoutDashboard size={28} /></div>
        <span style={{ opacity: isSidebarOpen ? 1 : 0, whiteSpace: 'nowrap', fontWeight: '700' }}>Painel Geral</span>
+      </button>
+
+      <button onClick={() => router.push('/dashboard')} style={getBtnStyle('/dashboard')}>
+       <div style={iconContainer}><BarChart2 size={28} /></div>
+       <span style={{ opacity: isSidebarOpen ? 1 : 0, whiteSpace: 'nowrap', fontWeight: '700' }}>Dashboard</span>
       </button>
 
       <button onClick={() => router.push(rotaKanban)} style={getBtnStyle(rotaKanban)}>
