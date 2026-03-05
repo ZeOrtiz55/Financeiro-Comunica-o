@@ -4,9 +4,9 @@ import { supabase } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
 import MenuLateral from '@/components/MenuLateral'
 import { marcarMinhaAcao } from '@/components/NotificationSystem'
-import { 
-  X, Send, ArrowLeft, RefreshCw, MessageSquare, PlusCircle, CheckCircle, 
-  FileText, Download, Eye, Calendar, CreditCard, User as UserIcon, Tag, Search, DollarSign, Upload, Barcode
+import {
+  X, Send, ArrowLeft, RefreshCw, MessageSquare, PlusCircle, CheckCircle,
+  FileText, Download, Eye, Calendar, CreditCard, User as UserIcon, Tag, Search, DollarSign, Upload, Barcode, Trash2, Paperclip, AlertCircle
 } from 'lucide-react'
 
 // --- 1. TELA DE CARREGAMENTO PADRONIZADA ---
@@ -32,6 +32,16 @@ const formatarDataBR = (dataStr) => {
     }
     return dateObj.toLocaleDateString('pt-BR', { timeZone: 'UTC' });
   } catch (e) { return dataStr; }
+};
+
+const formatarMoeda = (valor) => {
+  const num = parseFloat(valor);
+  if (isNaN(num)) return 'R$ 0,00';
+  return num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+};
+
+const getRequisicoes = (t) => {
+  try { return JSON.parse(t.requisicoes_json || '[]'); } catch { return []; }
 };
 
 function GeometricBackground() {
@@ -94,7 +104,6 @@ function HomePosVendasContent() {
   const [tarefaSelecionada, setTarefaSelecionada] = useState(null);
   const [listaBoletos, setListaBoletos] = useState([]);
   const [listaPagar, setListaPagar] = useState([]);
-  const [listaReceber, setListaReceber] = useState([]);
   const [listaRH, setListaRH] = useState([]);
   const [showNovoMenu, setShowNovoMenu] = useState(false);
   const router = useRouter();
@@ -123,12 +132,10 @@ function HomePosVendasContent() {
 
       setListaBoletos(tarefasFaturamento);
 
-      const { data: pag } = await supabase.from('finan_pagar').select('*').eq('status', 'financeiro');
-      const { data: rec } = await supabase.from('finan_receber').select('*').eq('status', 'financeiro');
+      const { data: pag } = await supabase.from('finan_pagar').select('*').eq('status', 'financeiro').order('id', { ascending: false });
       const { data: rh } = await supabase.from('finan_rh').select('*').neq('status', 'concluido');
-      
+
       setListaPagar((pag || []).map(p => ({ ...p, gTipo: 'pagar' })));
-      setListaReceber((rec || []).map(r => ({ ...r, gTipo: 'receber' })));
       setListaRH((rh || []).map(rhItem => ({ ...rhItem, gTipo: 'rh' })));
 
     } catch (e) { console.error(e); }
@@ -139,7 +146,6 @@ function HomePosVendasContent() {
       .channel('home_pv_realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'Chamado_NF' }, () => carregarDados())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'finan_pagar' }, () => carregarDados())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'finan_receber' }, () => carregarDados())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'finan_rh' }, () => carregarDados())
       .subscribe();
     return () => { supabase.removeChannel(channel) };
@@ -183,6 +189,31 @@ function HomePosVendasContent() {
     alert("Confirmado!"); setTarefaSelecionada(null); carregarDados();
   };
 
+  const handleAddRequisicao = async (t) => {
+    const reqs = getRequisicoes(t);
+    reqs.push({ numero: '', anexo_url: '' });
+    await handleUpdateField(t, 'requisicoes_json', JSON.stringify(reqs));
+  };
+
+  const handleRemoveRequisicao = async (t, index) => {
+    const reqs = getRequisicoes(t);
+    reqs.splice(index, 1);
+    await handleUpdateField(t, 'requisicoes_json', JSON.stringify(reqs));
+  };
+
+  const handleRequisicaoAnexo = async (t, index, file) => {
+    if (!file) return;
+    try {
+      const path = `requisicoes/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+      const { error: uploadError } = await supabase.storage.from('anexos').upload(path, file);
+      if (uploadError) throw uploadError;
+      const { data: linkData } = supabase.storage.from('anexos').getPublicUrl(path);
+      const reqs = getRequisicoes(t);
+      reqs[index] = { ...reqs[index], anexo_url: linkData.publicUrl };
+      await handleUpdateField(t, 'requisicoes_json', JSON.stringify(reqs));
+    } catch (err) { alert("Erro: " + err.message); }
+  };
+
   useEffect(() => {
     const init = async () => {
       try {
@@ -195,22 +226,21 @@ function HomePosVendasContent() {
     }; init();
   }, [router]);
 
-  // Abre o card automaticamente quando chegou via notificação (?id=&tipo=)
   useEffect(() => {
     const id = searchParams.get('id');
     const tipo = searchParams.get('tipo');
     if (!id || !tipo) return;
-    const listas = { boleto: listaBoletos, pagar: listaPagar, receber: listaReceber, rh: listaRH };
+    const listas = { boleto: listaBoletos, pagar: listaPagar, rh: listaRH };
     const card = (listas[tipo] || []).find(t => String(t.id) === id);
     if (card) setTarefaSelecionada(card);
-  }, [searchParams, listaBoletos, listaPagar, listaReceber, listaRH]);
+  }, [searchParams, listaBoletos, listaPagar, listaRH]);
 
   if (loading) return <LoadingScreen />
 
   // --- LÓGICAS CONDICIONAIS DE INTERFACE DO MODAL ---
   const isBoleto30 = tarefaSelecionada?.forma_pagamento === 'Boleto 30 dias';
   const isParcelamento = tarefaSelecionada?.forma_pagamento?.toLowerCase().includes('parcelado');
-  const valorIndividual = tarefaSelecionada ? (tarefaSelecionada.valor_servico / (tarefaSelecionada.qtd_parcelas || 1)).toFixed(2) : 0;
+  const valorIndividual = tarefaSelecionada ? (tarefaSelecionada.valor_servico / (tarefaSelecionada.qtd_parcelas || 1)) : 0;
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: '#2a2a2d', fontFamily: 'Montserrat, sans-serif' }}>
@@ -310,25 +340,30 @@ function HomePosVendasContent() {
                         <div style={cardMetaStyle}><CreditCard size={13}/> {t.forma_pagamento?.toUpperCase()}</div>
                         <div style={cardMetaStyle}><Calendar size={13}/> {formatarDataBR(t.vencimento_boleto)}</div>
                       </div>
-                      <div style={{fontSize:'26px', color: '#fff'}}>R$ {t.valor_exibicao}</div>
+                      <div style={{fontSize:'26px', color: '#fff'}}>{formatarMoeda(t.valor_exibicao)}</div>
                     </div>
                   </div>
                 ))}
             </div>
 
-            {/* COLUNA PAGAR / RECEBER (COLORIDO) */}
+            {/* COLUNA REQUISIÇÕES / A PAGAR */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                <div style={colHeaderStyle}>PAGAR / RECEBER</div>
-                {[...listaPagar, ...listaReceber].map((t) => (
-                  <div key={`${t.fornecedor ? 'p' : 'r'}-${t.id}`} onClick={() => setTarefaSelecionada(t)} className="task-card">
-                    <div style={{
-                      padding: '24px',
-                      background: t.fornecedor ? 'rgba(239, 68, 68, 0.12)' : 'rgba(59, 130, 246, 0.12)',
-                      borderLeft: `6px solid ${t.fornecedor ? '#ef4444' : '#3b82f6'}`
-                    }}>
-                        <small style={{color: t.fornecedor ? '#fca5a5' : '#93c5fd', letterSpacing: '1px', textTransform: 'uppercase', fontSize: '11px'}}>{t.fornecedor ? 'A Pagar' : 'A Receber'}</small>
-                        <div style={{marginTop:'10px', fontSize:'20px', color: '#fff'}}>{(t.fornecedor || t.cliente)?.toUpperCase()}</div>
-                        <div style={{fontSize:'24px', marginTop:'12px', color: '#fff'}}>R$ {t.valor}</div>
+                <div style={colHeaderStyle}>REQUISIÇÕES</div>
+                {listaPagar.map((t) => (
+                  <div key={`pag-${t.id}`} onClick={() => setTarefaSelecionada(t)} className="task-card">
+                    <div style={{ padding: '24px', background: 'rgba(239, 68, 68, 0.12)', borderLeft: '6px solid #ef4444' }}>
+                        <small style={{ color: '#fca5a5', letterSpacing: '1px', textTransform: 'uppercase', fontSize: '11px', fontWeight: '800' }}>FORNECEDOR</small>
+                        <div style={{ marginTop: '10px', fontSize: '20px', color: '#fff', fontWeight: '700' }}>{t.fornecedor?.toUpperCase()}</div>
+                        <div style={{ fontSize: '24px', marginTop: '12px', color: '#fff', fontWeight: '700' }}>{formatarMoeda(t.valor)}</div>
+                        <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                          {getRequisicoes(t).filter(r => r.numero).map((req, i) => (
+                            <span key={i} style={{ background: 'rgba(239,68,68,0.2)', color: '#fca5a5', fontSize: '10px', fontWeight: '800', padding: '4px 8px', border: '1px solid #ef444450', borderRadius: '4px' }}>#{req.numero}</span>
+                          ))}
+                        </div>
+                    </div>
+                    <div style={{ padding: '14px 24px', background: '#4e4e52', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ color: '#d1d5db', fontSize: '13px' }}>{t.metodo || 'Despesa'}</span>
+                      <span style={{ color: '#fca5a5', fontSize: '13px', fontWeight: '800' }}>VENC: {formatarDataBR(t.data_vencimento)}</span>
                     </div>
                   </div>
                 ))}
@@ -363,37 +398,79 @@ function HomePosVendasContent() {
                   <h2 style={{fontSize:'32px', fontWeight:'400', margin:0, letterSpacing: '-1px', color:'#f8fafc', lineHeight: '1.1'}}>{tarefaSelecionada.nom_cliente || tarefaSelecionada.fornecedor || tarefaSelecionada.funcionario || tarefaSelecionada.cliente}</h2>
                   
                   <div style={{display:'flex', gap:'30px', marginTop:'40px', marginBottom:'45px'}}>
-                      <div style={fieldBoxModal}><label style={labelMStyle}>CONDIÇÃO / MOTIVO</label><p style={pModalStyle}>{tarefaSelecionada.forma_pagamento?.toUpperCase() || tarefaSelecionada.motivo || 'N/A'}</p></div>
+                      <div style={fieldBoxModal}>
+                        <label style={labelMStyle}>{tarefaSelecionada.gTipo === 'rh' ? 'MOTIVO' : 'CONDIÇÃO/MÉTODO'}</label>
+                        <p style={pModalStyle}>{tarefaSelecionada.gTipo === 'pagar' ? (tarefaSelecionada.metodo?.toUpperCase() || 'N/A') : (tarefaSelecionada.forma_pagamento?.toUpperCase() || tarefaSelecionada.metodo?.toUpperCase() || 'N/A')}</p>
+                      </div>
                       {tarefaSelecionada.gTipo !== 'rh' && (
                         <>
                           <div style={fieldBoxModal}>
-                            <label style={labelMStyle}>VALOR TOTAL</label>
-                            <input type="number" style={{ ...inputStyleLight, border:'none', padding:0, fontSize:'36px', fontWeight:'700', background:'transparent' }} defaultValue={tarefaSelecionada.valor_exibicao || tarefaSelecionada.valor} onBlur={e => handleUpdateField(tarefaSelecionada, tarefaSelecionada.gTipo === 'boleto' ? 'valor_servico' : 'valor', e.target.value)} />
-                          </div>
-                          {isBoleto30 && (
-                            <div style={fieldBoxModal}>
-                              <label style={labelMStyle}>DATA VENCIMENTO</label>
-                              <input type="date" style={{ ...inputStyleLight, border:'none', padding:0, fontSize:'36px', fontWeight:'700', background:'transparent', color:'#ef4444' }} defaultValue={tarefaSelecionada.vencimento_boleto} onBlur={e => handleUpdateField(tarefaSelecionada, 'vencimento_boleto', e.target.value)} />
+                            <label style={labelMStyle}>VALOR DO REGISTRO</label>
+                            <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
+                              <span style={{fontSize:'22px', fontWeight:'700', color:'#9e9e9e'}}>R$</span>
+                              <input type="number" style={{ ...inputStyleLight, border:'none', padding:0, fontSize:'34px', fontWeight:'800', background:'transparent' }} defaultValue={tarefaSelecionada.valor_exibicao || tarefaSelecionada.valor} onBlur={e => handleUpdateField(tarefaSelecionada, tarefaSelecionada.gTipo === 'boleto' ? 'valor_servico' : 'valor', e.target.value)} />
                             </div>
-                          )}
-                          {!isBoleto30 && (
-                            <div style={fieldBoxModal}><label style={labelMStyle}>VENCIMENTO BASE</label><p style={{...pModalStyle, color:'#ef4444'}}>{formatarDataBR(tarefaSelecionada.vencimento_boleto || tarefaSelecionada.data_vencimento)}</p></div>
-                          )}
+                          </div>
+                          <div style={fieldBoxModal}>
+                            <label style={labelMStyle}>DATA DE VENCIMENTO</label>
+                            <input type="date" style={{ ...inputStyleLight, border:'none', padding:0, fontSize:'30px', fontWeight:'800', background:'transparent', color:'#ef4444' }} defaultValue={tarefaSelecionada.vencimento_boleto || tarefaSelecionada.data_vencimento} onBlur={e => handleUpdateField(tarefaSelecionada, tarefaSelecionada.gTipo === 'boleto' ? 'vencimento_boleto' : 'data_vencimento', e.target.value)} />
+                          </div>
                         </>
                       )}
                   </div>
+
+                  {/* CAMPOS ESPECÍFICOS PAGAR */}
+                  {tarefaSelecionada.gTipo === 'pagar' && (
+                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'30px', padding:'45px', background:'#2a2a2d', border:'1px solid #3f3f44', marginBottom:'45px' }}>
+                      <div style={fieldBoxInner}>
+                        <label style={labelMStyle}>NÚMERO DA NOTA FISCAL</label>
+                        <input style={inputStyleLight} placeholder="Ex: 000.000.000" defaultValue={tarefaSelecionada.numero_NF || ''} onBlur={e => handleUpdateField(tarefaSelecionada, 'numero_NF', e.target.value)} />
+                      </div>
+                      <div style={{gridColumn:'span 2', ...fieldBoxInner}}>
+                        <label style={labelMStyle}>DESCRIÇÃO / OBSERVAÇÕES</label>
+                        <textarea style={{...inputStyleLight, height:'120px', resize:'none'}} defaultValue={tarefaSelecionada.motivo} onBlur={e => handleUpdateField(tarefaSelecionada, 'motivo', e.target.value)} />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* REQUISIÇÕES */}
+                  {tarefaSelecionada.gTipo === 'pagar' && (
+                    <div style={{ border:'1px solid #3f3f44', padding:'35px', background:'#2a2a2d', marginBottom:'45px' }}>
+                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'20px' }}>
+                        <label style={labelMStyle}>REQUISIÇÕES</label>
+                        <button onClick={() => handleAddRequisicao(tarefaSelecionada)} style={{ background:'#3f3f44', color:'#9e9e9e', border:'1px solid #55555a', padding:'8px 18px', borderRadius:'8px', cursor:'pointer', fontSize:'12px', fontWeight:'700', letterSpacing:'1px' }}>+ ADICIONAR</button>
+                      </div>
+                      {getRequisicoes(tarefaSelecionada).map((req, i) => (
+                        <div key={i} style={{ display:'grid', gridTemplateColumns:'180px 1fr auto', gap:'20px', alignItems:'center', background:'#313134', padding:'18px', borderBottom:'1px solid #3f3f44', marginBottom:'4px' }}>
+                          <div>
+                            <label style={{ ...labelMStyle, fontSize:'11px', display:'block', marginBottom:'6px' }}>Nº REQUISIÇÃO</label>
+                            <input placeholder="Ex: 00123" defaultValue={req.numero} style={inputStyleLight} onBlur={e => {
+                              const reqs = getRequisicoes(tarefaSelecionada);
+                              reqs[i] = { ...reqs[i], numero: e.target.value };
+                              handleUpdateField(tarefaSelecionada, 'requisicoes_json', JSON.stringify(reqs));
+                            }} />
+                          </div>
+                          <AttachmentTag icon={<Paperclip size={18} />} label={`ANEXO REQ ${req.numero || (i + 1)}`} fileUrl={req.anexo_url} onUpload={f => handleRequisicaoAnexo(tarefaSelecionada, i, f)} />
+                          <button onClick={() => handleRemoveRequisicao(tarefaSelecionada, i)} style={{ background:'transparent', border:'none', cursor:'pointer', color:'#fca5a5', padding:'8px' }} title="Remover"><Trash2 size={18}/></button>
+                        </div>
+                      ))}
+                      {getRequisicoes(tarefaSelecionada).length === 0 && (
+                        <div style={{ color:'#55555a', fontSize:'13px', textAlign:'center', padding:'20px' }}>Nenhuma requisição adicionada.</div>
+                      )}
+                    </div>
+                  )}
 
                   {!isBoleto30 && isParcelamento && (
                       <div style={{ display:'flex', flexDirection:'column', gap:'20px', background:'#2a2a2d', padding:'40px', border:'1px solid #3f3f44', marginBottom:'45px' }}>
                           <div style={{ display:'flex', gap:'40px', borderBottom:'1px solid #3f3f44', paddingBottom:'20px' }}>
                               <div><label style={labelMStyle}>QUANTIDADE</label><select style={{ ...inputStyleLight, width:'120px', padding:'10px' }} value={tarefaSelecionada.qtd_parcelas || 1} onChange={e => handleUpdateField(tarefaSelecionada, 'qtd_parcelas', e.target.value)}>{[1,2,3,4,5].map(n => <option key={n} value={n}>{n}x</option>)}</select></div>
-                              <div><label style={labelMStyle}>VALOR PARCELA</label><p style={{fontSize:'22px', fontWeight:'700'}}>R$ {valorIndividual}</p></div>
+                              <div><label style={labelMStyle}>VALOR PARCELA</label><p style={{fontSize:'22px', fontWeight:'700'}}>{formatarMoeda(valorIndividual)}</p></div>
                           </div>
                           <div style={{ display:'flex', flexDirection:'column', gap:'15px' }}>
                               <div style={cascadeRowStyle}>
                                   <span style={cascadeLabelStyle}>1ª PARCELA</span>
                                   <input type="date" style={inputCascadeStyle} defaultValue={tarefaSelecionada.vencimento_boleto} onBlur={e => handleUpdateField(tarefaSelecionada, 'vencimento_boleto', e.target.value)} />
-                                  <span style={cascadeValueStyle}>R$ {valorIndividual}</span>
+                                  <span style={cascadeValueStyle}>{formatarMoeda(valorIndividual)}</span>
                                   <AttachmentTag label="P1" fileUrl={tarefaSelecionada.comprovante_pagamento || tarefaSelecionada.comprovante_pagamento_p1} onUpload={f => handleUpdateFileDirect(tarefaSelecionada, 'comprovante_pagamento_p1', f)} />
                               </div>
                               {Array.from({ length: (tarefaSelecionada.qtd_parcelas || 1) - 1 }).map((_, i) => {
@@ -403,7 +480,7 @@ function HomePosVendasContent() {
                                       <div key={pNum} style={cascadeRowStyle}>
                                           <span style={cascadeLabelStyle}>{pNum}ª PARCELA</span>
                                           <input type="date" style={inputCascadeStyle} defaultValue={currentDates[i] || ""} onBlur={e => { let arr = [...currentDates]; arr[i] = e.target.value; handleUpdateField(tarefaSelecionada, 'datas_parcelas', arr.join(', ')); }} />
-                                          <span style={cascadeValueStyle}>R$ {valorIndividual}</span>
+                                          <span style={cascadeValueStyle}>{formatarMoeda(valorIndividual)}</span>
                                           <AttachmentTag label={`P${pNum}`} fileUrl={tarefaSelecionada[`comprovante_pagamento_p${pNum}`]} onUpload={f => handleUpdateFileDirect(tarefaSelecionada, `comprovante_pagamento_p${pNum}`, f)} />
                                       </div>
                                   )

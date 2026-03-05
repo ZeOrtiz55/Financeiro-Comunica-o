@@ -9,7 +9,7 @@ import {
  Bell, MessageSquare, X, Menu, PlusCircle, FileText, Download, 
  CheckCircle, LogOut, User, ShieldCheck, Upload, Send, 
  Calendar, CreditCard, Hash, History, ArrowLeft, Paperclip, ImageIcon, 
- CheckCheck, Eye, LayoutDashboard, ClipboardList, UserCheck, TrendingUp, TrendingDown, Search, Trash2, Settings, RefreshCw, AlertCircle, Tag, Lock, DollarSign
+ CheckCheck, Eye, LayoutDashboard, ClipboardList, UserCheck, TrendingUp, TrendingDown, Search, Trash2, Settings, RefreshCw, AlertCircle, Tag, Lock, DollarSign, Clock
 } from 'lucide-react'
 
 // --- 1. TELA DE CARREGAMENTO ---
@@ -31,11 +31,40 @@ const formatarDataBR = (dataStr) => {
   const apenasData = dataStr.split(' ')[0];
   const partes = apenasData.split(/[-/]/);
   if (partes.length === 3) {
-   if (partes[0].length === 4) return `${partes[2]}/${partes[1]}/${partes[0]}`; 
+   if (partes[0].length === 4) return `${partes[2]}/${partes[1]}/${partes[0]}`;
    return `${partes[0]}/${partes[1]}/${partes[2]}`;
   }
   return dataStr;
  } catch (e) { return dataStr; }
+};
+
+const formatarMoeda = (valor) => {
+ const num = parseFloat(valor);
+ if (isNaN(num)) return 'R$ 0,00';
+ return num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+};
+
+const calcTempo = (dateStr) => {
+ if (!dateStr) return null;
+ const diffMs = new Date() - new Date(dateStr);
+ const mins = Math.floor(diffMs / 60000);
+ const hours = Math.floor(mins / 60);
+ const days = Math.floor(hours / 24);
+ const months = Math.floor(days / 30);
+ if (months > 0) return `${months} ${months === 1 ? 'mes' : 'meses'}`;
+ if (days > 0) return `${days} ${days === 1 ? 'dia' : 'dias'}`;
+ if (hours > 0) return `${hours}h`;
+ if (mins > 0) return `${mins}min`;
+ return 'agora';
+};
+
+const STATUS_CONFIG = {
+ gerar_boleto:          { label: 'GERAR BOLETO',          bg: '#eff6ff', color: '#3b82f6', border: '#bfdbfe' },
+ enviar_cliente:        { label: 'ENVIAR PARA CLIENTE',   bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0' },
+ aguardando_vencimento: { label: 'AGUARDANDO VENCIMENTO', bg: '#fffbeb', color: '#d97706', border: '#fde68a' },
+ pago:                  { label: 'PAGO',                  bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0' },
+ vencido:               { label: 'VENCIDO',               bg: '#fff5f5', color: '#dc2626', border: '#fecaca' },
+ concluido:             { label: 'CONCLUIDO',             bg: '#f0fdf4', color: '#15803d', border: '#bbf7d0' },
 };
 
 function GeometricBackground() {
@@ -119,26 +148,87 @@ export default function Kanban() {
 
  const carregarDados = async () => {
   try {
-    const { data } = await supabase.from('Chamado_NF').select('*').neq('status', 'concluido').order('id', {ascending: false});
+    const { data } = await supabase.from('Chamado_NF').select('*').neq('status', 'concluido').order('id', { ascending: false });
     const hoje = new Date(); hoje.setHours(0,0,0,0);
-    
+
+    // ─── AUTO-MOVE: Boleto 30 Dias vencido → pago (salva no banco) ────────────
+    const paraAutoPago = (data || []).filter(c =>
+      c.status === 'aguardando_vencimento' &&
+      c.forma_pagamento === 'Boleto 30 Dias' &&
+      c.vencimento_boleto && new Date(c.vencimento_boleto + 'T00:00:00') < hoje
+    );
+    if (paraAutoPago.length > 0) {
+      await Promise.all(paraAutoPago.map(c => supabase.from('Chamado_NF').update({ status: 'pago' }).eq('id', c.id)));
+      paraAutoPago.forEach(c => {
+        const idx = (data || []).findIndex(d => d.id === c.id);
+        if (idx !== -1) data[idx] = { ...data[idx], status: 'pago' };
+      });
+    }
+
+    // ─── AUTO-MOVE: boleto simples vencido sem comprovante → vencido (salva no banco) ─
+    const paraAutoVencido = (data || []).filter(c =>
+      c.status === 'aguardando_vencimento' &&
+      c.forma_pagamento !== 'Boleto 30 Dias' &&
+      c.forma_pagamento !== 'Boleto Parcelado' &&
+      c.forma_pagamento !== 'Cartão Parcelado' &&
+      !c.comprovante_pagamento && !c.comprovante_pagamento_p1 &&
+      c.vencimento_boleto && new Date(c.vencimento_boleto + 'T00:00:00') < hoje
+    );
+    if (paraAutoVencido.length > 0) {
+      await Promise.all(paraAutoVencido.map(c => supabase.from('Chamado_NF').update({ status: 'vencido' }).eq('id', c.id)));
+      paraAutoVencido.forEach(c => {
+        const idx = (data || []).findIndex(d => d.id === c.id);
+        if (idx !== -1) data[idx] = { ...data[idx], status: 'vencido' };
+      });
+    }
+
+    // ─── HELPER: calcula estado de cada parcela ────────────────────────────────
+    const calcParcelas = (c) => {
+      const qtd = parseInt(c.qtd_parcelas || 1);
+      const valorUnit = (c.valor_servico || 0) / qtd;
+      const datas = [c.vencimento_boleto, ...(c.datas_parcelas || '').split(/[\s,]+/).filter(d => d.includes('-'))];
+      const hoje3 = new Date(hoje); hoje3.setDate(hoje3.getDate() + 3);
+      return Array.from({ length: qtd }, (_, i) => {
+        const comp = i === 0 ? (c.comprovante_pagamento_p1 || c.comprovante_pagamento) : c[`comprovante_pagamento_p${i + 1}`];
+        const dtStr = datas[i] || null;
+        const dt = dtStr ? new Date(dtStr + 'T00:00:00') : null;
+        let estado;
+        if (comp) estado = 'pago';
+        else if (dt && dt < hoje) estado = 'vencido';
+        else if (dt && dt <= hoje3) estado = 'proximo';
+        else estado = 'futuro';
+        return { num: i + 1, data: dtStr, valor: valorUnit, comprovante: comp || null, estado, campo_comprovante: i === 0 ? 'comprovante_pagamento_p1' : `comprovante_pagamento_p${i + 1}` };
+      });
+    };
+
     const processados = (data || []).map(c => {
-      let st = c.status || 'gerar_boleto';
-      const venc = c.vencimento_boleto ? new Date(c.vencimento_boleto) : null;
-      if (venc) venc.setHours(0,0,0,0);
-      
-      if (st === 'aguardando_vencimento' && venc && venc < hoje) st = 'vencido';
+      const isBoletoParc = c.forma_pagamento === 'Boleto Parcelado';
+      const parcelas_info = isBoletoParc ? calcParcelas(c) : null;
 
-      const temComprovante = c.comprovante_pagamento || c.comprovante_pagamento_p1 || c.comprovante_pagamento_p2 || c.comprovante_pagamento_p3 || c.comprovante_pagamento_p4 || c.comprovante_pagamento_p5;
+      let isPagamentoRealizado = false;
+      if (isBoletoParc && parcelas_info) {
+        isPagamentoRealizado = parcelas_info.every(p => p.estado === 'pago');
+      } else {
+        isPagamentoRealizado = !!(c.comprovante_pagamento || c.comprovante_pagamento_p1);
+      }
 
-      return { 
-        ...c, 
-        status: st, 
+      const parcelaVencida = isBoletoParc && parcelas_info ? parcelas_info.some(p => p.estado === 'vencido') : false;
+      const parcelaProxima = isBoletoParc && parcelas_info ? parcelas_info.some(p => p.estado === 'proximo') : false;
+
+      return {
+        ...c,
         valor_exibicao: c.valor_servico,
-        isPagamentoRealizado: !!temComprovante
+        isPagamentoRealizado,
+        parcelaVencida,
+        parcelaProxima,
+        parcelas_info
       };
     });
     setChamados(processados);
+    if (tarefaSelecionada) {
+      const itemAtualizado = processados.find(x => x.id === tarefaSelecionada.id);
+      if (itemAtualizado) setTarefaSelecionada(itemAtualizado);
+    }
   } catch (err) { console.error(err); }
  }
 
@@ -154,6 +244,14 @@ export default function Kanban() {
    finally { setLoading(false); }
   }; init();
  }, [router]);
+
+ useEffect(() => {
+  const channel = supabase
+   .channel('kanban_pv_realtime')
+   .on('postgres_changes', { event: '*', schema: 'public', table: 'Chamado_NF' }, () => carregarDados())
+   .subscribe();
+  return () => { supabase.removeChannel(channel) };
+ }, []);
 
  const handleUpdateField = async (id, field, value) => {
     await supabase.from('Chamado_NF').update({ [field]: value }).eq('id', id);
@@ -215,7 +313,8 @@ export default function Kanban() {
  const isBoleto30 = tarefaSelecionada?.forma_pagamento === 'Boleto 30 dias';
  const isParcelamentoOuBoleto30 = tarefaSelecionada && ['Boleto 30 dias', 'Boleto Parcelado', 'Cartão Parcelado'].includes(tarefaSelecionada.forma_pagamento);
  const isPixOuCartaoVista = tarefaSelecionada && ['Á Vista no Pix', 'Cartão a Vista'].includes(tarefaSelecionada.forma_pagamento);
- const valorIndividual = tarefaSelecionada ? (tarefaSelecionada.valor_servico / (tarefaSelecionada.qtd_parcelas || 1)).toFixed(2) : 0;
+ const isBoletoParcelado = tarefaSelecionada?.forma_pagamento === 'Boleto Parcelado';
+ const valorIndividual = tarefaSelecionada ? (tarefaSelecionada.valor_servico / (tarefaSelecionada.qtd_parcelas || 1)) : 0;
 
  return (
   <div style={{ display: 'flex', height: '100vh', width: '100vw', fontFamily: 'Montserrat, sans-serif', background: '#2a2a2d', overflow: 'hidden' }}>
@@ -261,11 +360,38 @@ export default function Kanban() {
                <CheckCircle size={14}/> PAGAMENTO REALIZADO
              </div>
            )}
+           {/* ── INDICADORES BOLETO PARCELADO ── */}
+           {t.forma_pagamento === 'Boleto Parcelado' && t.parcelas_info && (
+             <div style={{ marginTop: '12px' }}>
+               <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginBottom: '6px' }}>
+                 {t.parcelas_info.map((p, i) => (
+                   <div key={i}
+                     title={`${p.num}ª parcela — ${p.estado === 'pago' ? 'Paga' : p.estado === 'vencido' ? 'EM ATRASO' : p.estado === 'proximo' ? 'Vence em breve' : 'A vencer'} — ${p.data ? formatarDataBR(p.data) : 'Sem data'}`}
+                     style={{ width: '16px', height: '16px', borderRadius: '50%', flexShrink: 0, cursor: 'default',
+                       background: p.estado === 'pago' ? '#27ae60' : p.estado === 'vencido' ? '#e74c3c' : p.estado === 'proximo' ? '#f39c12' : '#bdc3c7',
+                       border: p.estado === 'vencido' ? '2px solid #c0392b' : '2px solid transparent'
+                     }}
+                   />
+                 ))}
+                 <span style={{ fontSize: '11px', color: '#9e9e9e', marginLeft: '4px' }}>
+                   {t.parcelas_info.filter(p => p.estado === 'pago').length}/{t.parcelas_info.length} pagas
+                 </span>
+               </div>
+               {t.parcelaVencida && !t.isPagamentoRealizado && (
+                 <div style={{ display:'flex', alignItems:'center', gap:'6px', background:'#fca5a520', padding:'6px 10px', borderRadius:'6px' }}>
+                   <AlertCircle size={13} color="#fca5a5" />
+                   <span style={{ color:'#fca5a5', fontSize:'11px', fontWeight:'800' }}>
+                     {t.parcelas_info.filter(p => p.estado === 'vencido').length === 1 ? 'UMA PARCELA EM ATRASO' : `${t.parcelas_info.filter(p => p.estado === 'vencido').length} PARCELAS EM ATRASO`}
+                   </span>
+                 </div>
+               )}
+             </div>
+           )}
           </div>
           <div style={{ padding: '25px', background:'#4e4e52' }}>
            <div style={cardInfoStyle}><CreditCard size={16}/> <span>FORMA:</span> {t.forma_pagamento?.toUpperCase()}</div>
            <div style={cardInfoStyle}><Calendar size={16}/> <span>VENC:</span> {formatarDataBR(t.vencimento_boleto)}</div>
-           <div style={{fontSize:'32px', fontWeight:'400', margin:'15px 0', color:'#fff'}}>R$ {t.valor_exibicao}</div>
+           <div style={{fontSize:'32px', fontWeight:'400', margin:'15px 0', color:'#fff'}}>{formatarMoeda(t.valor_exibicao)}</div>
            <div style={miniTagStyle}>ID: {t.id}</div>
           </div>
          </div>
@@ -328,7 +454,7 @@ export default function Kanban() {
                   </div>
                   <div>
                     <label style={labelModalStyle}>Cálculo Unitário</label>
-                    <p style={{ ...pModalStyle, fontSize: '24px', opacity: 0.7 }}>R$ {valorIndividual}</p>
+                    <p style={{ ...pModalStyle, fontSize: '24px', opacity: 0.7 }}>{formatarMoeda(valorIndividual)}</p>
                   </div>
                 </div>
              </div>
@@ -337,7 +463,7 @@ export default function Kanban() {
                 <div style={cascadeRowStyle}>
                   <span style={cascadeLabelStyle}>1ª PARCELA</span>
                   <input type="date" style={inputCascadeStyle} defaultValue={tarefaSelecionada.vencimento_boleto} onBlur={e => handleUpdateField(tarefaSelecionada.id, 'vencimento_boleto', e.target.value)} />
-                  <span style={cascadeValueStyle}>R$ {valorIndividual}</span>
+                  <span style={cascadeValueStyle}>{formatarMoeda(valorIndividual)}</span>
                   <AttachmentTag label="COMPROVANTE P1" fileUrl={tarefaSelecionada.comprovante_pagamento} onUpload={f => handleUpdateFileDirect(tarefaSelecionada.id, 'comprovante_pagamento', f)} />
                 </div>
                 
@@ -357,7 +483,7 @@ export default function Kanban() {
                           handleUpdateField(tarefaSelecionada.id, 'datas_parcelas', arr.filter(d => d).join(', '));
                         }} 
                       />
-                      <span style={cascadeValueStyle}>R$ {valorIndividual}</span>
+                      <span style={cascadeValueStyle}>{formatarMoeda(valorIndividual)}</span>
                       <AttachmentTag label={`COMPROVANTE P${pNum}`} fileUrl={tarefaSelecionada[`comprovante_pagamento_p${pNum}`]} onUpload={f => handleUpdateFileDirect(tarefaSelecionada.id, `comprovante_pagamento_p${pNum}`, f)} />
                     </div>
                   )
