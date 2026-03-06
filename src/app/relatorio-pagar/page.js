@@ -5,8 +5,8 @@ import { useRouter } from 'next/navigation'
 import MenuLateral from '@/components/MenuLateral'
 import { formatarMoeda, formatarDataBR } from '@/lib/utils'
 import {
-  TrendingUp, AlertTriangle,
-  CheckCircle, Clock, FileText, Printer,
+  TrendingDown, AlertTriangle,
+  CheckCircle, Clock, DollarSign, Printer, Calendar,
   ZoomIn, ZoomOut, Search, X
 } from 'lucide-react'
 
@@ -14,7 +14,7 @@ function LoadingScreen() {
   return (
     <div style={{ position: 'fixed', inset: 0, background: '#000', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <h1 style={{ color: '#fff', fontFamily: 'Montserrat, sans-serif', fontWeight: '300', fontSize: '24px', letterSpacing: '4px', textTransform: 'uppercase', textAlign: 'center' }}>
-        Relatorio NF <br />
+        Relatorio Pagar <br />
         <span style={{ fontSize: '28px', fontWeight: '400' }}>Nova Tratores</span>
       </h1>
     </div>
@@ -47,28 +47,13 @@ function KpiCard({ icon: Icon, label, value, sub, color }) {
   )
 }
 
-function StatusBar({ label, count, total, color }) {
-  const pct = total > 0 ? Math.round((count / total) * 100) : 0
-  return (
-    <div style={{ marginBottom: '16px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-        <span style={{ fontSize: '12px', color: '#616161', letterSpacing: '0.5px' }}>{label}</span>
-        <span style={{ fontSize: '12px', color: '#9e9e9e' }}>{count} ({pct}%)</span>
-      </div>
-      <div style={{ background: '#f5f5f5', borderRadius: '6px', height: '8px', overflow: 'hidden' }}>
-        <div style={{ background: color, width: pct + '%', height: '100%', borderRadius: '6px', transition: '0.6s ease' }} />
-      </div>
-    </div>
-  )
-}
-
-export default function Dashboard() {
+export default function RelatorioPagar() {
   const [userProfile, setUserProfile] = useState(null)
   const [loading, setLoading] = useState(true)
   const [erro, setErro] = useState(null)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [kpis, setKpis] = useState(null)
-  const [boletosRelatorio, setBoletosRelatorio] = useState([])
+  const [listaRelatorio, setListaRelatorio] = useState([])
   const [dadosCompletos, setDadosCompletos] = useState([])
   const [zoom, setZoom] = useState(100)
   const [filtroTexto, setFiltroTexto] = useState('')
@@ -76,7 +61,7 @@ export default function Dashboard() {
   const [filtroDataInicio, setFiltroDataInicio] = useState('')
   const [filtroDataFim, setFiltroDataFim] = useState('')
   const router = useRouter()
-  const [path, setPath] = useState('/dashboard')
+  const [path, setPath] = useState('/relatorio-pagar')
 
   useEffect(() => { setPath(window.location.pathname) }, [])
 
@@ -84,36 +69,28 @@ export default function Dashboard() {
 
   const handleImprimir = () => { window.print() }
 
-  const STATUS_LABELS_FILTER = {
-    gerar_boleto: 'Gerar Boleto',
-    enviar_cliente: 'Enviar ao Cliente',
-    aguardando_vencimento: 'Aguard. Vencimento',
-    pago: 'Pago',
-    vencido: 'Vencido',
-    concluido: 'Concluido',
-  }
-
   useEffect(() => {
     let filtrado = [...dadosCompletos]
     if (filtroTexto.trim()) {
       const txt = filtroTexto.toLowerCase()
-      filtrado = filtrado.filter(b =>
-        (b.tarefa || '').toLowerCase().includes(txt) ||
-        (b.setor || '').toLowerCase().includes(txt) ||
-        (b.forma_pagamento || '').toLowerCase().includes(txt) ||
-        String(b.id).includes(txt)
+      filtrado = filtrado.filter(p =>
+        (p.fornecedor || '').toLowerCase().includes(txt) ||
+        (p.motivo || '').toLowerCase().includes(txt) ||
+        (p.numero_NF || '').toLowerCase().includes(txt) ||
+        (p.metodo || '').toLowerCase().includes(txt) ||
+        String(p.id).includes(txt)
       )
     }
     if (filtroStatus !== 'todos') {
-      filtrado = filtrado.filter(b => b.status === filtroStatus)
+      filtrado = filtrado.filter(p => filtroStatus === 'concluido' ? p.status === 'concluido' : p.status !== 'concluido')
     }
     if (filtroDataInicio) {
-      filtrado = filtrado.filter(b => b.vencimento_boleto && b.vencimento_boleto >= filtroDataInicio)
+      filtrado = filtrado.filter(p => p.data_vencimento && p.data_vencimento >= filtroDataInicio)
     }
     if (filtroDataFim) {
-      filtrado = filtrado.filter(b => b.vencimento_boleto && b.vencimento_boleto <= filtroDataFim)
+      filtrado = filtrado.filter(p => p.data_vencimento && p.data_vencimento <= filtroDataFim)
     }
-    setBoletosRelatorio(filtrado)
+    setListaRelatorio(filtrado)
   }, [filtroTexto, filtroStatus, filtroDataInicio, filtroDataFim, dadosCompletos])
 
   const limparFiltros = () => {
@@ -134,43 +111,61 @@ export default function Dashboard() {
         const { data: prof } = await supabase.from('financeiro_usu').select('*').eq('id', session.user.id).single()
         setUserProfile(prof)
 
-        const { data: boletos, error: errBoletos } = await supabase
-          .from('Chamado_NF')
-          .select('id, status, valor_servico, vencimento_boleto, forma_pagamento, tarefa, setor')
+        const { data: pagar, error: errPagar } = await supabase
+          .from('finan_pagar')
+          .select('id, status, valor, data_vencimento, fornecedor, numero_NF, motivo, metodo')
+          .order('id', { ascending: false })
 
-        if (errBoletos) throw new Error('Erro ao carregar boletos: ' + errBoletos.message)
+        if (errPagar) throw new Error('Erro ao carregar contas a pagar: ' + errPagar.message)
 
-        const boletosArr = boletos || []
+        const pagarArr = pagar || []
+        const hoje = new Date()
+        const hojeStr = hoje.toISOString().split('T')[0]
+        const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().split('T')[0]
+        const fimMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).toISOString().split('T')[0]
 
-        const totalBoletos = boletosArr.length
-        const boletosEmAberto = boletosArr.filter(b => !['concluido'].includes(b.status)).length
-        const boletosAtrasados = boletosArr.filter(b => b.status === 'vencido').length
-        const boletosConfirmados = boletosArr.filter(b => ['pago', 'concluido'].includes(b.status)).length
-        const totalFaturado = boletosArr
-          .filter(b => ['pago', 'concluido'].includes(b.status))
-          .reduce((acc, b) => acc + (parseFloat(b.valor_servico) || 0), 0)
+        const totalRegistros = pagarArr.length
+        const pendentes = pagarArr.filter(p => p.status !== 'concluido')
+        const concluidos = pagarArr.filter(p => p.status === 'concluido')
+        const totalPendente = pendentes.reduce((acc, p) => acc + (parseFloat(p.valor) || 0), 0)
+        const totalPago = concluidos.reduce((acc, p) => acc + (parseFloat(p.valor) || 0), 0)
 
-        const statusCount = {}
-        boletosArr.forEach(b => {
-          statusCount[b.status] = (statusCount[b.status] || 0) + 1
+        const atrasados = pagarArr.filter(p => p.status !== 'concluido' && p.data_vencimento && p.data_vencimento < hojeStr)
+        const totalAtrasado = atrasados.reduce((acc, p) => acc + (parseFloat(p.valor) || 0), 0)
+
+        const venceMes = pagarArr
+          .filter(p => p.status !== 'concluido' && p.data_vencimento >= inicioMes && p.data_vencimento <= fimMes)
+          .reduce((acc, p) => acc + (parseFloat(p.valor) || 0), 0)
+
+        // Top fornecedores (por valor total)
+        const fornMap = {}
+        pagarArr.forEach(p => {
+          const key = p.fornecedor || 'Sem fornecedor'
+          if (!fornMap[key]) fornMap[key] = { nome: key, total: 0, qtd: 0 }
+          fornMap[key].total += parseFloat(p.valor) || 0
+          fornMap[key].qtd++
         })
+        const topForn = Object.values(fornMap).sort((a, b) => b.total - a.total).slice(0, 8)
 
-        const relatorio = boletosArr
-          .filter(b => b.status !== 'pago')
-          .sort((a, b) => {
-            const order = ['vencido', 'gerar_boleto', 'enviar_cliente', 'aguardando_vencimento', 'concluido']
-            return order.indexOf(a.status) - order.indexOf(b.status)
-          })
-        setBoletosRelatorio(relatorio)
+        // Relatorio: pendentes primeiro, depois concluidos
+        const relatorio = [...pagarArr].sort((a, b) => {
+          if (a.status === 'concluido' && b.status !== 'concluido') return 1
+          if (a.status !== 'concluido' && b.status === 'concluido') return -1
+          // dentro do mesmo grupo, ordenar por data vencimento
+          return (a.data_vencimento || '').localeCompare(b.data_vencimento || '')
+        })
+        setListaRelatorio(relatorio)
         setDadosCompletos(relatorio)
 
         setKpis({
-          totalBoletos,
-          boletosEmAberto,
-          boletosAtrasados,
-          boletosConfirmados,
-          totalFaturado,
-          statusCount,
+          totalRegistros,
+          pendentes: pendentes.length,
+          totalPendente,
+          totalPago,
+          atrasados: atrasados.length,
+          totalAtrasado,
+          venceMes,
+          topForn,
         })
 
         setLoading(false)
@@ -192,23 +187,6 @@ export default function Dashboard() {
     </div>
   )
 
-  const STATUS_LABELS = {
-    gerar_boleto: 'Gerar Boleto',
-    enviar_cliente: 'Enviar ao Cliente',
-    aguardando_vencimento: 'Aguard. Vencimento',
-    pago: 'Pago',
-    vencido: 'Vencido',
-    concluido: 'Concluido',
-  }
-  const STATUS_COLORS = {
-    gerar_boleto: '#f59e0b',
-    enviar_cliente: '#3b82f6',
-    aguardando_vencimento: '#8b5cf6',
-    pago: '#10b981',
-    vencido: '#ef4444',
-    concluido: '#6b7280',
-  }
-
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: '#f4f4f4', fontFamily: 'Montserrat, sans-serif' }}>
       <MenuLateral
@@ -224,7 +202,7 @@ export default function Dashboard() {
 
         <header style={{ marginBottom: '40px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
           <div>
-            <h1 style={{ fontWeight: '400', color: '#333', margin: 0, fontSize: '32px', letterSpacing: '-1px' }}>RELATORIO NF</h1>
+            <h1 style={{ fontWeight: '400', color: '#333', margin: 0, fontSize: '32px', letterSpacing: '-1px' }}>RELATORIO PAGAR</h1>
             <div style={{ width: '60px', height: '4px', background: '#9e9e9e', marginTop: '12px', borderRadius: '2px' }} />
           </div>
           <button
@@ -237,30 +215,36 @@ export default function Dashboard() {
           </button>
         </header>
 
-        {/* KPI ROW — Boletos / Chamado_NF */}
+        {/* KPI ROW */}
         <section className="no-print" style={{ marginBottom: '40px' }}>
-          <p style={{ fontSize: '10px', letterSpacing: '2px', color: '#bbb', marginBottom: '16px' }}>BOLETOS / FATURAMENTO</p>
+          <p style={{ fontSize: '10px', letterSpacing: '2px', color: '#bbb', marginBottom: '16px' }}>CONTAS A PAGAR</p>
           <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
-            <KpiCard icon={FileText} label="Total de Processos" value={kpis.totalBoletos} sub="todos os status" color="#6366f1" />
-            <KpiCard icon={Clock} label="Em Aberto" value={kpis.boletosEmAberto} sub="aguardando conclusao" color="#f59e0b" />
-            <KpiCard icon={AlertTriangle} label="Em Atraso" value={kpis.boletosAtrasados} sub="status vencido" color="#ef4444" />
-            <KpiCard icon={CheckCircle} label="Confirmados / Pagos" value={kpis.boletosConfirmados} sub="pago + concluido" color="#10b981" />
-            <KpiCard icon={TrendingUp} label="Total Faturado" value={formatarMoeda(kpis.totalFaturado)} sub="processos pago/concluido" color="#0ea5e9" />
+            <KpiCard icon={DollarSign} label="Total de Registros" value={kpis.totalRegistros} sub="todos os status" color="#6366f1" />
+            <KpiCard icon={Clock} label="Pendentes" value={kpis.pendentes} sub={formatarMoeda(kpis.totalPendente)} color="#f59e0b" />
+            <KpiCard icon={AlertTriangle} label="Em Atraso" value={kpis.atrasados} sub={formatarMoeda(kpis.totalAtrasado)} color="#ef4444" />
+            <KpiCard icon={Calendar} label="Vence Este Mes" value={formatarMoeda(kpis.venceMes)} sub="nao concluidos no mes" color="#8b5cf6" />
+            <KpiCard icon={CheckCircle} label="Total Pago" value={formatarMoeda(kpis.totalPago)} sub="status concluido" color="#10b981" />
           </div>
         </section>
 
-        {/* FUNIL DE STATUS */}
+        {/* TOP FORNECEDORES */}
         <div className="no-print" style={{ maxWidth: '500px', marginBottom: '40px' }}>
           <div style={{ background: '#fff', borderRadius: '20px', border: '0.5px solid #e2e8f0', padding: '30px', boxShadow: '0 4px 20px rgba(0,0,0,0.04)' }}>
-            <p style={{ margin: '0 0 24px', fontSize: '11px', letterSpacing: '1.5px', color: '#9e9e9e' }}>FUNIL DE STATUS</p>
-            {Object.entries(STATUS_LABELS).map(([key, label]) => (
-              <StatusBar
-                key={key}
-                label={label}
-                count={kpis.statusCount[key] || 0}
-                total={kpis.totalBoletos}
-                color={STATUS_COLORS[key]}
-              />
+            <p style={{ margin: '0 0 24px', fontSize: '11px', letterSpacing: '1.5px', color: '#9e9e9e' }}>TOP FORNECEDORES (VALOR TOTAL)</p>
+            {kpis.topForn.length === 0 && (
+              <p style={{ color: '#bbb', fontSize: '13px' }}>Nenhum registro encontrado.</p>
+            )}
+            {kpis.topForn.map((f, i) => (
+              <div key={f.nome} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '14px', marginBottom: '14px', borderBottom: '0.5px solid #f1f5f9' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <span style={{ fontSize: '11px', color: '#bbb', width: '18px' }}>#{i + 1}</span>
+                  <div>
+                    <div style={{ fontSize: '13px', color: '#424242' }}>{f.nome.toUpperCase()}</div>
+                    <div style={{ fontSize: '11px', color: '#bbb', marginTop: '2px' }}>{f.qtd} {f.qtd === 1 ? 'registro' : 'registros'}</div>
+                  </div>
+                </div>
+                <span style={{ fontSize: '13px', color: '#333' }}>{formatarMoeda(f.total)}</span>
+              </div>
             ))}
           </div>
         </div>
@@ -284,18 +268,17 @@ export default function Dashboard() {
                   <input
                     value={filtroTexto}
                     onChange={e => setFiltroTexto(e.target.value)}
-                    placeholder="Tarefa, setor, forma de pagamento..."
+                    placeholder="Fornecedor, motivo, NF, metodo..."
                     style={{ width: '100%', padding: '10px 12px 10px 34px', border: '0.5px solid #e2e8f0', borderRadius: '10px', fontSize: '13px', fontFamily: 'Montserrat', outline: 'none', boxSizing: 'border-box' }}
                   />
                 </div>
               </div>
-              <div style={{ minWidth: '160px' }}>
+              <div style={{ minWidth: '140px' }}>
                 <label style={{ fontSize: '10px', letterSpacing: '1px', color: '#9e9e9e', display: 'block', marginBottom: '6px' }}>STATUS</label>
                 <select value={filtroStatus} onChange={e => setFiltroStatus(e.target.value)} style={{ width: '100%', padding: '10px 12px', border: '0.5px solid #e2e8f0', borderRadius: '10px', fontSize: '13px', fontFamily: 'Montserrat', outline: 'none', background: '#fff', cursor: 'pointer' }}>
                   <option value="todos">Todos</option>
-                  {Object.entries(STATUS_LABELS_FILTER).map(([key, label]) => (
-                    <option key={key} value={key}>{label}</option>
-                  ))}
+                  <option value="pendente">Pendente</option>
+                  <option value="concluido">Concluido</option>
                 </select>
               </div>
               <div style={{ minWidth: '140px' }}>
@@ -313,7 +296,7 @@ export default function Dashboard() {
               )}
             </div>
             {temFiltroAtivo && (
-              <p style={{ margin: '12px 0 0', fontSize: '12px', color: '#9e9e9e' }}>{boletosRelatorio.length} registro(s) encontrado(s)</p>
+              <p style={{ margin: '12px 0 0', fontSize: '12px', color: '#9e9e9e' }}>{listaRelatorio.length} registro(s) encontrado(s)</p>
             )}
           </div>
         </section>
@@ -324,39 +307,45 @@ export default function Dashboard() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
               <thead>
                 <tr style={{ borderBottom: '2px solid #f1f5f9' }}>
-                  <th style={{ padding: '12px 14px', textAlign: 'left', fontSize: '10px', letterSpacing: '1.5px', color: '#9e9e9e' }}>PROCESSO / TAREFA</th>
-                  <th style={{ padding: '12px 14px', textAlign: 'left', fontSize: '10px', letterSpacing: '1.5px', color: '#9e9e9e' }}>SETOR</th>
-                  <th style={{ padding: '12px 14px', textAlign: 'left', fontSize: '10px', letterSpacing: '1.5px', color: '#9e9e9e' }}>FORMA PAGAMENTO</th>
+                  <th style={{ padding: '12px 14px', textAlign: 'left', fontSize: '10px', letterSpacing: '1.5px', color: '#9e9e9e' }}>FORNECEDOR</th>
+                  <th style={{ padding: '12px 14px', textAlign: 'left', fontSize: '10px', letterSpacing: '1.5px', color: '#9e9e9e' }}>MOTIVO</th>
+                  <th style={{ padding: '12px 14px', textAlign: 'left', fontSize: '10px', letterSpacing: '1.5px', color: '#9e9e9e' }}>NF</th>
+                  <th style={{ padding: '12px 14px', textAlign: 'left', fontSize: '10px', letterSpacing: '1.5px', color: '#9e9e9e' }}>METODO</th>
                   <th style={{ padding: '12px 14px', textAlign: 'left', fontSize: '10px', letterSpacing: '1.5px', color: '#9e9e9e' }}>VENCIMENTO</th>
                   <th style={{ padding: '12px 14px', textAlign: 'left', fontSize: '10px', letterSpacing: '1.5px', color: '#9e9e9e' }}>STATUS</th>
                   <th style={{ padding: '12px 14px', textAlign: 'right', fontSize: '10px', letterSpacing: '1.5px', color: '#9e9e9e' }}>VALOR</th>
                 </tr>
               </thead>
               <tbody>
-                {boletosRelatorio.map((b, i) => (
-                  <tr key={b.id} style={{ borderBottom: '0.5px solid #f5f5f5' }}>
-                    <td style={{ padding: '11px 14px', color: '#333' }}>{b.tarefa || b.id}</td>
-                    <td style={{ padding: '11px 14px', color: '#666' }}>{b.setor || '—'}</td>
-                    <td style={{ padding: '11px 14px', color: '#666' }}>{b.forma_pagamento || '—'}</td>
-                    <td style={{ padding: '11px 14px', color: '#666' }}>{formatarDataBR(b.vencimento_boleto)}</td>
+                {listaRelatorio.map((p, i) => (
+                  <tr key={p.id} style={{ borderBottom: '0.5px solid #f5f5f5' }}>
+                    <td style={{ padding: '11px 14px', color: '#333' }}>{p.fornecedor || '—'}</td>
+                    <td style={{ padding: '11px 14px', color: '#666' }}>{p.motivo || '—'}</td>
+                    <td style={{ padding: '11px 14px', color: '#666' }}>{p.numero_NF || '—'}</td>
+                    <td style={{ padding: '11px 14px', color: '#666' }}>{p.metodo || '—'}</td>
+                    <td style={{ padding: '11px 14px', color: '#666' }}>{formatarDataBR(p.data_vencimento)}</td>
                     <td style={{ padding: '11px 14px' }}>
-                      <span style={{ background: STATUS_COLORS[b.status] + '22', color: STATUS_COLORS[b.status], padding: '3px 10px', borderRadius: '6px', fontSize: '11px', letterSpacing: '0.5px' }}>
-                        {STATUS_LABELS[b.status] || b.status}
+                      <span style={{
+                        background: p.status === 'concluido' ? '#6b728022' : '#f59e0b22',
+                        color: p.status === 'concluido' ? '#6b7280' : '#f59e0b',
+                        padding: '3px 10px', borderRadius: '6px', fontSize: '11px', letterSpacing: '0.5px'
+                      }}>
+                        {p.status === 'concluido' ? 'Concluido' : 'Pendente'}
                       </span>
                     </td>
-                    <td style={{ padding: '11px 14px', textAlign: 'right', color: '#333' }}>{formatarMoeda(b.valor_servico)}</td>
+                    <td style={{ padding: '11px 14px', textAlign: 'right', color: '#333' }}>{formatarMoeda(p.valor)}</td>
                   </tr>
                 ))}
-                {boletosRelatorio.length === 0 && (
-                  <tr><td colSpan={6} style={{ padding: '30px', textAlign: 'center', color: '#bbb', fontSize: '13px' }}>Nenhum processo encontrado.</td></tr>
+                {listaRelatorio.length === 0 && (
+                  <tr><td colSpan={7} style={{ padding: '30px', textAlign: 'center', color: '#bbb', fontSize: '13px' }}>Nenhum registro encontrado.</td></tr>
                 )}
               </tbody>
-              {boletosRelatorio.length > 0 && (
+              {listaRelatorio.length > 0 && (
                 <tfoot>
                   <tr style={{ borderTop: '2px solid #f1f5f9' }}>
-                    <td colSpan={5} style={{ padding: '12px 14px', fontSize: '12px', letterSpacing: '0.5px', color: '#9e9e9e' }}>TOTAL ({boletosRelatorio.length} processos)</td>
+                    <td colSpan={6} style={{ padding: '12px 14px', fontSize: '12px', letterSpacing: '0.5px', color: '#9e9e9e' }}>TOTAL ({listaRelatorio.length} registros)</td>
                     <td style={{ padding: '12px 14px', textAlign: 'right', fontSize: '15px', color: '#333' }}>
-                      {formatarMoeda(boletosRelatorio.reduce((acc, b) => acc + (parseFloat(b.valor_servico) || 0), 0))}
+                      {formatarMoeda(listaRelatorio.reduce((acc, p) => acc + (parseFloat(p.valor) || 0), 0))}
                     </td>
                   </tr>
                 </tfoot>
@@ -368,44 +357,50 @@ export default function Dashboard() {
         {/* RELATORIO PARA IMPRESSAO */}
         <div className="print-only" style={{ display: 'none' }}>
           <div style={{ marginBottom: '24px' }}>
-            <h2 style={{ fontSize: '20px', letterSpacing: '-0.5px', margin: '0 0 4px' }}>RELATORIO DE PROCESSOS NF — NOVA TRATORES</h2>
-            <p style={{ fontSize: '12px', color: '#666', margin: 0 }}>Gerado em {new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })} — Exclui processos com status "Pago"</p>
+            <h2 style={{ fontSize: '20px', letterSpacing: '-0.5px', margin: '0 0 4px' }}>RELATORIO CONTAS A PAGAR — NOVA TRATORES</h2>
+            <p style={{ fontSize: '12px', color: '#666', margin: 0 }}>Gerado em {new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
           </div>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
             <thead>
               <tr style={{ background: '#1a1a1a', color: '#fff' }}>
-                <th style={{ padding: '10px 12px', textAlign: 'left', letterSpacing: '0.5px' }}>PROCESSO / TAREFA</th>
-                <th style={{ padding: '10px 12px', textAlign: 'left', letterSpacing: '0.5px' }}>SETOR</th>
-                <th style={{ padding: '10px 12px', textAlign: 'left', letterSpacing: '0.5px' }}>FORMA PAGAMENTO</th>
+                <th style={{ padding: '10px 12px', textAlign: 'left', letterSpacing: '0.5px' }}>FORNECEDOR</th>
+                <th style={{ padding: '10px 12px', textAlign: 'left', letterSpacing: '0.5px' }}>MOTIVO</th>
+                <th style={{ padding: '10px 12px', textAlign: 'left', letterSpacing: '0.5px' }}>NF</th>
+                <th style={{ padding: '10px 12px', textAlign: 'left', letterSpacing: '0.5px' }}>METODO</th>
                 <th style={{ padding: '10px 12px', textAlign: 'left', letterSpacing: '0.5px' }}>VENCIMENTO</th>
                 <th style={{ padding: '10px 12px', textAlign: 'left', letterSpacing: '0.5px' }}>STATUS</th>
                 <th style={{ padding: '10px 12px', textAlign: 'right', letterSpacing: '0.5px' }}>VALOR</th>
               </tr>
             </thead>
             <tbody>
-              {boletosRelatorio.map((b, i) => (
-                <tr key={b.id} style={{ background: i % 2 === 0 ? '#f9f9f9' : '#fff', borderBottom: '0.5px solid #e5e5e5' }}>
-                  <td style={{ padding: '9px 12px', color: '#222' }}>{b.tarefa || b.id}</td>
-                  <td style={{ padding: '9px 12px', color: '#555' }}>{b.setor || '—'}</td>
-                  <td style={{ padding: '9px 12px', color: '#555' }}>{b.forma_pagamento || '—'}</td>
-                  <td style={{ padding: '9px 12px', color: '#555' }}>{formatarDataBR(b.vencimento_boleto)}</td>
+              {listaRelatorio.map((p, i) => (
+                <tr key={p.id} style={{ background: i % 2 === 0 ? '#f9f9f9' : '#fff', borderBottom: '0.5px solid #e5e5e5' }}>
+                  <td style={{ padding: '9px 12px', color: '#222' }}>{p.fornecedor || '—'}</td>
+                  <td style={{ padding: '9px 12px', color: '#555' }}>{p.motivo || '—'}</td>
+                  <td style={{ padding: '9px 12px', color: '#555' }}>{p.numero_NF || '—'}</td>
+                  <td style={{ padding: '9px 12px', color: '#555' }}>{p.metodo || '—'}</td>
+                  <td style={{ padding: '9px 12px', color: '#555' }}>{formatarDataBR(p.data_vencimento)}</td>
                   <td style={{ padding: '9px 12px' }}>
-                    <span style={{ background: STATUS_COLORS[b.status] + '22', color: STATUS_COLORS[b.status], padding: '2px 8px', borderRadius: '6px', fontSize: '11px', letterSpacing: '0.5px' }}>
-                      {STATUS_LABELS[b.status] || b.status}
+                    <span style={{
+                      background: p.status === 'concluido' ? '#6b728022' : '#f59e0b22',
+                      color: p.status === 'concluido' ? '#6b7280' : '#f59e0b',
+                      padding: '2px 8px', borderRadius: '6px', fontSize: '11px', letterSpacing: '0.5px'
+                    }}>
+                      {p.status === 'concluido' ? 'Concluido' : 'Pendente'}
                     </span>
                   </td>
-                  <td style={{ padding: '9px 12px', textAlign: 'right', color: '#222' }}>{formatarMoeda(b.valor_servico)}</td>
+                  <td style={{ padding: '9px 12px', textAlign: 'right', color: '#222' }}>{formatarMoeda(p.valor)}</td>
                 </tr>
               ))}
-              {boletosRelatorio.length === 0 && (
-                <tr><td colSpan={6} style={{ padding: '20px', textAlign: 'center', color: '#999' }}>Nenhum processo encontrado.</td></tr>
+              {listaRelatorio.length === 0 && (
+                <tr><td colSpan={7} style={{ padding: '20px', textAlign: 'center', color: '#999' }}>Nenhum registro encontrado.</td></tr>
               )}
             </tbody>
             <tfoot>
               <tr style={{ background: '#f0f0f0', borderTop: '1px solid #ccc' }}>
-                <td colSpan={5} style={{ padding: '10px 12px', fontWeight: '600', letterSpacing: '0.5px' }}>TOTAL ({boletosRelatorio.length} processos)</td>
+                <td colSpan={6} style={{ padding: '10px 12px', fontWeight: '600', letterSpacing: '0.5px' }}>TOTAL ({listaRelatorio.length} registros)</td>
                 <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '600' }}>
-                  {formatarMoeda(boletosRelatorio.reduce((acc, b) => acc + (parseFloat(b.valor_servico) || 0), 0))}
+                  {formatarMoeda(listaRelatorio.reduce((acc, p) => acc + (parseFloat(p.valor) || 0), 0))}
                 </td>
               </tr>
             </tfoot>

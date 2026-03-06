@@ -312,11 +312,6 @@ export default function MenuLateral({ isSidebarOpen, setIsSidebarOpen, path, rou
        <span style={{ opacity: isSidebarOpen ? 1 : 0, whiteSpace: 'nowrap', fontWeight: '700' }}>Painel Geral</span>
       </button>
 
-      <button onClick={() => router.push('/dashboard')} style={getBtnStyle('/dashboard')}>
-       <div style={iconContainer}><BarChart2 size={28} /></div>
-       <span style={{ opacity: isSidebarOpen ? 1 : 0, whiteSpace: 'nowrap', fontWeight: '700' }}>Dashboard</span>
-      </button>
-
       <button onClick={() => router.push(rotaKanban)} style={getBtnStyle(rotaKanban)}>
        <div style={iconContainer}><ClipboardList size={28} /></div>
        <span style={{ opacity: isSidebarOpen ? 1 : 0, whiteSpace: 'nowrap', fontWeight: '700' }}>Fluxo Boletos</span>
@@ -325,6 +320,16 @@ export default function MenuLateral({ isSidebarOpen, setIsSidebarOpen, path, rou
             {alertasVencidos}
          </div>
        )}
+      </button>
+
+      <button onClick={() => router.push('/dashboard')} style={getBtnStyle('/dashboard')}>
+       <div style={iconContainer}><BarChart2 size={28} /></div>
+       <span style={{ opacity: isSidebarOpen ? 1 : 0, whiteSpace: 'nowrap', fontWeight: '700' }}>Relatorio NF</span>
+      </button>
+
+      <button onClick={() => router.push('/relatorio-pagar')} style={getBtnStyle('/relatorio-pagar')}>
+       <div style={iconContainer}><TrendingDown size={28} /></div>
+       <span style={{ opacity: isSidebarOpen ? 1 : 0, whiteSpace: 'nowrap', fontWeight: '700' }}>Relatorio Pagar</span>
       </button>
 
       <button onClick={abrirHistorico} style={{ ...getBtnStyle('_historico'), position: 'relative' }}>

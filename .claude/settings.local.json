@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm install web-push)"
+      "Bash(npm install web-push)",
+      "Bash(npx:*)",
+      "Bash(npm run:*)"
     ]
   }
 }
