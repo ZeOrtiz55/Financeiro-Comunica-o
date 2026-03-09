@@ -131,7 +131,7 @@ function HomeFinanceiroContent() {
         ...c,
         gTipo: 'boleto',
         valor_exibicao: c.valor_servico,
-        isVencidoDisplay: venc && venc < hoje,
+        isVencidoDisplay: venc && venc < hoje && !todosPagos && !isParceladoLocal,
         isTarefaPagamentoRealizado: todosPagos,
         isPagamentoRealizado: todosPagos,
         parcelaVencida
