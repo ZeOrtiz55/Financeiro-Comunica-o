@@ -12,7 +12,7 @@ export function useAuth() {
     const init = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession()
-        if (!session) { router.push('/login'); return }
+        if (!session) { window.location.href = 'http://localhost:3000/login'; return }
         const { data: prof } = await supabase
           .from('financeiro_usu')
           .select('*')
@@ -21,7 +21,7 @@ export function useAuth() {
         setUserProfile(prof)
       } catch (e) {
         console.error('Auth error:', e)
-        router.push('/login')
+        window.location.href = 'http://localhost:3000/login'
       } finally {
         setLoading(false)
       }
@@ -31,7 +31,7 @@ export function useAuth() {
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
-    router.push('/login')
+    window.location.href = 'http://localhost:3000/login'
   }
 
   return { userProfile, loading, handleLogout, router }

@@ -26,7 +26,7 @@ export default function RootPage() {
       
       if (authError || !session) {
         console.log("Sem sessão, mandando para o login");
-        router.push('/login')
+        window.location.href = 'http://localhost:3000/login'
         return
       }
 
